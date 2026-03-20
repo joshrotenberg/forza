@@ -72,10 +72,7 @@ pub enum StageKind {
 ///    found, resolve it against custom then built-in templates.
 /// 2. Fall back to `policy.default_workflow` (if set) or `"feature"`, again
 ///    resolved against custom then built-in templates.
-pub fn select_workflow(
-    issue: &crate::github::IssueCandidate,
-    policy: &crate::policy::RepoPolicy,
-) -> WorkflowTemplate {
+pub fn select_workflow(labels: &[String], policy: &crate::policy::RepoPolicy) -> WorkflowTemplate {
     // Merge custom and built-in templates; custom templates shadow built-ins.
     let all: Vec<WorkflowTemplate> = {
         let mut v = policy.workflow_templates.clone();
@@ -88,7 +85,7 @@ pub fn select_workflow(
     };
 
     // Check policy workflow label mappings first.
-    for label in &issue.labels {
+    for label in labels {
         if let Some(template_name) = policy.workflows.get(label)
             && let Some(template) = all.iter().find(|t| t.name == *template_name)
         {
@@ -374,7 +371,7 @@ mod tests {
         workflows.insert("bug".to_string(), "bug".to_string());
         let policy = make_policy(workflows, None, vec![]);
         let issue = make_issue(vec!["bug".to_string()]);
-        let tmpl = select_workflow(&issue, &policy);
+        let tmpl = select_workflow(&issue.labels, &policy);
         assert_eq!(tmpl.name, "bug");
     }
 
@@ -382,7 +379,7 @@ mod tests {
     fn no_label_match_falls_back_to_default_workflow() {
         let policy = make_policy(Default::default(), Some("chore".to_string()), vec![]);
         let issue = make_issue(vec![]);
-        let tmpl = select_workflow(&issue, &policy);
+        let tmpl = select_workflow(&issue.labels, &policy);
         assert_eq!(tmpl.name, "chore");
     }
 
@@ -390,7 +387,7 @@ mod tests {
     fn no_label_no_default_falls_back_to_feature() {
         let policy = make_policy(Default::default(), None, vec![]);
         let issue = make_issue(vec![]);
-        let tmpl = select_workflow(&issue, &policy);
+        let tmpl = select_workflow(&issue.labels, &policy);
         assert_eq!(tmpl.name, "feature");
     }
 
@@ -400,7 +397,7 @@ mod tests {
         let policy = make_policy(Default::default(), None, vec![]);
         let mut issue = make_issue(vec![]);
         issue.title = "fix: some bug".to_string();
-        let tmpl = select_workflow(&issue, &policy);
+        let tmpl = select_workflow(&issue.labels, &policy);
         assert_eq!(tmpl.name, "feature");
     }
 
@@ -420,7 +417,7 @@ mod tests {
         workflows.insert("bug".to_string(), "bug".to_string());
         let policy = make_policy(workflows, None, vec![custom]);
         let issue = make_issue(vec!["bug".to_string()]);
-        let tmpl = select_workflow(&issue, &policy);
+        let tmpl = select_workflow(&issue.labels, &policy);
         assert_eq!(tmpl.name, "bug");
         assert_eq!(tmpl.stages.len(), 1);
         assert_eq!(tmpl.stages[0].kind, StageKind::Comment);

@@ -334,7 +334,7 @@ pub async fn process_issue(
     };
 
     // 3. Select workflow and generate branch.
-    let mut template = workflow::select_workflow(&issue, policy);
+    let mut template = workflow::select_workflow(&issue.labels, policy);
 
     // Inject Clarify stage before Plan when triage identified gaps.
     if needs_clarification {
@@ -740,7 +740,7 @@ pub async fn process_batch(
     let mut workflow_active: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     for active in &active_issues {
-        let wf = workflow::select_workflow(active, policy);
+        let wf = workflow::select_workflow(&active.labels, policy);
         *workflow_active.entry(wf.name).or_insert(0) += 1;
     }
 
@@ -757,7 +757,7 @@ pub async fn process_batch(
         }
 
         // Check per-workflow concurrency limit.
-        let wf = workflow::select_workflow(&issue, policy);
+        let wf = workflow::select_workflow(&issue.labels, policy);
         if let Some(&limit) = policy.concurrency.get(&wf.name)
             && limit > 0
         {
