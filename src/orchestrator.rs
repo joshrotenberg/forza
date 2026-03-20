@@ -560,7 +560,8 @@ async fn handle_open_pr(
     issue_number: u64,
     work_dir: &Path,
 ) -> Result<github::PullRequest> {
-    // Commit any uncommitted changes (tracked files only — skip breadcrumbs/temp files).
+    // Commit any uncommitted changes. Use `git add .` so new files created by the agent are
+    // staged; .gitignore excludes breadcrumbs and temp files (*.breadcrumb.md, .claude/, etc.).
     let status = tokio::process::Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(work_dir)
@@ -570,7 +571,7 @@ async fn handle_open_pr(
 
     if has_changes {
         let _ = tokio::process::Command::new("git")
-            .args(["add", "-u"])
+            .args(["add", "."])
             .current_dir(work_dir)
             .output()
             .await;
