@@ -1,1 +1,7 @@
 /target
+.worktrees/
+.forza/
+.claudes/
+.claude/
+CLAUDE.md
+*.breadcrumb.md

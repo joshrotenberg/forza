@@ -2,5 +2,32 @@
 name = "forza"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.90.0"
+authors = ["Josh Rotenberg <joshrotenberg@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "Autonomous GitHub issue runner — turns issues into pull requests"
+repository = "https://github.com/joshrotenberg/forza"
 
 [dependencies]
+claude-wrapper = { path = "../../../claude-wrapper/crates/claude-wrapper" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "forza"
+path = "src/main.rs"
+
+[lib]
+name = "forza"
+path = "src/lib.rs"
