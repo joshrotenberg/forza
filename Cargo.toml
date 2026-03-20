@@ -9,7 +9,7 @@ description = "Autonomous GitHub issue runner — turns issues into pull request
 repository = "https://github.com/joshrotenberg/forza"
 
 [dependencies]
-claude-wrapper = { path = "../claude-wrapper/crates/claude-wrapper" }
+claude-wrapper = { path = "/Users/joshrotenberg/Code/active/claude-wrapper/crates/claude-wrapper" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
