@@ -33,6 +33,8 @@ enum Command {
     Watch(WatchArgs),
     /// Show run history and status.
     Status(StatusArgs),
+    /// Remove worktrees or run state.
+    Clean(CleanArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -80,6 +82,19 @@ struct StatusArgs {
     summary: bool,
 }
 
+#[derive(Debug, Parser)]
+struct CleanArgs {
+    /// Repository directory (default: current directory).
+    #[arg(long)]
+    repo_dir: Option<PathBuf>,
+    /// Remove run state files instead of worktrees.
+    #[arg(long)]
+    runs: bool,
+    /// Print what would be removed without acting.
+    #[arg(long)]
+    dry_run: bool,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -120,6 +135,7 @@ async fn main() -> ExitCode {
         Command::Run(args) => cmd_run(args, &config).await,
         Command::Watch(args) => cmd_watch(args, &config).await,
         Command::Status(args) => cmd_status(args),
+        Command::Clean(args) => cmd_clean(args, &config).await,
     }
 }
 
@@ -330,6 +346,55 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
             }
         }
     }
+}
+
+async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
+    let sd = state_dir();
+
+    if args.runs {
+        let files = forza::state::list_run_files(&sd);
+        if files.is_empty() {
+            println!("no run files found");
+            return ExitCode::SUCCESS;
+        }
+        for path in &files {
+            println!("{}", path.display());
+        }
+        if args.dry_run {
+            println!("dry run: {} file(s) would be removed", files.len());
+        } else {
+            for path in &files {
+                if let Err(e) = std::fs::remove_file(path) {
+                    eprintln!("error removing {}: {e}", path.display());
+                    return ExitCode::FAILURE;
+                }
+            }
+            println!("removed {} file(s)", files.len());
+        }
+    } else {
+        let rd = repo_dir(&args.repo_dir, config);
+        let worktrees = forza::isolation::list_worktrees(&rd, ".worktrees");
+        if worktrees.is_empty() {
+            println!("no worktrees found");
+            return ExitCode::SUCCESS;
+        }
+        for wt in &worktrees {
+            println!("{}", wt.display());
+        }
+        if args.dry_run {
+            println!("dry run: {} worktree(s) would be removed", worktrees.len());
+        } else {
+            for wt in &worktrees {
+                if let Err(e) = forza::isolation::remove_worktree(&rd, wt, true).await {
+                    eprintln!("error removing worktree {}: {e}", wt.display());
+                    return ExitCode::FAILURE;
+                }
+            }
+            println!("removed {} worktree(s)", worktrees.len());
+        }
+    }
+
+    ExitCode::SUCCESS
 }
 
 fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
