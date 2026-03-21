@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0](https://github.com/joshrotenberg/forza/compare/v0.1.0...v0.2.0) - 2026-03-21
 
+Major expansion of the forza platform: REST API and embedded MCP server for programmatic control, reactive PR workflows with label-driven processing and retry budgets, security hardening (prompt injection protection, authorization, rate limiting), desktop/Slack/webhook notifications, multi-repo support with per-repo routes, configurable stage prompt templates, rich PR descriptions generated from run data, schedule windows, per-route agent configuration, and the `forza init` command for bootstrapping new repos.
+
 ### Added
 
 - *(mcp)* embed MCP server with runner, status, and config tool groups closes #52 ([#101](https://github.com/joshrotenberg/forza/pull/101))
@@ -52,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(dry-run)* show estimated cost range from historical run data in `--dry-run` output closes #16
 
 ## [0.1.0](https://github.com/joshrotenberg/forza/releases/tag/v0.1.0) - 2026-03-21
+
+Initial release of forza: an autonomous GitHub issue runner. Core features include breadcrumb-based context flow between pipeline stages, clean and status commands for managing run state, concurrent batch processing, signal handling with stale lease recovery, and a full CI suite covering formatting, linting, tests, MSRV, docs, and release automation.
 
 ### Added
 
