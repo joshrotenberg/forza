@@ -184,6 +184,20 @@ pub async fn process_issue_with_config(
             continue;
         }
 
+        if planned_stage.kind == StageKind::Merge && !config.security.allows_merge() {
+            return Err(Error::Authorization(format!(
+                "authorization_level '{}' does not permit merge",
+                config.security.authorization_level
+            )));
+        }
+
+        if planned_stage.kind == StageKind::OpenPr && !config.security.allows_push() {
+            return Err(Error::Authorization(format!(
+                "authorization_level '{}' does not permit push/PR creation",
+                config.security.authorization_level
+            )));
+        }
+
         if planned_stage.kind == StageKind::OpenPr {
             let open_pr_success = match handle_open_pr(
                 repo,
@@ -1602,7 +1616,7 @@ pub async fn process_issue(
     let _ = github::remove_label(repo, number, "runner:ready").await;
 
     // 3. Triage.
-    let decision = triage::triage(&issue, policy);
+    let decision = triage::triage(&issue, policy, &[]);
     let needs_clarification = match &decision {
         TriageDecision::Ready => {
             info!(issue = number, "issue is ready for automation");
