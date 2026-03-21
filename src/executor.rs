@@ -177,7 +177,9 @@ impl AgentAdapter for ClaudeAdapter {
             if let Some(t) = event.event_type() {
                 debug!(stage = stage.kind_name(), event_type = t, "tool event");
             }
-            if event.is_result() && let Some(cost) = event.cost_usd() {
+            if event.is_result()
+                && let Some(cost) = event.cost_usd()
+            {
                 captured_cost = Some(cost);
             }
         })
