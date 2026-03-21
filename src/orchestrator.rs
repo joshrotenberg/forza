@@ -168,8 +168,65 @@ pub async fn process_issue_with_config(
         info!(
             issue = number,
             stage = planned_stage.kind_name(),
+            agentless = planned_stage.agentless,
             "running stage"
         );
+
+        // Agentless stages run a shell command directly — no agent invocation.
+        if planned_stage.agentless {
+            let command = planned_stage
+                .command
+                .as_deref()
+                .unwrap_or("echo 'no command specified'");
+            let start = std::time::Instant::now();
+            let output = tokio::process::Command::new("sh")
+                .args(["-c", command])
+                .current_dir(&worktree_dir)
+                .output()
+                .await;
+            let duration = start.elapsed();
+            let (success, output_text) = match output {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                    let text = if stderr.is_empty() { stdout } else { stderr };
+                    (o.status.success(), text)
+                }
+                Err(e) => (false, e.to_string()),
+            };
+            let result = StageResult {
+                stage: planned_stage.kind_name().to_string(),
+                success,
+                duration_secs: duration.as_secs_f64(),
+                cost_usd: None,
+                output: output_text,
+                files_modified: None,
+            };
+            info!(
+                issue = number,
+                stage = planned_stage.kind_name(),
+                success = success,
+                duration = format!("{:.1}s", duration.as_secs_f64()),
+                "agentless stage complete"
+            );
+            let failed = !success;
+            record.record_stage(
+                planned_stage.kind,
+                if success {
+                    StageStatus::Succeeded
+                } else {
+                    StageStatus::Failed
+                },
+                result,
+            );
+            if failed {
+                all_succeeded = false;
+                if !planned_stage.optional {
+                    break;
+                }
+            }
+            continue;
+        }
 
         match adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
             Ok(result) => {
@@ -406,6 +463,8 @@ pub async fn process_issue(
             max_retries: 1,
             timeout_secs: None,
             condition: None,
+            agentless: false,
+            command: None,
         };
         let plan_pos = template
             .stages
@@ -529,8 +588,65 @@ pub async fn process_issue(
         info!(
             issue = number,
             stage = planned_stage.kind_name(),
+            agentless = planned_stage.agentless,
             "running stage"
         );
+
+        // Agentless stages run a shell command directly — no agent invocation.
+        if planned_stage.agentless {
+            let command = planned_stage
+                .command
+                .as_deref()
+                .unwrap_or("echo 'no command specified'");
+            let start = std::time::Instant::now();
+            let output = tokio::process::Command::new("sh")
+                .args(["-c", command])
+                .current_dir(&worktree_dir)
+                .output()
+                .await;
+            let duration = start.elapsed();
+            let (success, output_text) = match output {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                    let text = if stderr.is_empty() { stdout } else { stderr };
+                    (o.status.success(), text)
+                }
+                Err(e) => (false, e.to_string()),
+            };
+            let result = StageResult {
+                stage: planned_stage.kind_name().to_string(),
+                success,
+                duration_secs: duration.as_secs_f64(),
+                cost_usd: None,
+                output: output_text,
+                files_modified: None,
+            };
+            info!(
+                issue = number,
+                stage = planned_stage.kind_name(),
+                success = success,
+                duration = format!("{:.1}s", duration.as_secs_f64()),
+                "agentless stage complete"
+            );
+            let failed = !success;
+            record.record_stage(
+                planned_stage.kind,
+                if success {
+                    StageStatus::Succeeded
+                } else {
+                    StageStatus::Failed
+                },
+                result,
+            );
+            if failed {
+                all_succeeded = false;
+                if !planned_stage.optional {
+                    break;
+                }
+            }
+            continue;
+        }
 
         match adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
             Ok(result) => {

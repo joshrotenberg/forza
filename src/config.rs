@@ -397,6 +397,7 @@ workflow = "bug"
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            comments: vec![],
         };
 
         let (name, route) = config.match_route(&issue).unwrap();
@@ -430,6 +431,7 @@ workflow = "bug"
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            comments: vec![],
         };
 
         assert!(config.match_route(&issue).is_none());
