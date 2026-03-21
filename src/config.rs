@@ -1071,6 +1071,7 @@ workflow = "bug"
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            author: String::new(),
             comments: vec![],
         };
 
