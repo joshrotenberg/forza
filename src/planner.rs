@@ -42,6 +42,10 @@ pub struct PlannedStage {
     pub max_retries: u32,
     /// Shell command that gates execution. Exit 0 = run, non-zero = skip.
     pub condition: Option<String>,
+    /// If true, run command directly instead of invoking an agent.
+    pub agentless: bool,
+    /// Shell command for agentless stages.
+    pub command: Option<String>,
 }
 
 impl PlannedStage {
@@ -133,6 +137,8 @@ pub fn create_plan_with_config(
                 optional: stage.optional,
                 max_retries: stage.max_retries,
                 condition: stage.condition.clone(),
+                agentless: stage.agentless,
+                command: stage.command.clone(),
             }
         })
         .collect();
@@ -177,11 +183,24 @@ fn load_prompt_template(
     }
 }
 
+/// Build the full issue context: body + comments.
+fn issue_context(issue: &IssueCandidate) -> String {
+    let mut context = issue.body.clone();
+    if !issue.comments.is_empty() {
+        context.push_str("\n\n## Discussion\n\n");
+        for (i, comment) in issue.comments.iter().enumerate() {
+            context.push_str(&format!("### Comment {}\n{}\n\n", i + 1, comment));
+        }
+    }
+    context
+}
+
 fn generate_stage_prompt(
     kind: StageKind,
     issue: &IssueCandidate,
     validation_commands: &[String],
 ) -> String {
+    let body = issue_context(issue);
     match kind {
         StageKind::Plan => format!(
             "Read issue #{number} and analyze the codebase to create an implementation plan.\n\n\
@@ -200,7 +219,7 @@ fn generate_stage_prompt(
              Do NOT modify any source files. This is a planning-only stage.",
             number = issue.number,
             title = issue.title,
-            body = issue.body,
+            body = body,
         ),
         StageKind::Implement => {
             let (run_step, commit_num) = if validation_commands.is_empty() {
@@ -321,7 +340,7 @@ fn generate_stage_prompt(
              Issue body:\n{body}",
             number = issue.number,
             title = issue.title,
-            body = issue.body,
+            body = body,
         ),
         StageKind::Research => format!(
             "Research issue #{number}: {title}\n\n\
@@ -330,7 +349,7 @@ fn generate_stage_prompt(
              and write a summary of findings. Save the summary to `.research_breadcrumb.md`.",
             number = issue.number,
             title = issue.title,
-            body = issue.body,
+            body = body,
         ),
         StageKind::Comment => format!(
             "Post a summary comment on issue #{number} with your findings.\n\n\
@@ -394,6 +413,7 @@ mod tests {
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            comments: vec![],
         }
     }
 

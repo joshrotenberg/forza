@@ -11,6 +11,34 @@ pub struct WorkflowTemplate {
     pub stages: Vec<Stage>,
 }
 
+impl Stage {
+    /// Create a new stage with defaults.
+    pub fn new(kind: StageKind) -> Self {
+        Self {
+            kind,
+            optional: false,
+            max_retries: default_retries(),
+            timeout_secs: None,
+            condition: None,
+            agentless: false,
+            command: None,
+        }
+    }
+
+    /// Mark this stage as optional.
+    pub fn optional(mut self) -> Self {
+        self.optional = true;
+        self
+    }
+
+    /// Make this stage agentless with a shell command.
+    pub fn agentless(mut self, command: impl Into<String>) -> Self {
+        self.agentless = true;
+        self.command = Some(command.into());
+        self
+    }
+}
+
 /// A stage in a workflow — a bounded unit of work.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stage {
@@ -25,10 +53,15 @@ pub struct Stage {
     /// Timeout in seconds for this stage.
     pub timeout_secs: Option<u64>,
     /// Shell command that gates execution. Exit 0 = run, non-zero = skip.
-    /// Evaluated with RUNNER_ISSUE_NUMBER, RUNNER_ISSUE_TITLE, RUNNER_ISSUE_BODY,
-    /// and RUNNER_ISSUE_LABELS env vars available.
     #[serde(default)]
     pub condition: Option<String>,
+    /// If true, run the command directly instead of invoking an agent.
+    /// Requires `command` to be set.
+    #[serde(default)]
+    pub agentless: bool,
+    /// Shell command to run for agentless stages.
+    #[serde(default)]
+    pub command: Option<String>,
 }
 
 fn default_retries() -> u32 {
@@ -112,126 +145,36 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
         WorkflowTemplate {
             name: "bug".into(),
             stages: vec![
-                Stage {
-                    kind: StageKind::Plan,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Implement,
-                    optional: false,
-                    max_retries: 2,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Test,
-                    optional: false,
-                    max_retries: 2,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Review,
-                    optional: true,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::OpenPr,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
+                Stage::new(StageKind::Plan),
+                Stage::new(StageKind::Implement),
+                Stage::new(StageKind::Test),
+                Stage::new(StageKind::Review).optional(),
+                Stage::new(StageKind::OpenPr),
             ],
         },
         WorkflowTemplate {
             name: "feature".into(),
             stages: vec![
-                Stage {
-                    kind: StageKind::Plan,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Implement,
-                    optional: false,
-                    max_retries: 2,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Test,
-                    optional: false,
-                    max_retries: 2,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Review,
-                    optional: true,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::OpenPr,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
+                Stage::new(StageKind::Plan),
+                Stage::new(StageKind::Implement),
+                Stage::new(StageKind::Test),
+                Stage::new(StageKind::Review).optional(),
+                Stage::new(StageKind::OpenPr),
             ],
         },
         WorkflowTemplate {
             name: "chore".into(),
             stages: vec![
-                Stage {
-                    kind: StageKind::Implement,
-                    optional: false,
-                    max_retries: 2,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Test,
-                    optional: false,
-                    max_retries: 2,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::OpenPr,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
+                Stage::new(StageKind::Implement),
+                Stage::new(StageKind::Test),
+                Stage::new(StageKind::OpenPr),
             ],
         },
         WorkflowTemplate {
             name: "research".into(),
             stages: vec![
-                Stage {
-                    kind: StageKind::Research,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
-                Stage {
-                    kind: StageKind::Comment,
-                    optional: false,
-                    max_retries: 1,
-                    timeout_secs: None,
-                    condition: None,
-                },
+                Stage::new(StageKind::Research),
+                Stage::new(StageKind::Comment),
             ],
         },
     ]
@@ -268,25 +211,14 @@ mod tests {
 
     #[test]
     fn stage_condition_field_defaults_to_none() {
-        let stage = Stage {
-            kind: StageKind::Review,
-            optional: true,
-            max_retries: 1,
-            timeout_secs: None,
-            condition: None,
-        };
+        let stage = Stage::new(StageKind::Review).optional();
         assert!(stage.condition.is_none());
     }
 
     #[test]
     fn stage_condition_round_trips_via_serde() {
-        let stage = Stage {
-            kind: StageKind::Review,
-            optional: true,
-            max_retries: 1,
-            timeout_secs: None,
-            condition: Some("test -n \"$RUNNER_ISSUE_BODY\"".into()),
-        };
+        let mut stage = Stage::new(StageKind::Review).optional();
+        stage.condition = Some("test -n \"$RUNNER_ISSUE_BODY\"".into());
         let json = serde_json::to_string(&stage).unwrap();
         let restored: Stage = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.condition, stage.condition);
@@ -306,13 +238,7 @@ mod tests {
             .find(|t| t.name == "feature")
             .expect("feature template must exist");
 
-        let clarify_stage = Stage {
-            kind: StageKind::Clarify,
-            optional: false,
-            max_retries: 1,
-            timeout_secs: None,
-            condition: None,
-        };
+        let clarify_stage = Stage::new(StageKind::Clarify);
         let plan_pos = template
             .stages
             .iter()
@@ -362,6 +288,7 @@ mod tests {
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            comments: vec![],
         }
     }
 
@@ -405,13 +332,7 @@ mod tests {
     fn custom_template_shadows_builtin() {
         let custom = WorkflowTemplate {
             name: "bug".to_string(),
-            stages: vec![Stage {
-                kind: StageKind::Comment,
-                optional: false,
-                max_retries: 1,
-                timeout_secs: None,
-                condition: None,
-            }],
+            stages: vec![Stage::new(StageKind::Comment)],
         };
         let mut workflows = std::collections::HashMap::new();
         workflows.insert("bug".to_string(), "bug".to_string());

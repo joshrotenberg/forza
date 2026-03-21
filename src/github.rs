@@ -22,6 +22,9 @@ pub struct IssueCandidate {
     pub updated_at: String,
     pub is_assigned: bool,
     pub html_url: String,
+    /// Issue comments (discussion, design decisions).
+    #[serde(default)]
+    pub comments: Vec<String>,
 }
 
 /// Minimal PR representation for tracking automation-owned PRs.
@@ -48,11 +51,18 @@ struct GhIssue {
     updated_at: String,
     assignees: Vec<serde_json::Value>,
     url: String,
+    #[serde(default)]
+    comments: Vec<GhComment>,
 }
 
 #[derive(Debug, Deserialize)]
 struct GhLabel {
     name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GhComment {
+    body: String,
 }
 
 // GhPr can be used later for PR status checking.
@@ -78,7 +88,7 @@ pub async fn fetch_issue(repo: &str, number: u64) -> Result<IssueCandidate> {
             repo,
             &number.to_string(),
             "--json",
-            "number,title,body,labels,state,createdAt,updatedAt,assignees,url",
+            "number,title,body,labels,state,createdAt,updatedAt,assignees,url,comments",
         ])
         .output()
         .await
@@ -103,6 +113,7 @@ pub async fn fetch_issue(repo: &str, number: u64) -> Result<IssueCandidate> {
         updated_at: raw.updated_at,
         is_assigned: !raw.assignees.is_empty(),
         html_url: raw.url,
+        comments: raw.comments.into_iter().map(|c| c.body).collect(),
     })
 }
 
@@ -120,7 +131,7 @@ pub async fn fetch_eligible_issues(
         "--state".to_string(),
         "open".to_string(),
         "--json".to_string(),
-        "number,title,body,labels,state,createdAt,updatedAt,assignees,url".to_string(),
+        "number,title,body,labels,state,createdAt,updatedAt,assignees,url,comments".to_string(),
         "--limit".to_string(),
         limit.to_string(),
     ];
@@ -157,6 +168,7 @@ pub async fn fetch_eligible_issues(
             updated_at: r.updated_at,
             is_assigned: !r.assignees.is_empty(),
             html_url: r.url,
+            comments: r.comments.into_iter().map(|c| c.body).collect(),
         })
         .collect())
 }
@@ -174,7 +186,7 @@ pub async fn fetch_issues_with_label(repo: &str, label: &str) -> Result<Vec<Issu
             "--label",
             label,
             "--json",
-            "number,title,body,labels,state,createdAt,updatedAt,assignees,url",
+            "number,title,body,labels,state,createdAt,updatedAt,assignees,url,comments",
             "--limit",
             "100",
         ])
@@ -205,6 +217,7 @@ pub async fn fetch_issues_with_label(repo: &str, label: &str) -> Result<Vec<Issu
             updated_at: r.updated_at,
             is_assigned: !r.assignees.is_empty(),
             html_url: r.url,
+            comments: r.comments.into_iter().map(|c| c.body).collect(),
         })
         .collect())
 }
