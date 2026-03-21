@@ -22,6 +22,9 @@ impl Stage {
             condition: None,
             agentless: false,
             command: None,
+            model: None,
+            skills: None,
+            mcp_config: None,
         }
     }
 
@@ -62,6 +65,15 @@ pub struct Stage {
     /// Shell command to run for agentless stages.
     #[serde(default)]
     pub command: Option<String>,
+    /// Override model for this stage.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Override skills for this stage.
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
+    /// Override MCP config file path for this stage.
+    #[serde(default)]
+    pub mcp_config: Option<String>,
 }
 
 fn default_retries() -> u32 {

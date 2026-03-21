@@ -46,6 +46,12 @@ pub struct PlannedStage {
     pub agentless: bool,
     /// Shell command for agentless stages.
     pub command: Option<String>,
+    /// Override model for this stage.
+    pub model: Option<String>,
+    /// Override skills for this stage.
+    pub skills: Option<Vec<String>>,
+    /// Override MCP config file path for this stage.
+    pub mcp_config: Option<String>,
 }
 
 impl PlannedStage {
@@ -139,6 +145,9 @@ pub fn create_plan_with_config(
                 condition: stage.condition.clone(),
                 agentless: stage.agentless,
                 command: stage.command.clone(),
+                model: stage.model.clone(),
+                skills: stage.skills.clone(),
+                mcp_config: stage.mcp_config.clone(),
             }
         })
         .collect();

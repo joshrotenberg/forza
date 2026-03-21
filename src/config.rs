@@ -254,6 +254,37 @@ impl RunnerConfig {
         route.model.as_deref().or(self.global.model.as_deref())
     }
 
+    /// Get the effective skills for a stage+route+global (stage > route > global).
+    pub fn effective_skills<'a>(
+        &'a self,
+        route: &'a Route,
+        stage_skills: Option<&'a [String]>,
+    ) -> &'a [String] {
+        if let Some(s) = stage_skills {
+            return s;
+        }
+        if let Some(ref s) = route.skills {
+            return s.as_slice();
+        }
+        &self.agent_config.skills
+    }
+
+    /// Get the effective MCP config for a stage+route+global (stage > route > global).
+    pub fn effective_mcp_config<'a>(
+        &'a self,
+        route: &'a Route,
+        stage_mcp: Option<&'a str>,
+    ) -> Option<&'a str> {
+        stage_mcp
+            .or(route.mcp_config.as_deref())
+            .or(self.agent_config.mcp_config.as_deref())
+    }
+
+    /// Get the global append_system_prompt from agent_config.
+    pub fn effective_append_system_prompt(&self) -> Option<&str> {
+        self.agent_config.append_system_prompt.as_deref()
+    }
+
     /// Get the effective validation commands for a route.
     pub fn effective_validation<'a>(&'a self, route: &'a Route) -> &'a [String] {
         route

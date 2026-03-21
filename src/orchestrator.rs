@@ -77,10 +77,6 @@ pub async fn process_issue_with_config(
     info!(issue = number, worktree = %worktree_dir.display(), "created worktree");
 
     // 7. Execute stages.
-    let mut adapter = ClaudeAdapter::new();
-    if let Some(model) = config.effective_model(route) {
-        adapter = adapter.model(model);
-    }
     let validation = config.effective_validation(route);
 
     let mut record = RunRecord::new(&run_id, repo, number, &template.name, &branch);
@@ -265,7 +261,31 @@ pub async fn process_issue_with_config(
             continue;
         }
 
-        match adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
+        let stage_model = planned_stage
+            .model
+            .as_deref()
+            .or_else(|| config.effective_model(route));
+        let stage_skills = config.effective_skills(route, planned_stage.skills.as_deref());
+        let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
+        let stage_syspr = config.effective_append_system_prompt();
+        let mut stage_adapter = ClaudeAdapter::new();
+        if let Some(m) = stage_model {
+            stage_adapter = stage_adapter.model(m);
+        }
+        if !stage_skills.is_empty() {
+            stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
+        }
+        if let Some(p) = stage_mcp {
+            stage_adapter = stage_adapter.mcp_config(p);
+        }
+        if let Some(s) = stage_syspr {
+            stage_adapter = stage_adapter.append_system_prompt(s);
+        }
+
+        match stage_adapter
+            .execute_stage(&stage_for_exec, &worktree_dir)
+            .await
+        {
             Ok(result) => {
                 let status = if result.success {
                     StageStatus::Succeeded
@@ -518,6 +538,9 @@ pub async fn process_issue(
             condition: None,
             agentless: false,
             command: None,
+            model: None,
+            skills: None,
+            mcp_config: None,
         };
         let plan_pos = template
             .stages
