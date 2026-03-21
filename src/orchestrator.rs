@@ -101,53 +101,7 @@ pub async fn process_issue_with_config(
         };
         pending_breadcrumb = None;
 
-        if planned_stage.kind == StageKind::OpenPr {
-            match handle_open_pr(repo, &branch, &issue.title, number, &worktree_dir).await {
-                Ok(pr) => {
-                    record.pr_number = Some(pr.number);
-                    info!(
-                        issue = number,
-                        pr = pr.number,
-                        url = pr.html_url,
-                        "created PR"
-                    );
-                    record.record_stage(
-                        planned_stage.kind,
-                        StageStatus::Succeeded,
-                        StageResult {
-                            stage: "open_pr".into(),
-                            success: true,
-                            duration_secs: 0.0,
-                            cost_usd: None,
-                            output: pr.html_url,
-                            files_modified: None,
-                        },
-                    );
-                }
-                Err(e) => {
-                    error!(issue = number, error = %e, "failed to create PR");
-                    record.record_stage(
-                        planned_stage.kind,
-                        StageStatus::Failed,
-                        StageResult {
-                            stage: "open_pr".into(),
-                            success: false,
-                            duration_secs: 0.0,
-                            cost_usd: None,
-                            output: e.to_string(),
-                            files_modified: None,
-                        },
-                    );
-                    all_succeeded = false;
-                    if !planned_stage.optional {
-                        break;
-                    }
-                }
-            }
-            continue;
-        }
-
-        // Skip optional stages if condition says so.
+        // Skip optional stages if condition says so — no hooks run for skipped stages.
         if planned_stage.optional
             && let Some(ref condition) = planned_stage.condition
             && let Ok(o) = tokio::process::Command::new("sh")
@@ -162,6 +116,78 @@ pub async fn process_issue_with_config(
                 stage = planned_stage.kind_name(),
                 "skipping optional stage (condition met)"
             );
+            continue;
+        }
+
+        // Look up per-stage hooks.
+        let stage_hooks = config.stage_hooks.get(planned_stage.kind_name());
+
+        // Run pre hooks before stage execution.
+        if let Some(h) = stage_hooks
+            && !h.pre.is_empty()
+        {
+            run_stage_hooks(&h.pre, &worktree_dir, "pre").await;
+        }
+
+        if planned_stage.kind == StageKind::OpenPr {
+            let open_pr_success =
+                match handle_open_pr(repo, &branch, &issue.title, number, &worktree_dir).await {
+                    Ok(pr) => {
+                        record.pr_number = Some(pr.number);
+                        info!(
+                            issue = number,
+                            pr = pr.number,
+                            url = pr.html_url,
+                            "created PR"
+                        );
+                        record.record_stage(
+                            planned_stage.kind,
+                            StageStatus::Succeeded,
+                            StageResult {
+                                stage: "open_pr".into(),
+                                success: true,
+                                duration_secs: 0.0,
+                                cost_usd: None,
+                                output: pr.html_url,
+                                files_modified: None,
+                            },
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        error!(issue = number, error = %e, "failed to create PR");
+                        record.record_stage(
+                            planned_stage.kind,
+                            StageStatus::Failed,
+                            StageResult {
+                                stage: "open_pr".into(),
+                                success: false,
+                                duration_secs: 0.0,
+                                cost_usd: None,
+                                output: e.to_string(),
+                                files_modified: None,
+                            },
+                        );
+                        false
+                    }
+                };
+            if open_pr_success
+                && let Some(h) = stage_hooks
+                && !h.post.is_empty()
+            {
+                run_stage_hooks(&h.post, &worktree_dir, "post").await;
+            }
+            if let Some(h) = stage_hooks
+                && !h.finally.is_empty()
+            {
+                run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+            }
+            if !open_pr_success {
+                all_succeeded = false;
+                if !planned_stage.optional {
+                    break;
+                }
+            }
             continue;
         }
 
@@ -219,6 +245,17 @@ pub async fn process_issue_with_config(
                 },
                 result,
             );
+            if success
+                && let Some(h) = stage_hooks
+                && !h.post.is_empty()
+            {
+                run_stage_hooks(&h.post, &worktree_dir, "post").await;
+            }
+            if let Some(h) = stage_hooks
+                && !h.finally.is_empty()
+            {
+                run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+            }
             if failed {
                 all_succeeded = false;
                 if !planned_stage.optional {
@@ -261,6 +298,17 @@ pub async fn process_issue_with_config(
                     }
                 }
                 record.record_stage(planned_stage.kind, status, result);
+                if !failed
+                    && let Some(h) = stage_hooks
+                    && !h.post.is_empty()
+                {
+                    run_stage_hooks(&h.post, &worktree_dir, "post").await;
+                }
+                if let Some(h) = stage_hooks
+                    && !h.finally.is_empty()
+                {
+                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+                }
                 if failed {
                     all_succeeded = false;
                     if !planned_stage.optional {
@@ -282,6 +330,11 @@ pub async fn process_issue_with_config(
                         files_modified: None,
                     },
                 );
+                if let Some(h) = stage_hooks
+                    && !h.finally.is_empty()
+                {
+                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+                }
                 all_succeeded = false;
                 if !planned_stage.optional {
                     break;
@@ -877,6 +930,28 @@ fn build_adapter(policy: &RepoPolicy) -> ClaudeAdapter {
         adapter = adapter.model(model);
     }
     adapter
+}
+
+async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &str) {
+    for cmd in hooks {
+        let output = tokio::process::Command::new("sh")
+            .args(["-c", cmd])
+            .current_dir(work_dir)
+            .output()
+            .await;
+        match output {
+            Ok(o) if o.status.success() => {
+                tracing::debug!(command = cmd, hook = label, "hook passed");
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                warn!(command = cmd, hook = label, stderr = %stderr, "hook failed (non-fatal)");
+            }
+            Err(e) => {
+                warn!(command = cmd, hook = label, error = %e, "hook command failed to run");
+            }
+        }
+    }
 }
 
 async fn run_validation(commands: &[String], work_dir: &Path) {
