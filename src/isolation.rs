@@ -96,6 +96,20 @@ pub async fn remove_worktree(
     Ok(())
 }
 
+/// List all worktrees under `repo_dir/base_dir`.
+pub fn list_worktrees(repo_dir: &Path, base_dir: &str) -> Vec<PathBuf> {
+    let dir = repo_dir.join(base_dir);
+    std::fs::read_dir(&dir)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .map(|e| e.path())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Detect the remote default branch (origin/main or origin/master).
 async fn detect_default_branch(repo_dir: &Path) -> String {
     // Try origin/main first, fall back to origin/master, then HEAD.

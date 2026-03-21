@@ -349,6 +349,24 @@ pub fn estimate_cost(workflow: &str, state_dir: &std::path::Path) -> Option<Cost
     })
 }
 
+/// List all run state files (*.json and the `latest` pointer) in `state_dir`.
+pub fn list_run_files(state_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(state_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().and_then(|x| x.to_str()) == Some("json") {
+                files.push(path);
+            }
+        }
+    }
+    let latest = state_dir.join("latest");
+    if latest.exists() {
+        files.push(latest);
+    }
+    files
+}
+
 fn generate_run_id() -> String {
     let now = chrono::Utc::now();
     let timestamp = now.format("%Y%m%d-%H%M%S");
