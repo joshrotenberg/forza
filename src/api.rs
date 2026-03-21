@@ -240,7 +240,8 @@ async fn trigger_issue(
 
         let branch = state.config.branch_for_issue(&issue);
         let run_id = crate::state::generate_run_id();
-        let plan = crate::planner::create_plan(&issue, &template, &branch, None, &run_id);
+        let plan =
+            crate::planner::create_plan_with_config(&issue, &template, &branch, None, &run_id);
         let stages: Vec<String> = plan
             .stages
             .iter()

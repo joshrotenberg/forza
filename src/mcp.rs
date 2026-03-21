@@ -269,7 +269,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                 };
                 let branch = config.branch_for_issue(&issue);
                 let run_id = crate::state::generate_run_id();
-                let plan = crate::planner::create_plan(
+                let plan = crate::planner::create_plan_with_config(
                     &issue, &template, &branch, None, &run_id,
                 );
 

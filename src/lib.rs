@@ -11,7 +11,7 @@
 //! # Architecture
 //!
 //! - **Platform** (`github`): Repository adapter for issues, PRs, comments, labels
-//! - **Domain** (`policy`, `triage`, `planner`, `workflow`): Orchestration logic
+//! - **Domain** (`planner`, `workflow`): Orchestration logic
 //! - **Execution** (`executor`, `isolation`): Agent invocation and work isolation
 
 pub mod api;
@@ -25,10 +25,8 @@ pub mod mcp;
 pub mod notifications;
 pub mod orchestrator;
 pub mod planner;
-pub mod policy;
 pub mod state;
-pub mod triage;
 pub mod workflow;
 
 pub use config::RunnerConfig;
-pub use orchestrator::{process_batch, process_issue, process_pr_with_config};
+pub use orchestrator::process_pr_with_config;

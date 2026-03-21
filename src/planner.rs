@@ -74,20 +74,8 @@ impl PlannedStage {
     }
 }
 
-/// Generate a work plan from an issue, workflow template, and optional repo policy.
-pub fn create_plan(
-    issue: &IssueCandidate,
-    template: &WorkflowTemplate,
-    branch: &str,
-    policy: Option<&crate::policy::RepoPolicy>,
-    run_id: &str,
-) -> WorkPlan {
-    create_plan_with_config(issue, template, branch, policy, None, run_id)
-}
-
 /// Generate a work plan, optionally loading stage prompts from files configured in
-/// `RunnerConfig.prompt_templates`. File-based overrides take precedence over
-/// `RepoPolicy.stage_prompts` in-memory overrides.
+/// `RunnerConfig.prompt_templates`.
 ///
 /// `config` is a tuple of `(RunnerConfig, base_dir)` where `base_dir` is the directory
 /// used to resolve relative file paths (typically the directory containing `runner.toml`).
@@ -95,7 +83,6 @@ pub fn create_plan_with_config(
     issue: &IssueCandidate,
     template: &WorkflowTemplate,
     branch: &str,
-    policy: Option<&crate::policy::RepoPolicy>,
     config: Option<(&RunnerConfig, &Path)>,
     run_id: &str,
 ) -> WorkPlan {
@@ -111,15 +98,8 @@ pub fn create_plan_with_config(
                 && let Some(content) = load_prompt_template(file_path, base_dir, issue, branch)
             {
                 content
-            } else if let Some(override_prompt) =
-                policy.and_then(|p| p.stage_prompts.get(stage_name))
-            {
-                override_prompt.clone()
             } else {
-                let validation_cmds = policy
-                    .map(|p| p.validation_commands.clone())
-                    .unwrap_or_default();
-                generate_stage_prompt(stage.kind, issue, &validation_cmds)
+                generate_stage_prompt(stage.kind, issue, &[])
             };
             // Append breadcrumb write instruction for stages that have a successor so the
             // orchestrator can load the output and prepend it to the next stage's prompt.
@@ -132,14 +112,11 @@ pub fn create_plan_with_config(
             } else {
                 prompt
             };
-            let validation = policy
-                .map(|p| p.validation_commands.clone())
-                .unwrap_or_default();
             PlannedStage {
                 kind: stage.kind,
                 prompt,
                 allowed_files: None,
-                validation,
+                validation: vec![],
                 optional: stage.optional,
                 max_retries: stage.max_retries,
                 condition: stage.condition.clone(),
@@ -620,27 +597,6 @@ mod tests {
         }
     }
 
-    fn make_policy(validation_commands: Vec<String>) -> crate::policy::RepoPolicy {
-        crate::policy::RepoPolicy {
-            repo: "owner/repo".to_string(),
-            eligible_labels: vec![],
-            exclude_labels: vec![],
-            workflows: Default::default(),
-            branch_pattern: "automation/{issue}-{slug}".to_string(),
-            max_concurrency: 3,
-            concurrency: Default::default(),
-            auto_merge: false,
-            agent: "claude".to_string(),
-            model: None,
-            validation_commands,
-            stage_prompts: Default::default(),
-            default_workflow: None,
-            workflow_templates: vec![],
-            skills: vec![],
-            mcp_config: None,
-        }
-    }
-
     #[test]
     fn plan_prompt_contains_issue_number_and_breadcrumb_instruction() {
         let issue = make_issue(42, "feat: add something");
@@ -708,57 +664,6 @@ mod tests {
         assert!(prompt.contains("Do NOT merge"));
     }
 
-    #[test]
-    fn stage_prompt_override_is_used_from_policy() {
-        let issue = make_issue(42, "feat: add something");
-        let mut policy = make_policy(vec![]);
-        policy
-            .stage_prompts
-            .insert("plan".to_string(), "custom plan prompt".to_string());
-        let template = crate::workflow::builtin_templates()
-            .into_iter()
-            .find(|t| t.name == "feature")
-            .unwrap();
-        let plan = create_plan(
-            &issue,
-            &template,
-            "automation/42-feat-add-something",
-            Some(&policy),
-            "run-test",
-        );
-        let plan_stage = plan
-            .stages
-            .iter()
-            .find(|s| s.kind == StageKind::Plan)
-            .unwrap();
-        assert!(plan_stage.prompt.starts_with("custom plan prompt"));
-        assert!(
-            plan_stage
-                .prompt
-                .contains(".forza/breadcrumbs/run-test/plan.md")
-        );
-    }
-
-    #[test]
-    fn validation_commands_propagated_to_planned_stages() {
-        let issue = make_issue(42, "feat: add something");
-        let policy = make_policy(vec!["cargo test --lib".to_string()]);
-        let template = crate::workflow::builtin_templates()
-            .into_iter()
-            .find(|t| t.name == "feature")
-            .unwrap();
-        let plan = create_plan(
-            &issue,
-            &template,
-            "automation/42-feat-add-something",
-            Some(&policy),
-            "run-test",
-        );
-        for stage in &plan.stages {
-            assert_eq!(stage.validation, vec!["cargo test --lib"]);
-        }
-    }
-
     fn make_issue_with_comments(number: u64, title: &str, comments: Vec<String>) -> IssueCandidate {
         IssueCandidate {
             comments,
@@ -804,16 +709,12 @@ mod tests {
     }
 
     #[test]
-    fn file_template_takes_priority_over_policy_stage_prompts() {
+    fn file_template_overrides_builtin() {
         let dir = tempfile::tempdir().unwrap();
         let template_path = dir.path().join("plan_override.md");
         std::fs::write(&template_path, "file-based plan prompt for #{issue_number}").unwrap();
 
         let issue = make_issue(42, "feat: add something");
-        let mut policy = make_policy(vec![]);
-        policy
-            .stage_prompts
-            .insert("plan".to_string(), "policy plan prompt".to_string());
 
         let mut cfg = RunnerConfig {
             global: crate::config::GlobalConfig {
@@ -855,7 +756,6 @@ mod tests {
             &issue,
             &template,
             "automation/42-feat-add-something",
-            Some(&policy),
             Some((&cfg, dir.path())),
             "run-test",
         );
@@ -865,7 +765,6 @@ mod tests {
             .find(|s| s.kind == StageKind::Plan)
             .unwrap();
         assert!(plan_stage.prompt.contains("file-based plan prompt"));
-        assert!(!plan_stage.prompt.contains("policy plan prompt"));
     }
 
     #[test]
@@ -913,7 +812,6 @@ mod tests {
             &issue,
             &template,
             "automation/42-feat-add-something",
-            None,
             Some((&cfg, dir.path())),
             "run-test",
         );
@@ -974,7 +872,6 @@ mod tests {
             &issue,
             &template,
             "automation/42-feat-add-something",
-            None,
             Some((&cfg, dir.path())),
             "run-breadcrumb",
         );
