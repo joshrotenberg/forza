@@ -2,11 +2,25 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Execution strategy for a workflow template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowMode {
+    /// Execute stages in order (default).
+    #[default]
+    Linear,
+    /// On each cycle, evaluate all stage conditions and run the first that passes.
+    Reactive,
+}
+
 /// A named workflow template defining the stage chain for a type of work.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorkflowTemplate {
     /// Template name (e.g., "bug", "feature", "research", "chore").
     pub name: String,
+    /// Execution strategy. Defaults to `Linear`.
+    #[serde(default)]
+    pub mode: WorkflowMode,
     /// Ordered stages to execute.
     pub stages: Vec<Stage>,
 }
@@ -110,6 +124,26 @@ pub enum StageKind {
     Comment,
 }
 
+impl StageKind {
+    /// Human-readable snake_case name for this stage kind.
+    pub fn name(self) -> &'static str {
+        match self {
+            StageKind::Triage => "triage",
+            StageKind::Clarify => "clarify",
+            StageKind::Plan => "plan",
+            StageKind::Implement => "implement",
+            StageKind::Test => "test",
+            StageKind::Review => "review",
+            StageKind::OpenPr => "open_pr",
+            StageKind::RevisePr => "revise_pr",
+            StageKind::FixCi => "fix_ci",
+            StageKind::Merge => "merge",
+            StageKind::Research => "research",
+            StageKind::Comment => "comment",
+        }
+    }
+}
+
 /// Select a workflow template for an issue based on labels and policy.
 ///
 /// Resolution order:
@@ -165,6 +199,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Merge)
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "feature".into(),
@@ -177,6 +212,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Merge)
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "chore".into(),
@@ -187,6 +223,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Merge)
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "research".into(),
@@ -194,10 +231,39 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Research),
                 Stage::new(StageKind::Comment),
             ],
+            ..Default::default()
+        },
+        WorkflowTemplate {
+            name: "pr-maintenance".into(),
+            mode: WorkflowMode::Reactive,
+            stages: vec![
+                Stage {
+                    condition: Some("! gh pr checks --fail-fast 2>/dev/null".into()),
+                    ..Stage::new(StageKind::FixCi)
+                },
+                Stage {
+                    condition: Some(
+                        "gh pr view --json reviewDecision --jq '.reviewDecision' 2>/dev/null \
+                         | grep -q CHANGES_REQUESTED"
+                            .into(),
+                    ),
+                    ..Stage::new(StageKind::RevisePr)
+                },
+                Stage {
+                    condition: Some(
+                        "gh pr checks 2>/dev/null && \
+                         ! gh pr view --json reviewDecision --jq '.reviewDecision' 2>/dev/null \
+                         | grep -q CHANGES_REQUESTED"
+                            .into(),
+                    ),
+                    ..Stage::new(StageKind::Merge).agentless("gh pr merge --squash --delete-branch")
+                },
+            ],
         },
         WorkflowTemplate {
             name: "pr-review".into(),
             stages: vec![Stage::new(StageKind::Review)],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "pr-fix-ci".into(),
@@ -207,6 +273,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                     .optional()
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "pr-rebase".into(),
@@ -216,6 +283,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                     .optional()
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "pr-merge".into(),
@@ -223,6 +291,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Merge)
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
     ]
 }
@@ -411,6 +480,7 @@ mod tests {
         let custom = WorkflowTemplate {
             name: "bug".to_string(),
             stages: vec![Stage::new(StageKind::Comment)],
+            ..Default::default()
         };
         let mut workflows = std::collections::HashMap::new();
         workflows.insert("bug".to_string(), "bug".to_string());
@@ -420,5 +490,73 @@ mod tests {
         assert_eq!(tmpl.name, "bug");
         assert_eq!(tmpl.stages.len(), 1);
         assert_eq!(tmpl.stages[0].kind, StageKind::Comment);
+    }
+
+    #[test]
+    fn workflow_mode_default_is_linear() {
+        let tmpl = WorkflowTemplate {
+            name: "test".to_string(),
+            stages: vec![],
+            ..Default::default()
+        };
+        assert_eq!(tmpl.mode, WorkflowMode::Linear);
+    }
+
+    #[test]
+    fn workflow_mode_serde_round_trip() {
+        let tmpl = WorkflowTemplate {
+            name: "test".to_string(),
+            mode: WorkflowMode::Reactive,
+            stages: vec![],
+        };
+        let json = serde_json::to_string(&tmpl).unwrap();
+        let restored: WorkflowTemplate = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.mode, WorkflowMode::Reactive);
+    }
+
+    #[test]
+    fn workflow_mode_absent_in_json_defaults_to_linear() {
+        let json = r#"{"name":"test","stages":[]}"#;
+        let tmpl: WorkflowTemplate = serde_json::from_str(json).unwrap();
+        assert_eq!(tmpl.mode, WorkflowMode::Linear);
+    }
+
+    #[test]
+    fn pr_maintenance_template_is_reactive() {
+        let tmpl = builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "pr-maintenance")
+            .expect("pr-maintenance template must exist");
+        assert_eq!(tmpl.mode, WorkflowMode::Reactive);
+    }
+
+    #[test]
+    fn pr_maintenance_template_has_expected_stages() {
+        let tmpl = builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "pr-maintenance")
+            .expect("pr-maintenance template must exist");
+        let kinds: Vec<StageKind> = tmpl.stages.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&StageKind::FixCi), "must have FixCi stage");
+        assert!(
+            kinds.contains(&StageKind::RevisePr),
+            "must have RevisePr stage"
+        );
+        assert!(kinds.contains(&StageKind::Merge), "must have Merge stage");
+    }
+
+    #[test]
+    fn pr_maintenance_all_stages_have_conditions() {
+        let tmpl = builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "pr-maintenance")
+            .expect("pr-maintenance template must exist");
+        for stage in &tmpl.stages {
+            assert!(
+                stage.condition.is_some(),
+                "pr-maintenance stage {:?} must have a condition",
+                stage.kind
+            );
+        }
     }
 }

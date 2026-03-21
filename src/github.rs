@@ -36,7 +36,7 @@ pub struct PullRequest {
     pub html_url: String,
 }
 
-/// A normalized PR representation for label-driven PR workflows.
+/// A normalized PR representation for PR workflows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrCandidate {
     pub number: u64,
@@ -49,6 +49,8 @@ pub struct PrCandidate {
     pub head_branch: String,
     pub base_branch: String,
     pub is_draft: bool,
+    pub mergeable: Option<String>,
+    pub review_decision: Option<String>,
 }
 
 // ── Raw gh CLI JSON shapes (private) ─────────────────────────────────
@@ -87,6 +89,10 @@ struct GhPrFull {
     body: Option<String>,
     labels: Vec<GhLabel>,
     state: String,
+    #[serde(default)]
+    mergeable: Option<String>,
+    #[serde(rename = "reviewDecision", default)]
+    review_decision: Option<String>,
     url: String,
     #[serde(rename = "headRefName")]
     head_ref_name: String,
@@ -94,6 +100,22 @@ struct GhPrFull {
     base_ref_name: String,
     #[serde(rename = "isDraft")]
     is_draft: bool,
+}
+
+// Raw shape for `gh pr list` in reactive workflows (minimal fields).
+#[derive(Debug, Deserialize)]
+struct GhPrRaw {
+    number: u64,
+    title: String,
+    #[serde(rename = "headRefName")]
+    head_ref_name: String,
+    state: String,
+    labels: Vec<GhLabel>,
+    #[serde(default)]
+    mergeable: Option<String>,
+    #[serde(rename = "reviewDecision", default)]
+    review_decision: Option<String>,
+    url: String,
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -388,6 +410,63 @@ pub async fn create_label(repo: &str, name: &str, color: &str, description: &str
     Ok(())
 }
 
+/// Fetch open PRs matching a set of labels for reactive maintenance workflows.
+pub async fn fetch_eligible_prs(
+    repo: &str,
+    labels: &[String],
+    limit: usize,
+) -> Result<Vec<PrCandidate>> {
+    let mut args = vec![
+        "pr".to_string(),
+        "list".to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        "--state".to_string(),
+        "open".to_string(),
+        "--json".to_string(),
+        "number,title,headRefName,state,labels,mergeable,reviewDecision,url".to_string(),
+        "--limit".to_string(),
+        limit.to_string(),
+    ];
+
+    for label in labels {
+        args.push("--label".to_string());
+        args.push(label.clone());
+    }
+
+    let output = tokio::process::Command::new("gh")
+        .args(&args)
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr list failed: {stderr}")));
+    }
+
+    let raw: Vec<GhPrRaw> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| Error::GitHub(format!("failed to parse gh output: {e}")))?;
+
+    Ok(raw
+        .into_iter()
+        .map(|r| PrCandidate {
+            number: r.number,
+            repo: repo.to_string(),
+            title: r.title,
+            body: String::new(),
+            labels: r.labels.into_iter().map(|l| l.name).collect(),
+            state: r.state,
+            html_url: r.url,
+            head_branch: r.head_ref_name,
+            base_branch: String::new(),
+            is_draft: false,
+            mergeable: r.mergeable,
+            review_decision: r.review_decision,
+        })
+        .collect())
+}
+
 /// Fetch a PR from GitHub.
 pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
     let output = tokio::process::Command::new("gh")
@@ -398,7 +477,7 @@ pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
             repo,
             &number.to_string(),
             "--json",
-            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision",
         ])
         .output()
         .await
@@ -423,6 +502,8 @@ pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
         head_branch: raw.head_ref_name,
         base_branch: raw.base_ref_name,
         is_draft: raw.is_draft,
+        mergeable: raw.mergeable,
+        review_decision: raw.review_decision,
     })
 }
 
@@ -439,7 +520,7 @@ pub async fn fetch_prs_with_label(repo: &str, label: &str) -> Result<Vec<PrCandi
             "--label",
             label,
             "--json",
-            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision",
             "--limit",
             "100",
         ])
@@ -470,6 +551,8 @@ pub async fn fetch_prs_with_label(repo: &str, label: &str) -> Result<Vec<PrCandi
             head_branch: r.head_ref_name,
             base_branch: r.base_ref_name,
             is_draft: r.is_draft,
+            mergeable: r.mergeable,
+            review_decision: r.review_decision,
         })
         .collect())
 }
