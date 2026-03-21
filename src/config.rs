@@ -437,6 +437,18 @@ fn default_poll_interval() -> u64 {
     300
 }
 
+/// CLI-level overrides that take precedence over all config-file settings.
+///
+/// Built from `--model` and `--skill` flags and passed into the orchestrator so
+/// that per-run CLI flags win over stage, route, and global config.
+#[derive(Debug, Clone, Default)]
+pub struct CliOverrides {
+    /// Override the model for every stage in the run.
+    pub model: Option<String>,
+    /// Override the skill files for every stage in the run.
+    pub skills: Vec<String>,
+}
+
 // ── Implementation ──────────────────────────────────────────────────
 
 impl RunnerConfig {
