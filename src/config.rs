@@ -172,10 +172,7 @@ impl SecurityConfig {
     ///
     /// Levels `"contributor"` and `"trusted"` allow push; `"sandbox"` and `"local"` do not.
     pub fn allows_push(&self) -> bool {
-        matches!(
-            self.authorization_level.as_str(),
-            "contributor" | "trusted"
-        )
+        matches!(self.authorization_level.as_str(), "contributor" | "trusted")
     }
 
     /// Returns `true` when the authorization level permits merging a PR.
