@@ -1,5 +1,10 @@
 # forza
 
+[![Crates.io](https://img.shields.io/crates/v/forza.svg)](https://crates.io/crates/forza)
+[![docs.rs](https://docs.rs/forza/badge.svg)](https://docs.rs/forza)
+[![License](https://img.shields.io/crates/l/forza.svg)](LICENSE-MIT)
+[![CI](https://github.com/joshrotenberg/forza/actions/workflows/ci.yml/badge.svg)](https://github.com/joshrotenberg/forza/actions/workflows/ci.yml)
+
 Configurable workflow orchestrator for agent driven software development.
 
 ## How it works
