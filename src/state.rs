@@ -235,6 +235,16 @@ pub fn load_all_runs(state_dir: &std::path::Path) -> Vec<RunRecord> {
     records
 }
 
+/// Find the most recent run for a given issue number.
+pub fn find_latest_run_for_issue(
+    issue_number: u64,
+    state_dir: &std::path::Path,
+) -> Option<RunRecord> {
+    load_all_runs(state_dir)
+        .into_iter()
+        .find(|r| r.issue_number == issue_number)
+}
+
 /// Per-workflow aggregate stats.
 #[derive(Debug, Clone)]
 pub struct WorkflowSummary {
