@@ -136,47 +136,55 @@ pub async fn process_issue_with_config(
         }
 
         if planned_stage.kind == StageKind::OpenPr {
-            let open_pr_success =
-                match handle_open_pr(repo, &branch, &issue.title, number, &worktree_dir).await {
-                    Ok(pr) => {
-                        record.pr_number = Some(pr.number);
-                        info!(
-                            issue = number,
-                            pr = pr.number,
-                            url = pr.html_url,
-                            "created PR"
-                        );
-                        record.record_stage(
-                            planned_stage.kind,
-                            StageStatus::Succeeded,
-                            StageResult {
-                                stage: "open_pr".into(),
-                                success: true,
-                                duration_secs: 0.0,
-                                cost_usd: None,
-                                output: pr.html_url,
-                                files_modified: None,
-                            },
-                        );
-                        true
-                    }
-                    Err(e) => {
-                        error!(issue = number, error = %e, "failed to create PR");
-                        record.record_stage(
-                            planned_stage.kind,
-                            StageStatus::Failed,
-                            StageResult {
-                                stage: "open_pr".into(),
-                                success: false,
-                                duration_secs: 0.0,
-                                cost_usd: None,
-                                output: e.to_string(),
-                                files_modified: None,
-                            },
-                        );
-                        false
-                    }
-                };
+            let open_pr_success = match handle_open_pr(
+                repo,
+                &branch,
+                &issue,
+                &record,
+                &run_id,
+                &worktree_dir,
+            )
+            .await
+            {
+                Ok(pr) => {
+                    record.pr_number = Some(pr.number);
+                    info!(
+                        issue = number,
+                        pr = pr.number,
+                        url = pr.html_url,
+                        "created PR"
+                    );
+                    record.record_stage(
+                        planned_stage.kind,
+                        StageStatus::Succeeded,
+                        StageResult {
+                            stage: "open_pr".into(),
+                            success: true,
+                            duration_secs: 0.0,
+                            cost_usd: None,
+                            output: pr.html_url,
+                            files_modified: None,
+                        },
+                    );
+                    true
+                }
+                Err(e) => {
+                    error!(issue = number, error = %e, "failed to create PR");
+                    record.record_stage(
+                        planned_stage.kind,
+                        StageStatus::Failed,
+                        StageResult {
+                            stage: "open_pr".into(),
+                            success: false,
+                            duration_secs: 0.0,
+                            cost_usd: None,
+                            output: e.to_string(),
+                            files_modified: None,
+                        },
+                    );
+                    false
+                }
+            };
             if open_pr_success
                 && let Some(h) = stage_hooks
                 && !h.post.is_empty()
@@ -758,7 +766,7 @@ pub async fn process_issue(
 
         // Handle OpenPr specially — it's a platform operation.
         if planned_stage.kind == StageKind::OpenPr {
-            match handle_open_pr(repo, &branch, &issue.title, number, &worktree_dir).await {
+            match handle_open_pr(repo, &branch, &issue, &record, &run_id, &worktree_dir).await {
                 Ok(pr) => {
                     record.pr_number = Some(pr.number);
                     info!(
@@ -984,10 +992,13 @@ pub async fn process_issue(
 async fn handle_open_pr(
     repo: &str,
     branch: &str,
-    issue_title: &str,
-    issue_number: u64,
+    issue: &github::IssueCandidate,
+    record: &RunRecord,
+    run_id: &str,
     work_dir: &Path,
 ) -> Result<github::PullRequest> {
+    let issue_number = issue.number;
+
     // Commit any uncommitted changes (tracked files only — skip breadcrumbs/temp files).
     let status = tokio::process::Command::new("git")
         .args(["status", "--porcelain"])
@@ -1042,17 +1053,96 @@ async fn handle_open_pr(
     // Push (force to handle stale remote branches from previous failed runs).
     github::push_branch_force(work_dir, branch).await?;
 
-    // Create PR.
-    let body = format!(
+    // Read plan and review breadcrumbs — missing files are silently ignored.
+    let crumb_base = work_dir.join(".forza").join("breadcrumbs").join(run_id);
+    let plan_crumb = std::fs::read_to_string(crumb_base.join("plan.md")).unwrap_or_default();
+    let review_crumb = std::fs::read_to_string(crumb_base.join("review.md")).unwrap_or_default();
+
+    // Get diff stat relative to origin/main — failure yields empty string.
+    let diff_stat = tokio::process::Command::new("git")
+        .args(["diff", "--stat", "origin/main"])
+        .current_dir(work_dir)
+        .output()
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    let body = build_pr_body(issue, record, &plan_crumb, &review_crumb, &diff_stat);
+
+    github::create_pull_request(repo, branch, &issue.title, &body, work_dir).await
+}
+
+fn build_pr_body(
+    issue: &github::IssueCandidate,
+    record: &RunRecord,
+    plan_crumb: &str,
+    review_crumb: &str,
+    diff_stat: &str,
+) -> String {
+    let issue_number = issue.number;
+
+    // Build stage table rows.
+    let mut stage_rows = String::new();
+    let mut total_cost = 0.0f64;
+    let mut has_cost = false;
+    for stage in &record.stages {
+        let name = stage.kind_name();
+        let status = match stage.status {
+            StageStatus::Succeeded => "succeeded",
+            StageStatus::Failed => "failed",
+            StageStatus::Skipped => "skipped",
+            StageStatus::Pending => "pending",
+            StageStatus::Running => "running",
+            StageStatus::Waiting => "waiting",
+        };
+        let (duration_str, cost_str) = if let Some(ref result) = stage.result {
+            let dur = format!("{:.1}s", result.duration_secs);
+            let cost = if let Some(c) = result.cost_usd {
+                has_cost = true;
+                total_cost += c;
+                format!("${c:.4}")
+            } else {
+                "-".to_string()
+            };
+            (dur, cost)
+        } else {
+            ("-".to_string(), "-".to_string())
+        };
+        stage_rows.push_str(&format!(
+            "| {name} | {status} | {duration_str} | {cost_str} |\n"
+        ));
+    }
+
+    let mut body = format!(
         "## Summary\n\n\
-         Automated implementation for #{issue_number}.\n\n\
-         ## Test plan\n\n\
-         - [ ] CI passes\n\
-         - [ ] Manual review\n\n\
-         Closes #{issue_number}"
+         Automated implementation for [#{issue_number}]({issue_url}) — {issue_title}.\n\n\
+         ## Stages\n\n\
+         | Stage | Status | Duration | Cost |\n\
+         |-------|--------|----------|------|\n\
+         {stage_rows}",
+        issue_url = issue.html_url,
+        issue_title = issue.title,
     );
 
-    github::create_pull_request(repo, branch, issue_title, &body, work_dir).await
+    if has_cost {
+        body.push_str(&format!("\n**Total cost:** ${total_cost:.4}\n"));
+    }
+
+    if !diff_stat.trim().is_empty() {
+        body.push_str(&format!("\n## Files changed\n\n```\n{diff_stat}```\n"));
+    }
+
+    if !plan_crumb.trim().is_empty() {
+        body.push_str(&format!("\n## Plan\n\n{plan_crumb}\n"));
+    }
+
+    if !review_crumb.trim().is_empty() {
+        body.push_str(&format!("\n## Review\n\n{review_crumb}\n"));
+    }
+
+    body.push_str(&format!("\nCloses #{issue_number}"));
+
+    body
 }
 
 /// Evaluate a stage condition shell command. Returns `true` if the stage should be skipped.
@@ -1395,5 +1485,94 @@ concurrency = 1
             simulate_scheduling_pass(&one_pending, 1, &apr_after, 2, &config);
         assert_eq!(scheduled, 1);
         assert_eq!(deferred, 0);
+    }
+
+    #[test]
+    fn build_pr_body_includes_stage_table_and_breadcrumbs() {
+        use crate::executor::StageResult;
+        use crate::state::{RunRecord, StageStatus};
+        use crate::workflow::StageKind;
+
+        let issue = IssueCandidate {
+            number: 42,
+            repo: "owner/repo".into(),
+            title: "Add feature X".into(),
+            body: String::new(),
+            labels: vec![],
+            state: "open".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            is_assigned: false,
+            html_url: "https://github.com/owner/repo/issues/42".into(),
+            comments: vec![],
+        };
+
+        let mut record = RunRecord::new("run-test", "owner/repo", 42, "feature", "feat/42");
+        record.record_stage(
+            StageKind::Plan,
+            StageStatus::Succeeded,
+            StageResult {
+                stage: "plan".into(),
+                success: true,
+                duration_secs: 10.5,
+                cost_usd: Some(0.05),
+                output: String::new(),
+                files_modified: None,
+            },
+        );
+        record.record_stage(
+            StageKind::Implement,
+            StageStatus::Succeeded,
+            StageResult {
+                stage: "implement".into(),
+                success: true,
+                duration_secs: 45.0,
+                cost_usd: Some(0.20),
+                output: String::new(),
+                files_modified: None,
+            },
+        );
+
+        let body = super::build_pr_body(
+            &issue,
+            &record,
+            "Plan summary here.",
+            "Review notes here.",
+            "src/lib.rs | 10 ++--\n1 file changed",
+        );
+
+        assert!(body.contains("## Summary"));
+        assert!(body.contains("[#42](https://github.com/owner/repo/issues/42)"));
+        assert!(body.contains("Add feature X"));
+        assert!(body.contains("## Stages"));
+        assert!(body.contains("| plan | succeeded | 10.5s | $0.0500 |"));
+        assert!(body.contains("| implement | succeeded | 45.0s | $0.2000 |"));
+        assert!(body.contains("**Total cost:** $0.2500"));
+        assert!(body.contains("## Files changed"));
+        assert!(body.contains("src/lib.rs | 10 ++--"));
+        assert!(body.contains("## Plan"));
+        assert!(body.contains("Plan summary here."));
+        assert!(body.contains("## Review"));
+        assert!(body.contains("Review notes here."));
+        assert!(body.contains("Closes #42"));
+    }
+
+    #[test]
+    fn build_pr_body_empty_breadcrumbs_and_diff() {
+        use crate::state::RunRecord;
+
+        let issue = make_issue(7, vec![]);
+        let record = RunRecord::new("run-empty", "owner/repo", 7, "bug", "fix/7");
+
+        let body = super::build_pr_body(&issue, &record, "", "", "");
+
+        assert!(body.contains("## Summary"));
+        assert!(body.contains("#7"));
+        assert!(body.contains("## Stages"));
+        assert!(!body.contains("## Files changed"));
+        assert!(!body.contains("## Plan"));
+        assert!(!body.contains("## Review"));
+        assert!(!body.contains("Total cost"));
+        assert!(body.contains("Closes #7"));
     }
 }
