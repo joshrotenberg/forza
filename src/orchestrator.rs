@@ -123,7 +123,9 @@ pub async fn process_issue_with_config(
         let stage_hooks = config.stage_hooks.get(planned_stage.kind_name());
 
         // Run pre hooks before stage execution.
-        if let Some(h) = stage_hooks && !h.pre.is_empty() {
+        if let Some(h) = stage_hooks
+            && !h.pre.is_empty()
+        {
             run_stage_hooks(&h.pre, &worktree_dir, "pre").await;
         }
 
@@ -175,7 +177,9 @@ pub async fn process_issue_with_config(
             {
                 run_stage_hooks(&h.post, &worktree_dir, "post").await;
             }
-            if let Some(h) = stage_hooks && !h.finally.is_empty() {
+            if let Some(h) = stage_hooks
+                && !h.finally.is_empty()
+            {
                 run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
             }
             if !open_pr_success {
@@ -247,7 +251,9 @@ pub async fn process_issue_with_config(
             {
                 run_stage_hooks(&h.post, &worktree_dir, "post").await;
             }
-            if let Some(h) = stage_hooks && !h.finally.is_empty() {
+            if let Some(h) = stage_hooks
+                && !h.finally.is_empty()
+            {
                 run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
             }
             if failed {
@@ -298,7 +304,9 @@ pub async fn process_issue_with_config(
                 {
                     run_stage_hooks(&h.post, &worktree_dir, "post").await;
                 }
-                if let Some(h) = stage_hooks && !h.finally.is_empty() {
+                if let Some(h) = stage_hooks
+                    && !h.finally.is_empty()
+                {
                     run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
                 }
                 if failed {
@@ -322,7 +330,9 @@ pub async fn process_issue_with_config(
                         files_modified: None,
                     },
                 );
-                if let Some(h) = stage_hooks && !h.finally.is_empty() {
+                if let Some(h) = stage_hooks
+                    && !h.finally.is_empty()
+                {
                     run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
                 }
                 all_succeeded = false;
