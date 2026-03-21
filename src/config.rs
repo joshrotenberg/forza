@@ -167,13 +167,16 @@ pub struct AgentConfig {
     pub append_system_prompt: Option<String>,
 }
 
-/// Pre/post hooks for a specific stage.
+/// Pre/post/finally hooks for a specific stage.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StageHooks {
     #[serde(default)]
     pub pre: Vec<String>,
     #[serde(default)]
     pub post: Vec<String>,
+    /// Runs after the stage regardless of success or failure.
+    #[serde(default)]
+    pub finally: Vec<String>,
 }
 
 // ── Defaults ────────────────────────────────────────────────────────
@@ -458,6 +461,34 @@ model = "opus"
             config.effective_model(&config.routes["bugfix"]),
             Some("opus")
         );
+    }
+
+    #[test]
+    fn stage_hooks_finally_field() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[stage_hooks.implement]
+pre = ["echo pre"]
+post = ["cargo fmt --all"]
+finally = ["echo done"]
+
+[stage_hooks.test]
+post = ["cargo test --lib"]
+"#,
+        )
+        .unwrap();
+
+        let implement = config.stage_hooks.get("implement").unwrap();
+        assert_eq!(implement.pre, vec!["echo pre"]);
+        assert_eq!(implement.post, vec!["cargo fmt --all"]);
+        assert_eq!(implement.finally, vec!["echo done"]);
+
+        let test_hooks = config.stage_hooks.get("test").unwrap();
+        assert!(test_hooks.pre.is_empty());
+        assert!(test_hooks.finally.is_empty());
     }
 
     #[test]

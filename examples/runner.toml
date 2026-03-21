@@ -178,12 +178,20 @@ stages = [
 # append_system_prompt = "Project-specific rules."
 
 # ── Per-stage hooks ──────────────────────────────────────────────────
+#
+# pre   — runs before the stage executes
+# post  — runs after the stage succeeds
+# finally — runs after the stage regardless of success or failure
+#
+# Hook failures are non-fatal (logged as warnings, execution continues).
 
-# [stage_hooks.implement]
-# post = ["cargo fmt --all"]
+[stage_hooks.implement]
+post = ["cargo fmt --all"]
+# finally = ["echo 'implement stage done'"]
 
-# [stage_hooks.test]
-# post = ["cargo test --lib"]
+[stage_hooks.test]
+post = ["cargo test --lib"]
 
-# [stage_hooks.open_pr]
-# pre = ["cargo test --all-features"]
+[stage_hooks.open_pr]
+pre = ["cargo test --all-features"]
+# finally = ["echo 'PR stage complete'"]
