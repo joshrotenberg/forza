@@ -134,13 +134,13 @@ async fn resolve_repo_for_api(
                 None => {
                     return Err(ApiError::BadRequest(format!(
                         "repo '{r}' not found in config"
-                    )))
+                    )));
                 }
             },
             None => {
                 return Err(ApiError::BadRequest(
                     "multiple repos configured — use ?repo= to specify which one".into(),
-                ))
+                ));
             }
         }
     };
@@ -181,9 +181,7 @@ async fn list_runs(State(state): State<Arc<AppState>>) -> Json<Vec<RunRecord>> {
     Json(crate::state::load_all_runs(&state.state_dir))
 }
 
-async fn latest_run(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<RunRecord>, ApiError> {
+async fn latest_run(State(state): State<Arc<AppState>>) -> Result<Json<RunRecord>, ApiError> {
     crate::state::load_latest(&state.state_dir)
         .map(Json)
         .ok_or_else(|| ApiError::NotFound("no runs found".into()))
@@ -198,9 +196,7 @@ async fn get_run(
         .ok_or_else(|| ApiError::NotFound(format!("run not found: {run_id}")))
 }
 
-async fn get_status(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<WorkflowSummaryResponse>> {
+async fn get_status(State(state): State<Arc<AppState>>) -> Json<Vec<WorkflowSummaryResponse>> {
     let summaries = crate::state::summarize_by_workflow(&state.state_dir)
         .into_iter()
         .map(WorkflowSummaryResponse::from)
@@ -221,8 +217,7 @@ async fn trigger_issue(
     Query(query): Query<TriggerQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Response, ApiError> {
-    let (repo, rd, routes) =
-        resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
+    let (repo, rd, routes) = resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
 
     if query.dry_run.unwrap_or(false) {
         let issue = crate::github::fetch_issue(&repo, number)
@@ -292,8 +287,7 @@ async fn trigger_pr(
     Query(query): Query<TriggerQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Response, ApiError> {
-    let (repo, rd, routes) =
-        resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
+    let (repo, rd, routes) = resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
 
     if query.dry_run.unwrap_or(false) {
         let pr = crate::github::fetch_pr(&repo, number)
