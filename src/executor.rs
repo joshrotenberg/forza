@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::error::{Error, Result};
 use crate::planner::PlannedStage;
@@ -94,7 +94,8 @@ impl Default for ClaudeAdapter {
 
 impl AgentAdapter for ClaudeAdapter {
     async fn execute_stage(&self, stage: &PlannedStage, work_dir: &Path) -> Result<StageResult> {
-        use claude_wrapper::{Claude, ClaudeCommand, OutputFormat, PermissionMode, QueryCommand};
+        use claude_wrapper::streaming::{StreamEvent, stream_query};
+        use claude_wrapper::{Claude, OutputFormat, PermissionMode, QueryCommand};
 
         let start = std::time::Instant::now();
 
@@ -107,7 +108,7 @@ impl AgentAdapter for ClaudeAdapter {
             .map_err(|e| Error::Executor(format!("failed to create claude client: {e}")))?;
 
         let mut cmd = QueryCommand::new(&stage.prompt)
-            .output_format(OutputFormat::Json)
+            .output_format(OutputFormat::StreamJson)
             .permission_mode(PermissionMode::BypassPermissions)
             .no_session_persistence();
 
@@ -171,21 +172,22 @@ impl AgentAdapter for ClaudeAdapter {
             "executing stage"
         );
 
-        let output = cmd
-            .execute(&claude)
-            .await
-            .map_err(|e| Error::Executor(format!("claude execution failed: {e}")))?;
+        let mut captured_cost: Option<f64> = None;
+        let output = stream_query(&claude, &cmd, |event: StreamEvent| {
+            if let Some(t) = event.event_type() {
+                debug!(stage = stage.kind_name(), event_type = t, "tool event");
+            }
+            if event.is_result()
+                && let Some(cost) = event.cost_usd()
+            {
+                captured_cost = Some(cost);
+            }
+        })
+        .await
+        .map_err(|e| Error::Executor(format!("claude execution failed: {e}")))?;
 
         let duration = start.elapsed();
-
-        // Parse cost from JSON output if available.
-        let cost_usd = serde_json::from_str::<serde_json::Value>(&output.stdout)
-            .ok()
-            .and_then(|v| {
-                v.get("total_cost_usd")
-                    .or_else(|| v.get("cost_usd"))
-                    .and_then(|c| c.as_f64())
-            });
+        let cost_usd = captured_cost;
 
         Ok(StageResult {
             stage: stage.kind_name().to_string(),
