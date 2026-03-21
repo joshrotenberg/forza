@@ -179,6 +179,13 @@ async fn main() -> ExitCode {
         Err(code) => return code,
     };
 
+    if !matches!(cli.command, Command::Status(_) | Command::Clean(_))
+        && let Err(e) = forza::deps::validate_dependencies(&config.global.agent).await
+    {
+        eprintln!("error: {e}");
+        return ExitCode::FAILURE;
+    }
+
     match cli.command {
         Command::Init(_) => unreachable!(),
         Command::Issue(args) => cmd_issue(args, &config).await,

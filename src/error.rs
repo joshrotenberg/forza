@@ -25,6 +25,9 @@ pub enum Error {
     #[error("state error: {0}")]
     State(String),
 
+    #[error("dependency error: {0}")]
+    Dependency(String),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
