@@ -210,7 +210,9 @@ async fn cmd_run(args: RunArgs, config: &forza::RunnerConfig) -> ExitCode {
     let rd = repo_dir(&args.repo_dir, config);
     let sd = state_dir();
 
-    let records = forza::orchestrator::process_batch_with_config(config, &sd, &rd).await;
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let records =
+        forza::orchestrator::process_batch_with_config(config, &sd, &rd, &cancel_rx).await;
 
     println!();
     let succeeded = records
@@ -251,8 +253,30 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
         "starting watch mode"
     );
 
+    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+
+    // SIGTERM handler (Unix only).
+    #[cfg(unix)]
+    {
+        let tx = cancel_tx.clone();
+        tokio::spawn(async move {
+            use tokio::signal::unix::{SignalKind, signal};
+            if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+                sigterm.recv().await;
+                let _ = tx.send(true);
+            }
+        });
+    }
+
+    // SIGINT / Ctrl-C handler (all platforms).
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        let _ = cancel_tx.send(true);
+    });
+
     loop {
-        let records = forza::orchestrator::process_batch_with_config(config, &sd, &rd).await;
+        let records =
+            forza::orchestrator::process_batch_with_config(config, &sd, &rd, &cancel_rx).await;
         if !records.is_empty() {
             let succeeded = records
                 .iter()
@@ -264,8 +288,20 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
                 "batch complete"
             );
         }
-        tokio::time::sleep(interval_dur).await;
+
+        if *cancel_rx.borrow() {
+            break;
+        }
+
+        let mut cancel_rx_sleep = cancel_rx.clone();
+        tokio::select! {
+            _ = tokio::time::sleep(interval_dur) => {},
+            _ = cancel_rx_sleep.changed() => break,
+        }
     }
+
+    info!("watch mode stopped, exiting cleanly");
+    ExitCode::SUCCESS
 }
 
 fn cmd_status(args: StatusArgs) -> ExitCode {
