@@ -56,6 +56,26 @@ pub enum StageStatus {
     Waiting,
 }
 
+/// The outcome of a route execution — what the run produced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteOutcome {
+    /// A new PR was created from an issue workflow.
+    PrCreated { number: u64 },
+    /// An existing PR was updated (rebased, CI fixed, etc.).
+    PrUpdated { number: u64 },
+    /// A PR was merged.
+    PrMerged { number: u64 },
+    /// A comment was posted (e.g., research workflow).
+    CommentPosted,
+    /// No action was needed (e.g., reactive mode found nothing to do).
+    NothingToDo,
+    /// The run failed at a specific stage.
+    Failed { stage: String, error: String },
+    /// Retry budget was exhausted — needs human intervention.
+    Exhausted { retries: usize },
+}
+
 /// A persisted run record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
@@ -84,6 +104,9 @@ pub struct RunRecord {
     /// Whether this run is for an issue or a PR.
     #[serde(default)]
     pub subject_kind: SubjectKind,
+    /// The outcome of the run — what it produced.
+    #[serde(default)]
+    pub outcome: Option<RouteOutcome>,
 }
 
 /// Per-stage record within a run.
@@ -148,6 +171,7 @@ impl RunRecord {
             completed_at: None,
             total_cost_usd: None,
             subject_kind: SubjectKind::Issue,
+            outcome: None,
         }
     }
 
@@ -172,6 +196,7 @@ impl RunRecord {
             completed_at: None,
             total_cost_usd: None,
             subject_kind: SubjectKind::Pr,
+            outcome: None,
         }
     }
 
@@ -465,6 +490,7 @@ mod tests {
             completed_at: None,
             total_cost_usd: cost,
             subject_kind: SubjectKind::Issue,
+            outcome: None,
         }
     }
 

@@ -169,6 +169,10 @@ pub async fn process_issue_with_overrides(
                 cap = cap,
                 "hourly cost cap exceeded, aborting run"
             );
+            record.outcome = Some(state::RouteOutcome::Failed {
+                stage: "cost_cap".to_string(),
+                error: format!("hourly cost cap exceeded: ${spent:.4} >= ${cap:.4}"),
+            });
             record.finish(RunStatus::Failed);
             state::save_run(&record, state_dir)?;
             return Ok(record);
@@ -516,9 +520,30 @@ pub async fn process_issue_with_overrides(
     } else {
         RunStatus::Failed
     };
+    record.outcome = Some(if all_succeeded {
+        if let Some(pr) = record.pr_number {
+            state::RouteOutcome::PrCreated { number: pr }
+        } else {
+            state::RouteOutcome::CommentPosted
+        }
+    } else {
+        let failed_stage = record
+            .stages
+            .iter()
+            .find(|s| s.status == state::StageStatus::Failed);
+        state::RouteOutcome::Failed {
+            stage: failed_stage
+                .map(|s| s.kind_name().to_string())
+                .unwrap_or_default(),
+            error: failed_stage
+                .and_then(|s| s.result.as_ref())
+                .map(|r| r.output.chars().take(200).collect())
+                .unwrap_or_default(),
+        }
+    });
     record.finish(final_status);
     state::save_run(&record, state_dir)?;
-    info!(issue = number, run_id = record.run_id, status = ?final_status, cost = record.total_cost_usd, "run complete");
+    info!(issue = number, run_id = record.run_id, status = ?final_status, outcome = ?record.outcome, cost = record.total_cost_usd, "run complete");
 
     // Fire notifications (best-effort; errors are logged, never fatal).
     if let Some(notif_config) = config.global.notifications.as_ref() {
@@ -880,9 +905,26 @@ pub async fn process_pr_with_overrides(
     } else {
         RunStatus::Failed
     };
+    record.outcome = Some(if all_succeeded {
+        state::RouteOutcome::PrUpdated { number }
+    } else {
+        let failed_stage = record
+            .stages
+            .iter()
+            .find(|s| s.status == state::StageStatus::Failed);
+        state::RouteOutcome::Failed {
+            stage: failed_stage
+                .map(|s| s.kind_name().to_string())
+                .unwrap_or_default(),
+            error: failed_stage
+                .and_then(|s| s.result.as_ref())
+                .map(|r| r.output.chars().take(200).collect())
+                .unwrap_or_default(),
+        }
+    });
     record.finish(final_status);
     state::save_run(&record, state_dir)?;
-    info!(pr = number, run_id = record.run_id, status = ?final_status, cost = record.total_cost_usd, "run complete");
+    info!(pr = number, run_id = record.run_id, status = ?final_status, outcome = ?record.outcome, cost = record.total_cost_usd, "run complete");
 
     // Fire notifications.
     if let Some(notif_config) = config.global.notifications.as_ref() {
@@ -1127,9 +1169,28 @@ pub async fn process_reactive_pr(
     } else {
         RunStatus::Failed
     };
+    record.outcome = Some(if !stage_ran {
+        state::RouteOutcome::NothingToDo
+    } else if all_succeeded {
+        state::RouteOutcome::PrUpdated { number: pr_number }
+    } else {
+        let failed_stage = record
+            .stages
+            .iter()
+            .find(|s| s.status == state::StageStatus::Failed);
+        state::RouteOutcome::Failed {
+            stage: failed_stage
+                .map(|s| s.kind_name().to_string())
+                .unwrap_or_default(),
+            error: failed_stage
+                .and_then(|s| s.result.as_ref())
+                .map(|r| r.output.chars().take(200).collect())
+                .unwrap_or_default(),
+        }
+    });
     record.finish(final_status);
     state::save_run(&record, state_dir)?;
-    info!(pr = pr_number, run_id = record.run_id, status = ?final_status, "reactive PR run complete");
+    info!(pr = pr_number, run_id = record.run_id, status = ?final_status, outcome = ?record.outcome, "reactive PR run complete");
 
     // Fire notifications (best-effort).
     if let Some(notif_config) = config.global.notifications.as_ref() {
@@ -1238,7 +1299,11 @@ pub async fn process_batch_for_repo(
     // Discover PRs for label-based "pr"-type routes.
     let label_pr_routes: Vec<(&str, &Route)> = routes
         .iter()
-        .filter(|(_, r)| r.route_type == "pr" && r.label.is_some() && r.condition.is_none())
+        .filter(|(_, r)| {
+            r.route_type == crate::config::SubjectType::Pr
+                && r.label.is_some()
+                && r.condition.is_none()
+        })
         .map(|(name, route)| (name.as_str(), route))
         .collect();
 
@@ -1285,7 +1350,7 @@ pub async fn process_batch_for_repo(
     // Discover PRs for condition-based routes.
     let condition_routes: Vec<(&str, &Route)> = routes
         .iter()
-        .filter(|(_, r)| r.route_type == "pr" && r.condition.is_some())
+        .filter(|(_, r)| r.route_type == crate::config::SubjectType::Pr && r.condition.is_some())
         .map(|(name, route)| (name.as_str(), route))
         .collect();
 
@@ -1504,7 +1569,7 @@ pub async fn process_batch_for_repo(
     let pr_routes: Vec<(String, String)> = routes
         .iter()
         .filter(|(_, r)| {
-            r.route_type == "pr"
+            r.route_type == crate::config::SubjectType::Pr
                 && r.label.is_some()
                 && r.workflow.as_deref().is_some_and(|wf| {
                     config

@@ -291,6 +291,16 @@ pub enum ConditionScope {
     All,
 }
 
+/// The kind of subject a route operates on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubjectType {
+    /// GitHub issue.
+    Issue,
+    /// GitHub pull request.
+    Pr,
+}
+
 /// A named route — maps type+trigger to an action.
 ///
 /// A route must have at least one trigger (`label` or `condition`) and
@@ -299,9 +309,9 @@ pub enum ConditionScope {
 /// PR state matches (e.g., CI failing, has conflicts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Route {
-    /// "issue" or "pr".
+    /// What kind of subject this route operates on.
     #[serde(rename = "type")]
-    pub route_type: String,
+    pub route_type: SubjectType,
 
     /// GitHub label that triggers this route.
     #[serde(default)]
@@ -492,7 +502,7 @@ impl RunnerConfig {
         issue: &IssueCandidate,
     ) -> Option<(&'a str, &'a Route)> {
         for (name, route) in routes {
-            if route.route_type == "issue"
+            if route.route_type == SubjectType::Issue
                 && route
                     .label
                     .as_ref()
@@ -510,7 +520,7 @@ impl RunnerConfig {
         pr: &PrCandidate,
     ) -> Option<(&'a str, &'a Route)> {
         for (name, route) in routes {
-            if route.route_type == "pr"
+            if route.route_type == SubjectType::Pr
                 && route
                     .label
                     .as_ref()
@@ -528,7 +538,7 @@ impl RunnerConfig {
     }
 
     /// Get routes filtered by type ("issue" or "pr").
-    pub fn routes_by_type(&self, route_type: &str) -> Vec<(&str, &Route)> {
+    pub fn routes_by_type(&self, route_type: SubjectType) -> Vec<(&str, &Route)> {
         self.routes
             .iter()
             .filter(|(_, r)| r.route_type == route_type)
@@ -1193,7 +1203,7 @@ workflow = "bug"
         routes.insert(
             "bugfix".to_string(),
             Route {
-                route_type: "issue".to_string(),
+                route_type: SubjectType::Issue,
                 label: Some("bug".to_string()),
                 workflow: Some("bug".to_string()),
                 condition: None,
@@ -1347,7 +1357,7 @@ repo = "owner/repo"
     #[test]
     fn route_validate_requires_trigger_and_action() {
         let route = Route {
-            route_type: "pr".to_string(),
+            route_type: SubjectType::Pr,
             label: None,
             condition: None,
             workflow: Some("pr-fix".to_string()),

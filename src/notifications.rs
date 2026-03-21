@@ -135,6 +135,7 @@ mod tests {
             completed_at: Some(chrono::Utc::now()),
             total_cost_usd: Some(0.12),
             subject_kind: crate::state::SubjectKind::Issue,
+            outcome: None,
         }
     }
 
