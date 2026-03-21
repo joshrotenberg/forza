@@ -23,7 +23,19 @@ pub enum TriageDecision {
 }
 
 /// Evaluate whether an issue is ready for automation.
-pub fn triage(issue: &IssueCandidate, policy: &RepoPolicy) -> TriageDecision {
+pub fn triage(
+    issue: &IssueCandidate,
+    policy: &RepoPolicy,
+    allowed_authors: &[String],
+) -> TriageDecision {
+    // Check author allowlist.
+    if !allowed_authors.is_empty() && !allowed_authors.iter().any(|a| a == &issue.author) {
+        return TriageDecision::OutOfScope(format!(
+            "author '{}' is not in allowed_authors",
+            issue.author
+        ));
+    }
+
     // Check exclusion labels.
     for label in &issue.labels {
         if policy.exclude_labels.contains(label) {
@@ -54,4 +66,56 @@ pub fn triage(issue: &IssueCandidate, policy: &RepoPolicy) -> TriageDecision {
     }
 
     TriageDecision::Ready
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_policy() -> crate::policy::RepoPolicy {
+        toml::from_str(r#"repo = "owner/repo""#).unwrap()
+    }
+
+    fn make_issue(author: &str) -> IssueCandidate {
+        IssueCandidate {
+            number: 1,
+            repo: "owner/repo".into(),
+            title: "some issue".into(),
+            body: "This is a detailed issue description with enough text.".into(),
+            labels: vec![],
+            state: "open".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            is_assigned: false,
+            html_url: String::new(),
+            author: author.into(),
+            comments: vec![],
+        }
+    }
+
+    #[test]
+    fn allowed_authors_empty_does_not_filter() {
+        let policy = make_policy();
+        let issue = make_issue("anyone");
+        let result = triage(&issue, &policy, &[]);
+        assert!(matches!(result, TriageDecision::Ready));
+    }
+
+    #[test]
+    fn allowed_authors_matching_author_passes() {
+        let policy = make_policy();
+        let issue = make_issue("alice");
+        let allowed = vec!["alice".to_string(), "bob".to_string()];
+        let result = triage(&issue, &policy, &allowed);
+        assert!(matches!(result, TriageDecision::Ready));
+    }
+
+    #[test]
+    fn allowed_authors_non_matching_author_rejected() {
+        let policy = make_policy();
+        let issue = make_issue("mallory");
+        let allowed = vec!["alice".to_string(), "bob".to_string()];
+        let result = triage(&issue, &policy, &allowed);
+        assert!(matches!(result, TriageDecision::OutOfScope(_)));
+    }
 }

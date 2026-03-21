@@ -140,7 +140,7 @@ pub struct NotificationsConfig {
 }
 
 /// Security settings.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
     /// Authorization level: sandbox, local, contributor, trusted.
     #[serde(default = "default_auth_level")]
@@ -155,6 +155,35 @@ pub struct SecurityConfig {
     /// acts as a security gate checked after the issue is fetched.
     #[serde(default)]
     pub require_label: Option<String>,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            authorization_level: default_auth_level(),
+            allowed_authors: Vec::new(),
+            require_label: None,
+        }
+    }
+}
+
+impl SecurityConfig {
+    /// Returns `true` when the authorization level permits pushing a branch and opening a PR.
+    ///
+    /// Levels `"contributor"` and `"trusted"` allow push; `"sandbox"` and `"local"` do not.
+    pub fn allows_push(&self) -> bool {
+        matches!(
+            self.authorization_level.as_str(),
+            "contributor" | "trusted"
+        )
+    }
+
+    /// Returns `true` when the authorization level permits merging a PR.
+    ///
+    /// Only `"trusted"` allows merge.
+    pub fn allows_merge(&self) -> bool {
+        self.authorization_level == "trusted"
+    }
 }
 
 /// Global validation commands.
@@ -1392,5 +1421,59 @@ max_retries = 3
         pr.mergeable = Some("MERGEABLE".into());
         pr.review_decision = Some("APPROVED".into());
         assert!(RouteCondition::ApprovedAndGreen.matches(&pr));
+    }
+
+    #[test]
+    fn security_config_allows_push_contributor() {
+        let cfg = SecurityConfig {
+            authorization_level: "contributor".into(),
+            ..Default::default()
+        };
+        assert!(cfg.allows_push());
+        assert!(!cfg.allows_merge());
+    }
+
+    #[test]
+    fn security_config_allows_push_trusted() {
+        let cfg = SecurityConfig {
+            authorization_level: "trusted".into(),
+            ..Default::default()
+        };
+        assert!(cfg.allows_push());
+        assert!(cfg.allows_merge());
+    }
+
+    #[test]
+    fn security_config_sandbox_blocks_all() {
+        let cfg = SecurityConfig {
+            authorization_level: "sandbox".into(),
+            ..Default::default()
+        };
+        assert!(!cfg.allows_push());
+        assert!(!cfg.allows_merge());
+    }
+
+    #[test]
+    fn security_config_local_blocks_all() {
+        let cfg = SecurityConfig {
+            authorization_level: "local".into(),
+            ..Default::default()
+        };
+        assert!(!cfg.allows_push());
+        assert!(!cfg.allows_merge());
+    }
+
+    #[test]
+    fn security_config_parsed_default_is_contributor() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.security.authorization_level, "contributor");
+        assert!(config.security.allows_push());
+        assert!(!config.security.allows_merge());
     }
 }
