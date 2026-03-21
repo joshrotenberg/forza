@@ -70,8 +70,9 @@ pub fn create_plan(
     template: &WorkflowTemplate,
     branch: &str,
     policy: Option<&crate::policy::RepoPolicy>,
+    run_id: &str,
 ) -> WorkPlan {
-    create_plan_with_config(issue, template, branch, policy, None)
+    create_plan_with_config(issue, template, branch, policy, None, run_id)
 }
 
 /// Generate a work plan, optionally loading stage prompts from files configured in
@@ -86,11 +87,14 @@ pub fn create_plan_with_config(
     branch: &str,
     policy: Option<&crate::policy::RepoPolicy>,
     config: Option<(&RunnerConfig, &Path)>,
+    run_id: &str,
 ) -> WorkPlan {
+    let stage_count = template.stages.len();
     let stages = template
         .stages
         .iter()
-        .map(|stage| {
+        .enumerate()
+        .map(|(i, stage)| {
             let stage_name = kind_name(stage.kind);
             let prompt = if let Some((cfg, base_dir)) = config
                 && let Some(file_path) = cfg.prompt_templates.get(stage_name)
@@ -106,6 +110,17 @@ pub fn create_plan_with_config(
                     .map(|p| p.validation_commands.clone())
                     .unwrap_or_default();
                 generate_stage_prompt(stage.kind, issue, &validation_cmds)
+            };
+            // Append breadcrumb write instruction for stages that have a successor so the
+            // orchestrator can load the output and prepend it to the next stage's prompt.
+            let prompt = if i + 1 < stage_count {
+                format!(
+                    "{prompt}\n\n## Breadcrumb\n\nWhen done, write a brief context summary to \
+                     `.forza/breadcrumbs/{run_id}/{stage_name}.md`. Include key decisions, \
+                     findings, and any information the next stage will need."
+                )
+            } else {
+                prompt
             };
             let validation = policy
                 .map(|p| p.validation_commands.clone())
@@ -484,13 +499,19 @@ mod tests {
             &template,
             "automation/42-feat-add-something",
             Some(&policy),
+            "run-test",
         );
         let plan_stage = plan
             .stages
             .iter()
             .find(|s| s.kind == StageKind::Plan)
             .unwrap();
-        assert_eq!(plan_stage.prompt, "custom plan prompt");
+        assert!(plan_stage.prompt.starts_with("custom plan prompt"));
+        assert!(
+            plan_stage
+                .prompt
+                .contains(".forza/breadcrumbs/run-test/plan.md")
+        );
     }
 
     #[test]
@@ -506,6 +527,7 @@ mod tests {
             &template,
             "automation/42-feat-add-something",
             Some(&policy),
+            "run-test",
         );
         for stage in &plan.stages {
             assert_eq!(stage.validation, vec!["cargo test --lib"]);

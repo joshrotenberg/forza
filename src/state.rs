@@ -122,9 +122,9 @@ impl RunRecord {
     }
 
     /// Create a new run record.
-    pub fn new(repo: &str, issue_number: u64, workflow: &str, branch: &str) -> Self {
+    pub fn new(run_id: &str, repo: &str, issue_number: u64, workflow: &str, branch: &str) -> Self {
         Self {
-            run_id: generate_run_id(),
+            run_id: run_id.to_string(),
             repo: repo.to_string(),
             issue_number,
             status: RunStatus::Running,
@@ -367,7 +367,7 @@ pub fn list_run_files(state_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
-fn generate_run_id() -> String {
+pub fn generate_run_id() -> String {
     let now = chrono::Utc::now();
     let timestamp = now.format("%Y%m%d-%H%M%S");
     let nanos = std::time::SystemTime::now()

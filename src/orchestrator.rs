@@ -61,12 +61,14 @@ pub async fn process_issue_with_config(
     );
 
     // 5. Create work plan.
+    let run_id = state::generate_run_id();
     let plan = planner::create_plan_with_config(
         &issue,
         &template,
         &branch,
         None,
         Some((config, repo_dir)),
+        &run_id,
     );
 
     // 6. Set up isolation.
@@ -80,10 +82,24 @@ pub async fn process_issue_with_config(
     }
     let validation = config.effective_validation(route);
 
-    let mut record = RunRecord::new(repo, number, &template.name, &branch);
+    let mut record = RunRecord::new(&run_id, repo, number, &template.name, &branch);
     let mut all_succeeded = true;
+    let mut pending_breadcrumb: Option<String> = None;
 
-    for planned_stage in &plan.stages {
+    for (stage_idx, planned_stage) in plan.stages.iter().enumerate() {
+        // Clone the stage and prepend breadcrumb from the previous stage when available.
+        let stage_for_exec = if let Some(ref crumb) = pending_breadcrumb {
+            let mut s = planned_stage.clone();
+            s.prompt = format!(
+                "## Context from previous stage\n\n{crumb}\n\n---\n\n{}",
+                s.prompt
+            );
+            s
+        } else {
+            planned_stage.clone()
+        };
+        pending_breadcrumb = None;
+
         if planned_stage.kind == StageKind::OpenPr {
             match handle_open_pr(repo, &branch, &issue.title, number, &worktree_dir).await {
                 Ok(pr) => {
@@ -154,7 +170,7 @@ pub async fn process_issue_with_config(
             "running stage"
         );
 
-        match adapter.execute_stage(planned_stage, &worktree_dir).await {
+        match adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
             Ok(result) => {
                 let status = if result.success {
                     StageStatus::Succeeded
@@ -170,6 +186,22 @@ pub async fn process_issue_with_config(
                     "stage complete"
                 );
                 let failed = !result.success;
+                // Load breadcrumb written by this stage for the next stage's context.
+                if !failed && stage_idx + 1 < plan.stages.len() {
+                    let crumb_path = worktree_dir
+                        .join(".forza")
+                        .join("breadcrumbs")
+                        .join(&run_id)
+                        .join(format!("{}.md", planned_stage.kind_name()));
+                    if let Ok(content) = std::fs::read_to_string(&crumb_path) {
+                        info!(
+                            issue = number,
+                            stage = planned_stage.kind_name(),
+                            "loaded breadcrumb for next stage"
+                        );
+                        pending_breadcrumb = Some(content);
+                    }
+                }
                 record.record_stage(planned_stage.kind, status, result);
                 if failed {
                     all_succeeded = false;
@@ -370,7 +402,8 @@ pub async fn process_issue(
     );
 
     // 4. Create work plan.
-    let plan = planner::create_plan(&issue, &template, &branch, Some(policy));
+    let run_id = state::generate_run_id();
+    let plan = planner::create_plan(&issue, &template, &branch, Some(policy), &run_id);
 
     // 5. Set up isolation.
     let worktree_dir = isolation::create_worktree(repo_dir, &branch, ".worktrees").await?;
@@ -382,11 +415,25 @@ pub async fn process_issue(
 
     // 6. Execute stages.
     let adapter = build_adapter(policy);
-    let mut record = RunRecord::new(repo, number, &template.name, &branch);
+    let mut record = RunRecord::new(&run_id, repo, number, &template.name, &branch);
 
     let mut all_succeeded = true;
+    let mut pending_breadcrumb: Option<String> = None;
 
-    for planned_stage in &plan.stages {
+    for (stage_idx, planned_stage) in plan.stages.iter().enumerate() {
+        // Clone the stage and prepend breadcrumb from the previous stage when available.
+        let stage_for_exec = if let Some(ref crumb) = pending_breadcrumb {
+            let mut s = planned_stage.clone();
+            s.prompt = format!(
+                "## Context from previous stage\n\n{crumb}\n\n---\n\n{}",
+                s.prompt
+            );
+            s
+        } else {
+            planned_stage.clone()
+        };
+        pending_breadcrumb = None;
+
         // Evaluate condition if set — skip stage if condition exits non-zero.
         if let Some(ref condition) = planned_stage.condition
             && eval_stage_condition(condition, &issue, &worktree_dir).await
@@ -455,7 +502,7 @@ pub async fn process_issue(
             "running stage"
         );
 
-        match adapter.execute_stage(planned_stage, &worktree_dir).await {
+        match adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
             Ok(result) => {
                 let status = if result.success {
                     StageStatus::Succeeded
@@ -471,6 +518,22 @@ pub async fn process_issue(
                     "stage complete"
                 );
                 let failed = !result.success;
+                // Load breadcrumb written by this stage for the next stage's context.
+                if !failed && stage_idx + 1 < plan.stages.len() {
+                    let crumb_path = worktree_dir
+                        .join(".forza")
+                        .join("breadcrumbs")
+                        .join(&run_id)
+                        .join(format!("{}.md", planned_stage.kind_name()));
+                    if let Ok(content) = std::fs::read_to_string(&crumb_path) {
+                        info!(
+                            issue = number,
+                            stage = planned_stage.kind_name(),
+                            "loaded breadcrumb for next stage"
+                        );
+                        pending_breadcrumb = Some(content);
+                    }
+                }
                 record.record_stage(planned_stage.kind, status, result);
 
                 if failed {
