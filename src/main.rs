@@ -80,6 +80,12 @@ struct IssueArgs {
     /// Dry run — show the plan without executing.
     #[arg(long)]
     dry_run: bool,
+    /// Override the model for every stage in this run (e.g. claude-opus-4-6).
+    #[arg(long)]
+    model: Option<String>,
+    /// Add a skill file for every stage in this run (repeatable).
+    #[arg(long, action = clap::ArgAction::Append)]
+    skill: Vec<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -95,6 +101,12 @@ struct PrArgs {
     /// Dry run — show the plan without executing.
     #[arg(long)]
     dry_run: bool,
+    /// Override the model for every stage in this run (e.g. claude-opus-4-6).
+    #[arg(long)]
+    model: Option<String>,
+    /// Add a skill file for every stage in this run (repeatable).
+    #[arg(long, action = clap::ArgAction::Append)]
+    skill: Vec<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -408,7 +420,11 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         println!("Route:    {route_name}");
         println!("Workflow: {}", template.name);
         println!("Branch:   {branch}");
-        if let Some(model) = config.effective_model(route) {
+        let effective_model = args
+            .model
+            .as_deref()
+            .or_else(|| config.effective_model(route));
+        if let Some(model) = effective_model {
             println!("Model:    {model}");
         }
         println!("Stages:");
@@ -425,13 +441,18 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    match forza::orchestrator::process_issue_with_config(
+    let cli_overrides = forza::config::CliOverrides {
+        model: args.model,
+        skills: args.skill,
+    };
+    match forza::orchestrator::process_issue_with_overrides(
         args.number,
         &repo,
         routes,
         config,
         &sd,
         &rd,
+        cli_overrides,
     )
     .await
     {
@@ -489,7 +510,11 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
         println!("Route:    {route_name}");
         println!("Workflow: {}", template.name);
         println!("Branch:   {branch}");
-        if let Some(model) = config.effective_model(route) {
+        let effective_model = args
+            .model
+            .as_deref()
+            .or_else(|| config.effective_model(route));
+        if let Some(model) = effective_model {
             println!("Model:    {model}");
         }
         println!("Stages:");
@@ -500,8 +525,20 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    match forza::orchestrator::process_pr_with_config(args.number, &repo, routes, config, &sd, &rd)
-        .await
+    let cli_overrides = forza::config::CliOverrides {
+        model: args.model,
+        skills: args.skill,
+    };
+    match forza::orchestrator::process_pr_with_overrides(
+        args.number,
+        &repo,
+        routes,
+        config,
+        &sd,
+        &rd,
+        cli_overrides,
+    )
+    .await
     {
         Ok(record) => print_run_result(&record),
         Err(e) => {
