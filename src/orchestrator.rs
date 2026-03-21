@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::executor::{AgentAdapter, ClaudeAdapter, StageResult};
 use crate::github;
 use crate::isolation;
+use crate::notifications;
 use crate::planner;
 use crate::policy::RepoPolicy;
 use crate::state::{self, RunRecord, RunStatus, StageStatus};
@@ -395,6 +396,11 @@ pub async fn process_issue_with_config(
     record.finish(final_status);
     state::save_run(&record, state_dir)?;
     info!(issue = number, run_id = record.run_id, status = ?final_status, cost = record.total_cost_usd, "run complete");
+
+    // Fire notifications (best-effort; errors are logged, never fatal).
+    if let Some(notif_config) = config.global.notifications.as_ref() {
+        notifications::notify_run_complete(notif_config, &record).await;
+    }
 
     // 9. Update lease labels.
     let _ = github::remove_label(repo, number, &config.global.in_progress_label).await;
