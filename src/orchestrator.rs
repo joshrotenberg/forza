@@ -1,8 +1,10 @@
 //! Orchestrator — the main pipeline that processes a single issue end-to-end.
 
-use std::path::Path;
+use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
+use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
 use crate::config::RunnerConfig;
@@ -446,21 +448,102 @@ pub async fn process_batch_with_config(
 
     info!(repo = repo, count = issues.len(), "found eligible issues");
 
+    // Pre-filter: keep only issues that match a route, paired with their route name.
+    let mut pending: VecDeque<(String, crate::github::IssueCandidate)> = issues
+        .into_iter()
+        .filter_map(|issue| {
+            if let Some((route_name, _)) = config.match_route(&issue) {
+                Some((route_name.to_string(), issue))
+            } else {
+                tracing::debug!(issue = issue.number, "no route match, skipping");
+                None
+            }
+        })
+        .collect();
+
+    let max_concurrency = config.global.max_concurrency;
+    let mut total_active: usize = 0;
+    let mut active_per_route: HashMap<String, usize> = HashMap::new();
+    let mut join_set: JoinSet<(String, Result<RunRecord>)> = JoinSet::new();
     let mut records = Vec::new();
-    for issue in issues {
+
+    loop {
         if *cancel.borrow() {
             info!("cancellation requested, stopping batch");
             break;
         }
 
-        // Only process if a route matches.
-        if config.match_route(&issue).is_none() {
-            tracing::debug!(issue = issue.number, "no route match, skipping");
-            continue;
+        // Try to fill available slots from pending queue.
+        let mut deferred: VecDeque<(String, crate::github::IssueCandidate)> = VecDeque::new();
+        while let Some((route_name, issue)) = pending.pop_front() {
+            let route_active = *active_per_route.get(&route_name).unwrap_or(&0);
+            let route_limit = config
+                .routes
+                .get(&route_name)
+                .map(|r| r.concurrency)
+                .unwrap_or(1);
+
+            if total_active < max_concurrency && route_active < route_limit {
+                total_active += 1;
+                *active_per_route.entry(route_name.clone()).or_insert(0) += 1;
+
+                let config_clone = config.clone();
+                let state_dir_owned: PathBuf = state_dir.to_path_buf();
+                let repo_dir_owned: PathBuf = repo_dir.to_path_buf();
+                let issue_number = issue.number;
+                join_set.spawn(async move {
+                    let result = process_issue_with_config(
+                        issue_number,
+                        &config_clone,
+                        &state_dir_owned,
+                        &repo_dir_owned,
+                    )
+                    .await;
+                    (route_name, result)
+                });
+            } else {
+                deferred.push_back((route_name, issue));
+            }
         }
-        match process_issue_with_config(issue.number, config, state_dir, repo_dir).await {
-            Ok(record) => records.push(record),
-            Err(e) => warn!(issue = issue.number, error = %e, "failed to process issue"),
+        pending = deferred;
+
+        if pending.is_empty() && join_set.is_empty() {
+            break;
+        }
+
+        // Wait for one task to finish, then update counters.
+        if let Some(join_result) = join_set.join_next().await {
+            match join_result {
+                Ok((route_name, Ok(record))) => {
+                    total_active = total_active.saturating_sub(1);
+                    if let Some(c) = active_per_route.get_mut(&route_name) {
+                        *c = c.saturating_sub(1);
+                    }
+                    records.push(record);
+                }
+                Ok((route_name, Err(e))) => {
+                    total_active = total_active.saturating_sub(1);
+                    if let Some(c) = active_per_route.get_mut(&route_name) {
+                        *c = c.saturating_sub(1);
+                    }
+                    warn!(route = route_name, error = %e, "failed to process issue");
+                }
+                Err(e) => {
+                    total_active = total_active.saturating_sub(1);
+                    warn!(error = %e, "task join error");
+                }
+            }
+        }
+    }
+
+    // Drain any still-running tasks (e.g. after cancellation).
+    while let Some(join_result) = join_set.join_next().await {
+        match join_result {
+            Ok((_, Ok(record))) => records.push(record),
+            Ok((route_name, Err(e))) => {
+                warn!(route = route_name, error = %e, "failed to process issue");
+            }
+            Err(e) => warn!(error = %e, "task join error"),
         }
     }
 
