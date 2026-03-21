@@ -21,6 +21,7 @@ pub mod error;
 pub mod executor;
 pub mod github;
 pub mod isolation;
+pub mod mcp;
 pub mod notifications;
 pub mod orchestrator;
 pub mod planner;
