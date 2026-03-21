@@ -16,7 +16,7 @@ use tracing::info;
 )]
 struct Cli {
     /// Path to config file.
-    #[arg(long, short, default_value = "runner.toml", global = true)]
+    #[arg(long, short, default_value = "forza.toml", global = true)]
     config: PathBuf,
 
     #[command(subcommand)]
