@@ -467,11 +467,22 @@ pub async fn process_batch_with_config(
 
     info!(repo = repo, count = issues.len(), "found eligible issues");
 
-    // Pre-filter: keep only issues that match a route, paired with their route name.
+    // Pre-filter: keep only issues that match a route and are within their schedule window.
+    let now = chrono::Utc::now();
     let mut pending: VecDeque<(String, crate::github::IssueCandidate)> = issues
         .into_iter()
         .filter_map(|issue| {
-            if let Some((route_name, _)) = config.match_route(&issue) {
+            if let Some((route_name, route)) = config.match_route(&issue) {
+                if let Some(schedule) = &route.schedule
+                    && !schedule.is_active(now)
+                {
+                    tracing::debug!(
+                        issue = issue.number,
+                        route = route_name,
+                        "outside schedule window, skipping"
+                    );
+                    return None;
+                }
                 Some((route_name.to_string(), issue))
             } else {
                 tracing::debug!(issue = issue.number, "no route match, skipping");

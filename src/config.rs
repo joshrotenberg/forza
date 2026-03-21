@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -123,6 +124,59 @@ pub struct ValidationConfig {
     pub commands: Vec<String>,
 }
 
+/// A time window during which a route is active.
+///
+/// Times are UTC in `"HH:MM"` format. If `end < start` the window spans midnight.
+/// If `days` is empty, the window is active every day.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleWindow {
+    /// Days the route is active, e.g. `["Mon", "Tue", "Wed", "Thu", "Fri"]`.
+    /// Empty (default) means all days.
+    #[serde(default)]
+    pub days: Vec<String>,
+
+    /// Start of the active window in UTC, `"HH:MM"` format.
+    pub start: String,
+
+    /// End of the active window in UTC, `"HH:MM"` format.
+    pub end: String,
+}
+
+impl ScheduleWindow {
+    /// Returns `true` if `now` falls within this schedule window.
+    pub fn is_active(&self, now: DateTime<Utc>) -> bool {
+        // Check day constraint.
+        if !self.days.is_empty() {
+            let today = now.weekday();
+            let day_match = self.days.iter().any(|d| {
+                d.parse::<Weekday>()
+                    .map(|wd| wd == today)
+                    .unwrap_or(false)
+            });
+            if !day_match {
+                return false;
+            }
+        }
+
+        let Ok(start) = NaiveTime::parse_from_str(&self.start, "%H:%M") else {
+            return false;
+        };
+        let Ok(end) = NaiveTime::parse_from_str(&self.end, "%H:%M") else {
+            return false;
+        };
+
+        let current = NaiveTime::from_hms_opt(now.hour(), now.minute(), 0).unwrap_or(start);
+
+        if end >= start {
+            // Normal window: e.g. 09:00–17:00
+            current >= start && current < end
+        } else {
+            // Overnight window: e.g. 22:00–06:00 (spans midnight)
+            current >= start || current < end
+        }
+    }
+}
+
 /// A named route — maps type+label to a workflow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Route {
@@ -155,6 +209,10 @@ pub struct Route {
 
     /// Override MCP config for this route.
     pub mcp_config: Option<String>,
+
+    /// Optional schedule window. When set, issues for this route are only
+    /// processed during the active window. `None` means always active.
+    pub schedule: Option<ScheduleWindow>,
 }
 
 /// Agent-specific configuration.
@@ -642,6 +700,147 @@ repo = "owner/repo"
         let template = config.resolve_workflow("feature").unwrap();
         assert_eq!(template.name, "feature");
         assert!(!template.stages.is_empty());
+    }
+
+    #[test]
+    fn schedule_window_parses_from_toml() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+
+[routes.features.schedule]
+days = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+start = "09:00"
+end = "17:00"
+"#,
+        )
+        .unwrap();
+
+        let route = &config.routes["features"];
+        let schedule = route.schedule.as_ref().unwrap();
+        assert_eq!(schedule.days, vec!["Mon", "Tue", "Wed", "Thu", "Fri"]);
+        assert_eq!(schedule.start, "09:00");
+        assert_eq!(schedule.end, "17:00");
+    }
+
+    #[test]
+    fn route_without_schedule_has_none() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.routes["bugfix"].schedule.is_none());
+    }
+
+    #[test]
+    fn schedule_window_is_active_within_window() {
+        let window = ScheduleWindow {
+            days: vec![],
+            start: "09:00".into(),
+            end: "17:00".into(),
+        };
+        // 13:00 UTC — inside window
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(window.is_active(now));
+    }
+
+    #[test]
+    fn schedule_window_is_inactive_outside_window() {
+        let window = ScheduleWindow {
+            days: vec![],
+            start: "09:00".into(),
+            end: "17:00".into(),
+        };
+        // 08:00 UTC — before window
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T08:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(!window.is_active(now));
+
+        // 18:00 UTC — after window
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T18:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(!window.is_active(now));
+    }
+
+    #[test]
+    fn schedule_window_overnight_active() {
+        let window = ScheduleWindow {
+            days: vec![],
+            start: "22:00".into(),
+            end: "06:00".into(),
+        };
+        // 23:00 — active (after start, before midnight)
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T23:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(window.is_active(now));
+
+        // 03:00 — active (after midnight, before end)
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T03:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(window.is_active(now));
+    }
+
+    #[test]
+    fn schedule_window_overnight_inactive() {
+        let window = ScheduleWindow {
+            days: vec![],
+            start: "22:00".into(),
+            end: "06:00".into(),
+        };
+        // 12:00 — inactive (middle of day)
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(!window.is_active(now));
+    }
+
+    #[test]
+    fn schedule_window_day_filter_active() {
+        let window = ScheduleWindow {
+            days: vec!["Mon".into(), "Tue".into(), "Wed".into(), "Thu".into(), "Fri".into()],
+            start: "09:00".into(),
+            end: "17:00".into(),
+        };
+        // 2024-03-20 is a Wednesday, 13:00 UTC
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-20T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(window.is_active(now));
+    }
+
+    #[test]
+    fn schedule_window_day_filter_inactive_on_weekend() {
+        let window = ScheduleWindow {
+            days: vec!["Mon".into(), "Tue".into(), "Wed".into(), "Thu".into(), "Fri".into()],
+            start: "09:00".into(),
+            end: "17:00".into(),
+        };
+        // 2024-03-23 is a Saturday, 13:00 UTC
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-23T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(!window.is_active(now));
     }
 
     #[test]
