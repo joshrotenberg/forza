@@ -468,7 +468,6 @@ pub async fn fetch_eligible_prs(
 }
 
 /// Fetch a PR from GitHub.
-
 pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
     let output = tokio::process::Command::new("gh")
         .args([
@@ -602,7 +601,6 @@ pub async fn remove_pr_label(repo: &str, number: u64, label: &str) -> Result<()>
     }
     Ok(())
 }
-
 
 /// Post a comment on an issue.
 pub async fn comment_on_issue(repo: &str, number: u64, body: &str) -> Result<()> {

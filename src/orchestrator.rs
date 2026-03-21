@@ -756,7 +756,6 @@ pub async fn process_pr_with_config(
     Ok(record)
 }
 
-
 /// Build a `PlannedStage` for a PR stage in reactive mode.
 fn build_pr_planned_stage(
     stage: &workflow::Stage,
