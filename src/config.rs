@@ -12,11 +12,28 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::github::IssueCandidate;
 
+/// Per-repo entry in the multi-repo configuration table.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RepoEntry {
+    /// Local checkout path for this repo. Defaults to current directory.
+    pub repo_dir: Option<String>,
+
+    /// Routes specific to this repo.
+    #[serde(default)]
+    pub routes: HashMap<String, Route>,
+}
+
 /// Top-level runner configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunnerConfig {
     /// Global settings.
     pub global: GlobalConfig,
+
+    /// Per-repo configuration (multi-repo mode).
+    /// When present, each key is a repo slug (`owner/name`) and each value
+    /// holds that repo's optional local path and routes.
+    #[serde(default)]
+    pub repos: HashMap<String, RepoEntry>,
 
     /// Security settings.
     #[serde(default)]
@@ -26,7 +43,7 @@ pub struct RunnerConfig {
     #[serde(default)]
     pub validation: ValidationConfig,
 
-    /// Named routes — the core routing table.
+    /// Named routes — the core routing table (legacy single-repo mode).
     #[serde(default)]
     pub routes: HashMap<String, Route>,
 
@@ -50,8 +67,9 @@ pub struct RunnerConfig {
 /// Global settings shared across all routes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalConfig {
-    /// Repository in `owner/name` format.
-    pub repo: String,
+    /// Repository in `owner/name` format (legacy single-repo mode).
+    /// Omit when using the `[repos]` table for multi-repo support.
+    pub repo: Option<String>,
 
     /// Local checkout path. Default: current directory.
     pub repo_dir: Option<String>,
@@ -291,6 +309,37 @@ impl RunnerConfig {
         toml::from_str(&content).map_err(|e| Error::Policy(e.to_string()))
     }
 
+    /// Iterate all repos yielding `(repo_slug, repo_dir, routes)` for each.
+    ///
+    /// In legacy single-repo mode (`repos` table absent), yields one entry from
+    /// `global.repo` + top-level `routes`. In multi-repo mode, yields one entry
+    /// per `[repos]` key.
+    pub fn iter_repos(&self) -> Vec<(&str, Option<&str>, &HashMap<String, Route>)> {
+        if self.repos.is_empty() {
+            let repo = self.global.repo.as_deref().unwrap_or("");
+            let repo_dir = self.global.repo_dir.as_deref();
+            vec![(repo, repo_dir, &self.routes)]
+        } else {
+            self.repos
+                .iter()
+                .map(|(repo, entry)| (repo.as_str(), entry.repo_dir.as_deref(), &entry.routes))
+                .collect()
+        }
+    }
+
+    /// Find the route matching an issue within the given route map.
+    pub fn match_route_in<'a>(
+        routes: &'a HashMap<String, Route>,
+        issue: &IssueCandidate,
+    ) -> Option<(&'a str, &'a Route)> {
+        for (name, route) in routes {
+            if route.route_type == "issue" && issue.labels.iter().any(|l| l == &route.label) {
+                return Some((name.as_str(), route));
+            }
+        }
+        None
+    }
+
     /// Get routes filtered by type ("issue" or "pr").
     pub fn routes_by_type(&self, route_type: &str) -> Vec<(&str, &Route)> {
         self.routes
@@ -300,14 +349,9 @@ impl RunnerConfig {
             .collect()
     }
 
-    /// Find the route that matches an issue's labels.
+    /// Find the route that matches an issue's labels (legacy single-repo API).
     pub fn match_route(&self, issue: &IssueCandidate) -> Option<(&str, &Route)> {
-        for (name, route) in &self.routes {
-            if route.route_type == "issue" && issue.labels.iter().any(|l| l == &route.label) {
-                return Some((name.as_str(), route));
-            }
-        }
-        None
+        Self::match_route_in(&self.routes, issue)
     }
 
     /// Get the effective model for a route (route override > global default).
@@ -460,7 +504,7 @@ concurrency = 2
 poll_interval = 300
 "#;
         let config: RunnerConfig = toml::from_str(content).unwrap();
-        assert_eq!(config.global.repo, "owner/repo");
+        assert_eq!(config.global.repo.as_deref(), Some("owner/repo"));
         assert_eq!(config.routes.len(), 2);
         assert_eq!(config.routes["bugfix"].workflow, "bug");
         assert_eq!(config.routes["features"].concurrency, 2);
@@ -852,6 +896,122 @@ workflow = "bug"
             .unwrap()
             .with_timezone(&Utc);
         assert!(!window.is_active(now));
+    }
+
+    #[test]
+    fn multi_repo_config_parses() {
+        let content = r#"
+[global]
+max_concurrency = 3
+model = "claude-sonnet-4-6"
+
+[repos."owner/repo-a"]
+repo_dir = "/path/to/a"
+
+[repos."owner/repo-a".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+
+[repos."owner/repo-b".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+"#;
+        let config: RunnerConfig = toml::from_str(content).unwrap();
+        assert!(config.global.repo.is_none());
+        assert_eq!(config.repos.len(), 2);
+        assert!(config.repos["owner/repo-a"].repo_dir.as_deref() == Some("/path/to/a"));
+        assert_eq!(config.repos["owner/repo-a"].routes.len(), 1);
+        assert_eq!(config.repos["owner/repo-b"].routes.len(), 1);
+    }
+
+    #[test]
+    fn iter_repos_multi_mode() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+max_concurrency = 5
+
+[repos."owner/alpha".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+
+[repos."owner/beta".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+"#,
+        )
+        .unwrap();
+
+        let repos = config.iter_repos();
+        assert_eq!(repos.len(), 2);
+        let repo_names: Vec<&str> = repos.iter().map(|(r, _, _)| *r).collect();
+        assert!(repo_names.contains(&"owner/alpha"));
+        assert!(repo_names.contains(&"owner/beta"));
+    }
+
+    #[test]
+    fn iter_repos_legacy_mode() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap();
+
+        let repos = config.iter_repos();
+        assert_eq!(repos.len(), 1);
+        let (repo, repo_dir, routes) = repos[0];
+        assert_eq!(repo, "owner/repo");
+        assert!(repo_dir.is_none());
+        assert_eq!(routes.len(), 1);
+    }
+
+    #[test]
+    fn match_route_in_finds_matching_route() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "bugfix".to_string(),
+            Route {
+                route_type: "issue".to_string(),
+                label: "bug".to_string(),
+                workflow: "bug".to_string(),
+                concurrency: 1,
+                poll_interval: 60,
+                model: None,
+                skills: None,
+                validation_commands: None,
+                mcp_config: None,
+                schedule: None,
+            },
+        );
+
+        let issue = IssueCandidate {
+            number: 1,
+            repo: "owner/repo".into(),
+            title: "fix something".into(),
+            body: "details".into(),
+            labels: vec!["bug".into()],
+            state: "open".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            is_assigned: false,
+            html_url: String::new(),
+            comments: vec![],
+        };
+
+        let (name, route) = RunnerConfig::match_route_in(&routes, &issue).unwrap();
+        assert_eq!(name, "bugfix");
+        assert_eq!(route.workflow, "bug");
     }
 
     #[test]
