@@ -282,6 +282,18 @@ pub fn find_latest_run_for_issue(
         .find(|r| r.issue_number == issue_number)
 }
 
+/// Count completed runs for a given issue/PR number with a specific workflow.
+pub fn count_runs_for_subject(
+    issue_number: u64,
+    workflow: &str,
+    state_dir: &std::path::Path,
+) -> usize {
+    load_all_runs(state_dir)
+        .iter()
+        .filter(|r| r.issue_number == issue_number && r.workflow == workflow)
+        .count()
+}
+
 /// Per-workflow aggregate stats.
 #[derive(Debug, Clone)]
 pub struct WorkflowSummary {

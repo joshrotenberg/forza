@@ -93,3 +93,18 @@ type = "pr"
 label = "forza:rebase"
 workflow = "pr-rebase"
 concurrency = 2
+
+# ── Condition routes (monitors) ──────────────────────────────────────
+# These routes watch forza-owned PRs and automatically trigger fixes
+# when problems are detected. No manual labeling needed.
+
+# Auto-fix PRs with CI failures or merge conflicts.
+# Watches only forza-owned PRs (branches starting with "automation/").
+# After 3 failed attempts, applies forza:needs-human instead.
+[repos."joshrotenberg/forza".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+max_retries = 3
+concurrency = 2

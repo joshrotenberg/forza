@@ -217,7 +217,54 @@ impl ScheduleWindow {
     }
 }
 
-/// A named route — maps type+label to a workflow.
+/// A condition that triggers a route based on PR state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteCondition {
+    /// CI checks are failing on the PR.
+    CiFailing,
+    /// The PR has merge conflicts.
+    HasConflicts,
+    /// CI is failing or the PR has conflicts (or both).
+    CiFailingOrConflicts,
+    /// The PR is approved and CI is green.
+    ApprovedAndGreen,
+}
+
+impl RouteCondition {
+    /// Evaluate whether this condition holds for the given PR.
+    pub fn matches(&self, pr: &crate::github::PrCandidate) -> bool {
+        let ci_failing = pr.checks_passing == Some(false);
+        let has_conflicts = pr.mergeable.as_deref() == Some("CONFLICTING");
+        let approved = pr.review_decision.as_deref() == Some("APPROVED");
+        let ci_green = pr.checks_passing == Some(true);
+
+        match self {
+            RouteCondition::CiFailing => ci_failing,
+            RouteCondition::HasConflicts => has_conflicts,
+            RouteCondition::CiFailingOrConflicts => ci_failing || has_conflicts,
+            RouteCondition::ApprovedAndGreen => approved && ci_green && !has_conflicts,
+        }
+    }
+}
+
+/// Which PRs are in scope for condition evaluation.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConditionScope {
+    /// Only PRs on branches created by forza (matching the branch pattern prefix).
+    #[default]
+    ForzaOwned,
+    /// All open PRs in the repo.
+    All,
+}
+
+/// A named route — maps type+trigger to an action.
+///
+/// A route must have at least one trigger (`label` or `condition`) and
+/// at least one action (`workflow`). Label-triggered routes fire when a
+/// subject has the specified label. Condition-triggered routes fire when
+/// PR state matches (e.g., CI failing, has conflicts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Route {
     /// "issue" or "pr".
@@ -225,10 +272,16 @@ pub struct Route {
     pub route_type: String,
 
     /// GitHub label that triggers this route.
-    pub label: String,
+    #[serde(default)]
+    pub label: Option<String>,
+
+    /// Condition that triggers this route when evaluated against a PR.
+    #[serde(default)]
+    pub condition: Option<RouteCondition>,
 
     /// Workflow template name to use.
-    pub workflow: String,
+    #[serde(default)]
+    pub workflow: Option<String>,
 
     /// Maximum concurrent runs for this route.
     #[serde(default = "default_route_concurrency")]
@@ -253,6 +306,31 @@ pub struct Route {
     /// Optional schedule window. When set, issues for this route are only
     /// processed during the active window. `None` means always active.
     pub schedule: Option<ScheduleWindow>,
+
+    /// Scope of PRs to evaluate conditions against.
+    #[serde(default)]
+    pub scope: ConditionScope,
+
+    /// Maximum retry attempts for condition-triggered routes.
+    /// When exceeded, `forza:needs-human` label is applied instead.
+    pub max_retries: Option<usize>,
+}
+
+impl Route {
+    /// Validate that a route has at least one trigger and one action.
+    pub fn validate(&self, name: &str) -> Result<()> {
+        if self.label.is_none() && self.condition.is_none() {
+            return Err(Error::Policy(format!(
+                "route '{name}' must have a label or a condition"
+            )));
+        }
+        if self.workflow.is_none() {
+            return Err(Error::Policy(format!(
+                "route '{name}' must have a workflow"
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// Agent-specific configuration.
@@ -329,7 +407,17 @@ impl RunnerConfig {
     /// Load config from a TOML file.
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        toml::from_str(&content).map_err(|e| Error::Policy(e.to_string()))
+        let config: Self = toml::from_str(&content).map_err(|e| Error::Policy(e.to_string()))?;
+        // Validate routes.
+        for (name, route) in &config.routes {
+            route.validate(name)?;
+        }
+        for entry in config.repos.values() {
+            for (name, route) in &entry.routes {
+                route.validate(name)?;
+            }
+        }
+        Ok(config)
     }
 
     /// Iterate all repos yielding `(repo_slug, repo_dir, routes)` for each.
@@ -356,7 +444,12 @@ impl RunnerConfig {
         issue: &IssueCandidate,
     ) -> Option<(&'a str, &'a Route)> {
         for (name, route) in routes {
-            if route.route_type == "issue" && issue.labels.iter().any(|l| l == &route.label) {
+            if route.route_type == "issue"
+                && route
+                    .label
+                    .as_ref()
+                    .is_some_and(|rl| issue.labels.iter().any(|l| l == rl))
+            {
                 return Some((name.as_str(), route));
             }
         }
@@ -369,7 +462,12 @@ impl RunnerConfig {
         pr: &PrCandidate,
     ) -> Option<(&'a str, &'a Route)> {
         for (name, route) in routes {
-            if route.route_type == "pr" && pr.labels.iter().any(|l| l == &route.label) {
+            if route.route_type == "pr"
+                && route
+                    .label
+                    .as_ref()
+                    .is_some_and(|rl| pr.labels.iter().any(|l| l == rl))
+            {
                 return Some((name.as_str(), route));
             }
         }
@@ -547,7 +645,7 @@ poll_interval = 300
         let config: RunnerConfig = toml::from_str(content).unwrap();
         assert_eq!(config.global.repo.as_deref(), Some("owner/repo"));
         assert_eq!(config.routes.len(), 2);
-        assert_eq!(config.routes["bugfix"].workflow, "bug");
+        assert_eq!(config.routes["bugfix"].workflow.as_deref(), Some("bug"));
         assert_eq!(config.routes["features"].concurrency, 2);
     }
 
@@ -583,7 +681,7 @@ workflow = "bug"
 
         let (name, route) = config.match_route(&issue).unwrap();
         assert_eq!(name, "bugfix");
-        assert_eq!(route.workflow, "bug");
+        assert_eq!(route.workflow.as_deref(), Some("bug"));
     }
 
     #[test]
@@ -1048,8 +1146,9 @@ workflow = "bug"
             "bugfix".to_string(),
             Route {
                 route_type: "issue".to_string(),
-                label: "bug".to_string(),
-                workflow: "bug".to_string(),
+                label: Some("bug".to_string()),
+                workflow: Some("bug".to_string()),
+                condition: None,
                 concurrency: 1,
                 poll_interval: 60,
                 model: None,
@@ -1057,6 +1156,8 @@ workflow = "bug"
                 validation_commands: None,
                 mcp_config: None,
                 schedule: None,
+                scope: ConditionScope::default(),
+                max_retries: None,
             },
         );
 
@@ -1077,7 +1178,7 @@ workflow = "bug"
 
         let (name, route) = RunnerConfig::match_route_in(&routes, &issue).unwrap();
         assert_eq!(name, "bugfix");
-        assert_eq!(route.workflow, "bug");
+        assert_eq!(route.workflow.as_deref(), Some("bug"));
     }
 
     fn make_config_with_agent(
@@ -1193,5 +1294,103 @@ repo = "owner/repo"
         )
         .unwrap();
         assert!(config.resolve_workflow("nonexistent").is_none());
+    }
+
+    #[test]
+    fn route_validate_requires_trigger_and_action() {
+        let route = Route {
+            route_type: "pr".to_string(),
+            label: None,
+            condition: None,
+            workflow: Some("pr-fix".to_string()),
+            concurrency: 1,
+            poll_interval: 60,
+            model: None,
+            skills: None,
+            validation_commands: None,
+            mcp_config: None,
+            schedule: None,
+            scope: ConditionScope::default(),
+            max_retries: None,
+        };
+        assert!(route.validate("test").is_err()); // no trigger
+
+        let route2 = Route {
+            label: Some("bug".to_string()),
+            workflow: None,
+            ..route.clone()
+        };
+        assert!(route2.validate("test").is_err()); // no action
+
+        let route3 = Route {
+            label: Some("bug".to_string()),
+            workflow: Some("bug".to_string()),
+            ..route.clone()
+        };
+        assert!(route3.validate("test").is_ok()); // label + workflow
+
+        let route4 = Route {
+            condition: Some(RouteCondition::CiFailing),
+            workflow: Some("pr-fix".to_string()),
+            ..route
+        };
+        assert!(route4.validate("test").is_ok()); // condition + workflow
+    }
+
+    #[test]
+    fn condition_route_parses_from_toml() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+max_retries = 3
+"#,
+        )
+        .unwrap();
+
+        let route = &config.routes["auto-fix"];
+        assert_eq!(route.condition, Some(RouteCondition::CiFailingOrConflicts));
+        assert_eq!(route.workflow.as_deref(), Some("pr-fix"));
+        assert_eq!(route.scope, ConditionScope::ForzaOwned);
+        assert_eq!(route.max_retries, Some(3));
+        assert!(route.label.is_none());
+    }
+
+    #[test]
+    fn condition_matches_ci_failing() {
+        let mut pr = crate::github::PrCandidate {
+            number: 1,
+            repo: "owner/repo".into(),
+            title: "test".into(),
+            body: String::new(),
+            labels: vec![],
+            state: "open".into(),
+            html_url: String::new(),
+            head_branch: "automation/1-test".into(),
+            base_branch: "main".into(),
+            is_draft: false,
+            mergeable: Some("MERGEABLE".into()),
+            review_decision: None,
+            checks_passing: Some(false),
+        };
+        assert!(RouteCondition::CiFailing.matches(&pr));
+        assert!(!RouteCondition::HasConflicts.matches(&pr));
+        assert!(RouteCondition::CiFailingOrConflicts.matches(&pr));
+
+        pr.checks_passing = Some(true);
+        pr.mergeable = Some("CONFLICTING".into());
+        assert!(!RouteCondition::CiFailing.matches(&pr));
+        assert!(RouteCondition::HasConflicts.matches(&pr));
+        assert!(RouteCondition::CiFailingOrConflicts.matches(&pr));
+
+        pr.mergeable = Some("MERGEABLE".into());
+        pr.review_decision = Some("APPROVED".into());
+        assert!(RouteCondition::ApprovedAndGreen.matches(&pr));
     }
 }

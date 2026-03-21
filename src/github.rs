@@ -54,6 +54,9 @@ pub struct PrCandidate {
     pub is_draft: bool,
     pub mergeable: Option<String>,
     pub review_decision: Option<String>,
+    /// Whether all required CI checks are passing. `None` if unknown.
+    #[serde(default)]
+    pub checks_passing: Option<bool>,
 }
 
 // ── Raw gh CLI JSON shapes (private) ─────────────────────────────────
@@ -92,6 +95,11 @@ struct GhComment {
 }
 
 #[derive(Debug, Deserialize)]
+struct GhStatusCheck {
+    conclusion: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct GhPrFull {
     number: u64,
     title: String,
@@ -109,6 +117,8 @@ struct GhPrFull {
     base_ref_name: String,
     #[serde(rename = "isDraft")]
     is_draft: bool,
+    #[serde(rename = "statusCheckRollup", default)]
+    status_check_rollup: Vec<GhStatusCheck>,
 }
 
 // Raw shape for `gh pr list` in reactive workflows (minimal fields).
@@ -125,6 +135,29 @@ struct GhPrRaw {
     #[serde(rename = "reviewDecision", default)]
     review_decision: Option<String>,
     url: String,
+    #[serde(rename = "statusCheckRollup", default)]
+    status_check_rollup: Vec<GhStatusCheck>,
+}
+
+/// Compute whether all checks are passing from a status check rollup.
+fn checks_passing(rollup: &[GhStatusCheck]) -> Option<bool> {
+    if rollup.is_empty() {
+        return None;
+    }
+    // If any check has conclusion FAILURE, checks are failing.
+    // If all concluded checks are SUCCESS/SKIPPED/NEUTRAL, checks are passing.
+    // If some checks have no conclusion yet (in progress), result is None.
+    let mut all_concluded = true;
+    for check in rollup {
+        match check.conclusion.as_deref() {
+            Some("FAILURE") | Some("TIMED_OUT") | Some("CANCELLED") | Some("ACTION_REQUIRED") => {
+                return Some(false);
+            }
+            Some("SUCCESS") | Some("SKIPPED") | Some("NEUTRAL") => {}
+            _ => all_concluded = false,
+        }
+    }
+    if all_concluded { Some(true) } else { None }
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -483,19 +516,23 @@ pub async fn fetch_eligible_prs(
 
     Ok(raw
         .into_iter()
-        .map(|r| PrCandidate {
-            number: r.number,
-            repo: repo.to_string(),
-            title: r.title,
-            body: String::new(),
-            labels: r.labels.into_iter().map(|l| l.name).collect(),
-            state: r.state,
-            html_url: r.url,
-            head_branch: r.head_ref_name,
-            base_branch: String::new(),
-            is_draft: false,
-            mergeable: r.mergeable,
-            review_decision: r.review_decision,
+        .map(|r| {
+            let cp = checks_passing(&r.status_check_rollup);
+            PrCandidate {
+                number: r.number,
+                repo: repo.to_string(),
+                title: r.title,
+                body: String::new(),
+                labels: r.labels.into_iter().map(|l| l.name).collect(),
+                state: r.state,
+                html_url: r.url,
+                head_branch: r.head_ref_name,
+                base_branch: String::new(),
+                is_draft: false,
+                mergeable: r.mergeable,
+                review_decision: r.review_decision,
+                checks_passing: cp,
+            }
         })
         .collect())
 }
@@ -510,7 +547,7 @@ pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
             repo,
             &number.to_string(),
             "--json",
-            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup",
         ])
         .output()
         .await
@@ -524,6 +561,7 @@ pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
     let raw: GhPrFull = serde_json::from_slice(&output.stdout)
         .map_err(|e| Error::GitHub(format!("failed to parse gh output: {e}")))?;
 
+    let cp = checks_passing(&raw.status_check_rollup);
     Ok(PrCandidate {
         number: raw.number,
         repo: repo.to_string(),
@@ -537,6 +575,7 @@ pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
         is_draft: raw.is_draft,
         mergeable: raw.mergeable,
         review_decision: raw.review_decision,
+        checks_passing: cp,
     })
 }
 
@@ -553,7 +592,7 @@ pub async fn fetch_prs_with_label(repo: &str, label: &str) -> Result<Vec<PrCandi
             "--label",
             label,
             "--json",
-            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup",
             "--limit",
             "100",
         ])
@@ -573,21 +612,99 @@ pub async fn fetch_prs_with_label(repo: &str, label: &str) -> Result<Vec<PrCandi
 
     Ok(raw
         .into_iter()
-        .map(|r| PrCandidate {
-            number: r.number,
-            repo: repo.to_string(),
-            title: r.title,
-            body: r.body.unwrap_or_default(),
-            labels: r.labels.into_iter().map(|l| l.name).collect(),
-            state: r.state,
-            html_url: r.url,
-            head_branch: r.head_ref_name,
-            base_branch: r.base_ref_name,
-            is_draft: r.is_draft,
-            mergeable: r.mergeable,
-            review_decision: r.review_decision,
+        .map(|r| {
+            let cp = checks_passing(&r.status_check_rollup);
+            PrCandidate {
+                number: r.number,
+                repo: repo.to_string(),
+                title: r.title,
+                body: r.body.unwrap_or_default(),
+                labels: r.labels.into_iter().map(|l| l.name).collect(),
+                state: r.state,
+                html_url: r.url,
+                head_branch: r.head_ref_name,
+                base_branch: r.base_ref_name,
+                is_draft: r.is_draft,
+                mergeable: r.mergeable,
+                review_decision: r.review_decision,
+                checks_passing: cp,
+            }
         })
         .collect())
+}
+
+/// Fetch all open PRs in a repo (no label filter).
+pub async fn fetch_all_open_prs(repo: &str, limit: usize) -> Result<Vec<PrCandidate>> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup",
+            "--limit",
+            &limit.to_string(),
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr list failed: {stderr}")));
+    }
+
+    let raw: Vec<GhPrFull> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| Error::GitHub(format!("failed to parse gh output: {e}")))?;
+
+    Ok(raw
+        .into_iter()
+        .map(|r| {
+            let cp = checks_passing(&r.status_check_rollup);
+            PrCandidate {
+                number: r.number,
+                repo: repo.to_string(),
+                title: r.title,
+                body: r.body.unwrap_or_default(),
+                labels: r.labels.into_iter().map(|l| l.name).collect(),
+                state: r.state,
+                html_url: r.url,
+                head_branch: r.head_ref_name,
+                base_branch: r.base_ref_name,
+                is_draft: r.is_draft,
+                mergeable: r.mergeable,
+                review_decision: r.review_decision,
+                checks_passing: cp,
+            }
+        })
+        .collect())
+}
+
+/// Post a comment on a PR.
+pub async fn comment_on_pr(repo: &str, number: u64, body: &str) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "comment",
+            "--repo",
+            repo,
+            &number.to_string(),
+            "--body",
+            body,
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh pr comment failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr comment failed: {stderr}")));
+    }
+
+    Ok(())
 }
 
 /// Add a label to a PR.

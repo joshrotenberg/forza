@@ -258,12 +258,12 @@ pub fn build_router(state: AppState) -> McpRouter {
                             )))
                         }
                     };
-                let template = match config.resolve_workflow(&route.workflow) {
+                let wf_name = route.workflow.as_deref().unwrap_or("");
+                let template = match config.resolve_workflow(wf_name) {
                     Some(t) => t,
                     None => {
                         return Ok(CallToolResult::text(format!(
-                            "unknown workflow: {}",
-                            route.workflow
+                            "unknown workflow: {wf_name}"
                         )))
                     }
                 };
