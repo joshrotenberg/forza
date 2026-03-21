@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::github::IssueCandidate;
 use crate::policy::RepoPolicy;
 
-static DEP_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:depends\s+on|blocked\s+by)\s+#(\d+)").unwrap()
-});
+static DEP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:depends\s+on|blocked\s+by)\s+#(\d+)").unwrap());
 
 /// Parse dependency issue numbers from an issue body.
 ///
