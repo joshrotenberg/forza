@@ -110,6 +110,120 @@ pub fn list_worktrees(repo_dir: &Path, base_dir: &str) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
+/// Validate that `repo_dir` is a local checkout of `repo` (owner/name).
+///
+/// Runs `git remote get-url origin` and checks that the output contains the
+/// repo slug. Returns `Ok(())` on success, `Err(Error::Isolation(_))` if the
+/// directory is not a git repo or the remote URL doesn't match.
+pub async fn validate_repo_dir(repo_dir: &Path, repo: &str) -> crate::error::Result<()> {
+    let output = tokio::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(repo_dir)
+        .output()
+        .await
+        .map_err(|e| {
+            crate::error::Error::Isolation(format!(
+                "failed to run git in {}: {e}",
+                repo_dir.display()
+            ))
+        })?;
+
+    if !output.status.success() {
+        return Err(crate::error::Error::Isolation(format!(
+            "{} is not a git repository (or has no 'origin' remote)",
+            repo_dir.display()
+        )));
+    }
+
+    let url = String::from_utf8_lossy(&output.stdout);
+    let url = url.trim();
+    // The repo slug may appear as "owner/name", "owner/name.git", etc.
+    let slug_bare = repo;
+    let slug_git = format!("{repo}.git");
+    if !url.contains(slug_bare) && !url.contains(&slug_git) {
+        return Err(crate::error::Error::Isolation(format!(
+            "{} remote origin URL '{url}' does not match repo '{repo}'",
+            repo_dir.display()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Resolve the local directory for `repo`, optionally cloning if not found.
+///
+/// Resolution order:
+/// 1. `explicit_dir` — if provided, validate it and return (or error).
+/// 2. Current working directory — if it's a checkout of `repo`, use it.
+/// 3. `~/.forza/repos/{repo}` — managed clone location, if it exists.
+/// 4. Prompt the user to clone via `gh repo clone`; clone on confirmation.
+pub async fn find_or_clone_repo(
+    repo: &str,
+    explicit_dir: Option<PathBuf>,
+) -> crate::error::Result<PathBuf> {
+    // Step 1: explicit dir provided — validate and return.
+    if let Some(dir) = explicit_dir {
+        validate_repo_dir(&dir, repo).await?;
+        return Ok(dir);
+    }
+
+    // Step 2: current working directory.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if validate_repo_dir(&cwd, repo).await.is_ok() {
+        return Ok(cwd);
+    }
+
+    // Step 3: managed clone location.
+    let managed = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".forza")
+        .join("repos")
+        .join(repo);
+    if managed.exists() && validate_repo_dir(&managed, repo).await.is_ok() {
+        return Ok(managed);
+    }
+
+    // Step 4: prompt to clone.
+    eprint!(
+        "Repository '{repo}' not found locally. Clone to {}? [y/N] ",
+        managed.display()
+    );
+
+    let mut answer = String::new();
+    std::io::stdin()
+        .read_line(&mut answer)
+        .map_err(|e| crate::error::Error::Isolation(format!("failed to read user input: {e}")))?;
+
+    if !answer.trim().eq_ignore_ascii_case("y") {
+        return Err(crate::error::Error::Isolation(format!(
+            "repository '{repo}' not found locally and clone was declined"
+        )));
+    }
+
+    // Create parent directory.
+    if let Some(parent) = managed.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            crate::error::Error::Isolation(format!("failed to create {}: {e}", parent.display()))
+        })?;
+    }
+
+    let output = tokio::process::Command::new("gh")
+        .args(["repo", "clone", repo])
+        .arg(&managed)
+        .output()
+        .await
+        .map_err(|e| crate::error::Error::Isolation(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(crate::error::Error::Isolation(format!(
+            "gh repo clone failed: {stderr}"
+        )));
+    }
+
+    Ok(managed)
+}
+
 /// Detect the remote default branch (origin/main or origin/master).
 async fn detect_default_branch(repo_dir: &Path) -> String {
     // Try origin/main first, fall back to origin/master, then HEAD.

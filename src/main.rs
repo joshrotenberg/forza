@@ -146,12 +146,6 @@ fn state_dir() -> PathBuf {
         .join("runs")
 }
 
-fn repo_dir(arg: &Option<PathBuf>, config: &forza::RunnerConfig) -> PathBuf {
-    arg.clone()
-        .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-}
-
 fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> {
     match forza::RunnerConfig::from_file(path) {
         Ok(c) => Ok(c),
@@ -284,7 +278,7 @@ workflow = "feature"
 /// Resolve which repo, repo_dir, and routes to use for a single-issue command.
 ///
 /// Checks `args.repo` when multiple repos are configured; errors if ambiguous.
-fn resolve_repo<'a>(
+async fn resolve_repo<'a>(
     args_repo: Option<&str>,
     args_repo_dir: &Option<PathBuf>,
     config: &'a forza::RunnerConfig,
@@ -315,11 +309,19 @@ fn resolve_repo<'a>(
         }
     };
 
-    let rd = entry_repo_dir
+    // The explicit_dir priority: per-repo entry_repo_dir > CLI arg > global config repo_dir.
+    let explicit_dir = entry_repo_dir
         .map(PathBuf::from)
         .or_else(|| args_repo_dir.clone())
-        .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
+
+    let rd = match forza::isolation::find_or_clone_repo(repo_str, explicit_dir).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
 
     Ok((repo_str.to_string(), rd, routes))
 }
@@ -327,7 +329,8 @@ fn resolve_repo<'a>(
 async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
     let sd = state_dir();
 
-    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config) {
+    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config).await
+    {
         Ok(r) => r,
         Err(code) => return code,
     };
@@ -471,12 +474,42 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
 }
 
 async fn cmd_run(args: RunArgs, config: &forza::RunnerConfig) -> ExitCode {
-    let rd = repo_dir(&args.repo_dir, config);
     let sd = state_dir();
 
+    // Resolve a local directory for every configured repo before doing any work.
+    let mut repos_resolved: Vec<(
+        String,
+        PathBuf,
+        std::collections::HashMap<String, forza::config::Route>,
+    )> = Vec::new();
+    for (repo, entry_repo_dir, routes) in config.iter_repos() {
+        let explicit_dir = entry_repo_dir
+            .map(PathBuf::from)
+            .or_else(|| args.repo_dir.clone())
+            .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
+        let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        repos_resolved.push((repo.to_string(), rd, routes.clone()));
+    }
+
     let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
-    let records =
-        forza::orchestrator::process_batch_with_config(config, &sd, &rd, &cancel_rx).await;
+
+    let mut all_records = Vec::new();
+    for (repo, rd, routes) in &repos_resolved {
+        if *cancel_rx.borrow() {
+            break;
+        }
+        let mut records =
+            forza::orchestrator::process_batch_for_repo(repo, config, &sd, rd, routes, &cancel_rx)
+                .await;
+        all_records.append(&mut records);
+    }
+    let records = all_records;
 
     println!();
     let succeeded = records
@@ -509,22 +542,25 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
     let interval = args.interval.unwrap_or(60);
     let interval_dur = std::time::Duration::from_secs(interval);
 
-    let repos_data: Vec<(
+    let mut repos_data: Vec<(
         String,
         PathBuf,
         std::collections::HashMap<String, forza::config::Route>,
-    )> = config
-        .iter_repos()
-        .into_iter()
-        .map(|(repo, repo_dir_opt, routes)| {
-            let rd = repo_dir_opt
-                .map(PathBuf::from)
-                .or_else(|| args.repo_dir.clone())
-                .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from))
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            (repo.to_string(), rd, routes.clone())
-        })
-        .collect();
+    )> = Vec::new();
+    for (repo, entry_repo_dir, routes) in config.iter_repos() {
+        let explicit_dir = entry_repo_dir
+            .map(PathBuf::from)
+            .or_else(|| args.repo_dir.clone())
+            .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
+        let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        repos_data.push((repo.to_string(), rd, routes.clone()));
+    }
 
     info!(
         repos = repos_data.len(),
@@ -743,15 +779,20 @@ async fn cmd_fix(args: FixArgs, config: &forza::RunnerConfig) -> ExitCode {
 
     // Resolve the repo and routes from the run record.
     let repo = record.repo.clone();
-    let (routes, rd) = if let Some(entry) = config.repos.get(&repo) {
-        let rd = entry
-            .repo_dir
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| repo_dir(&None, config));
-        (&entry.routes, rd)
+    let (routes, explicit_dir) = if let Some(entry) = config.repos.get(&repo) {
+        (&entry.routes, entry.repo_dir.as_ref().map(PathBuf::from))
     } else {
-        (&config.routes, repo_dir(&None, config))
+        (
+            &config.routes,
+            config.global.repo_dir.as_ref().map(PathBuf::from),
+        )
+    };
+    let rd = match forza::isolation::find_or_clone_repo(&repo, explicit_dir).await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
     };
 
     // Re-run the issue with error context injected.
@@ -798,25 +839,37 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
             println!("removed {} file(s)", files.len());
         }
     } else {
-        let rd = repo_dir(&args.repo_dir, config);
-        let worktrees = forza::isolation::list_worktrees(&rd, ".worktrees");
-        if worktrees.is_empty() {
-            println!("no worktrees found");
-            return ExitCode::SUCCESS;
-        }
-        for wt in &worktrees {
-            println!("{}", wt.display());
-        }
-        if args.dry_run {
-            println!("dry run: {} worktree(s) would be removed", worktrees.len());
-        } else {
-            for wt in &worktrees {
-                if let Err(e) = forza::isolation::remove_worktree(&rd, wt, true).await {
-                    eprintln!("error removing worktree {}: {e}", wt.display());
+        for (repo, entry_repo_dir, _routes) in config.iter_repos() {
+            let explicit_dir = entry_repo_dir
+                .map(PathBuf::from)
+                .or_else(|| args.repo_dir.clone())
+                .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
+            let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("error: {e}");
                     return ExitCode::FAILURE;
                 }
+            };
+            let worktrees = forza::isolation::list_worktrees(&rd, ".worktrees");
+            if worktrees.is_empty() {
+                println!("no worktrees found in {}", rd.display());
+                continue;
             }
-            println!("removed {} worktree(s)", worktrees.len());
+            for wt in &worktrees {
+                println!("{}", wt.display());
+            }
+            if args.dry_run {
+                println!("dry run: {} worktree(s) would be removed", worktrees.len());
+            } else {
+                for wt in &worktrees {
+                    if let Err(e) = forza::isolation::remove_worktree(&rd, wt, true).await {
+                        eprintln!("error removing worktree {}: {e}", wt.display());
+                        return ExitCode::FAILURE;
+                    }
+                }
+                println!("removed {} worktree(s)", worktrees.len());
+            }
         }
     }
 
