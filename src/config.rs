@@ -1086,12 +1086,7 @@ workflow = "bug"
 
     #[test]
     fn effective_skills_falls_back_to_global_when_no_stage_or_route() {
-        let (config, route) = make_config_with_agent(
-            vec!["global.md".into()],
-            None,
-            None,
-            None,
-        );
+        let (config, route) = make_config_with_agent(vec!["global.md".into()], None, None, None);
         assert_eq!(config.effective_skills(&route, None), &["global.md"]);
     }
 
@@ -1125,12 +1120,8 @@ workflow = "bug"
 
     #[test]
     fn effective_mcp_config_falls_back_to_global_when_no_stage_or_route() {
-        let (config, route) = make_config_with_agent(
-            vec![],
-            Some("global.json".into()),
-            None,
-            None,
-        );
+        let (config, route) =
+            make_config_with_agent(vec![], Some("global.json".into()), None, None);
         assert_eq!(
             config.effective_mcp_config(&route, None),
             Some("global.json")

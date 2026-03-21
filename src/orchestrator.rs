@@ -907,10 +907,7 @@ pub async fn process_issue(
         }
 
         let stage_model = planned_stage.model.as_deref().or(policy.model.as_deref());
-        let stage_skills: &[String] = planned_stage
-            .skills
-            .as_deref()
-            .unwrap_or(&policy.skills);
+        let stage_skills: &[String] = planned_stage.skills.as_deref().unwrap_or(&policy.skills);
         let stage_mcp = planned_stage
             .mcp_config
             .as_deref()
@@ -926,7 +923,10 @@ pub async fn process_issue(
             stage_adapter = stage_adapter.mcp_config(p);
         }
 
-        match stage_adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
+        match stage_adapter
+            .execute_stage(&stage_for_exec, &worktree_dir)
+            .await
+        {
             Ok(result) => {
                 let status = if result.success {
                     StageStatus::Succeeded
@@ -1230,7 +1230,6 @@ async fn eval_stage_condition(
         }
     }
 }
-
 
 async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &str) {
     for cmd in hooks {
