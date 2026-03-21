@@ -286,6 +286,16 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
             ..Default::default()
         },
         WorkflowTemplate {
+            name: "pr-fix".into(),
+            stages: vec![
+                Stage::new(StageKind::RevisePr),
+                Stage::new(StageKind::FixCi),
+                Stage::new(StageKind::Merge)
+                    .optional()
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+            ],
+        },
+        WorkflowTemplate {
             name: "pr-merge".into(),
             stages: vec![
                 Stage::new(StageKind::Merge)

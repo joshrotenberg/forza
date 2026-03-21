@@ -1,21 +1,39 @@
+# forza.toml — forza's own configuration (self-hosting)
+#
+# This is the config that forza uses to process its own issues and PRs.
+# It serves as both a working config and documentation of how to set up
+# forza for a Rust project.
+
 [global]
+# Maximum concurrent tasks across all routes.
 max_concurrency = 3
+# Default model for all agent stages.
 model = "claude-sonnet-4-6"
+# Issues must have this label to be picked up by the watch loop.
 gate_label = "forza:ready"
+# Branch naming pattern. {issue} = issue/PR number, {slug} = title slug.
 branch_pattern = "automation/{issue}-{slug}"
 
 [security]
+# Only allow issues from contributors (not random users).
 authorization_level = "contributor"
 
 [validation]
+# These commands run between stages to catch regressions early.
+# If any command fails, the run stops.
 commands = [
     "cargo fmt --all -- --check",
     "cargo clippy --all-targets -- -D warnings",
     "cargo test --lib",
 ]
 
+# ── Repository: joshrotenberg/forza ──────────────────────────────────
+# Each repo gets its own route table. Routes map label + type to a
+# workflow template with per-route concurrency and polling settings.
+
 [repos."joshrotenberg/forza"]
 
+# Bug fixes — low concurrency, fast polling (check every minute).
 [repos."joshrotenberg/forza".routes.bugfix]
 type = "issue"
 label = "bug"
@@ -23,6 +41,7 @@ workflow = "bug"
 concurrency = 1
 poll_interval = 60
 
+# New features — higher concurrency, slower polling.
 [repos."joshrotenberg/forza".routes.features]
 type = "issue"
 label = "enhancement"
@@ -30,6 +49,7 @@ workflow = "feature"
 concurrency = 2
 poll_interval = 300
 
+# Research tasks — highest concurrency (read-only, no conflicts).
 [repos."joshrotenberg/forza".routes.research]
 type = "issue"
 label = "research"
@@ -37,9 +57,39 @@ workflow = "research"
 concurrency = 3
 poll_interval = 3600
 
+# Chores (badges, docs, config, etc.)
 [repos."joshrotenberg/forza".routes.chores]
 type = "issue"
 label = "chore"
 workflow = "chore"
 concurrency = 2
 poll_interval = 600
+
+# ── PR routes ────────────────────────────────────────────────────────
+# These routes handle PRs that need automated fixes. Label a PR with
+# the route label to trigger processing via `forza pr` or watch mode.
+
+# Full PR fix — rebase onto main, fix CI failures, then merge.
+# This is the most common PR maintenance workflow: rebase first so the
+# branch is up to date, then fix whatever breaks (clippy, tests, etc.).
+[repos."joshrotenberg/forza".routes.fix-pr]
+type = "pr"
+label = "forza:fix-pr"
+workflow = "pr-fix"
+concurrency = 2
+
+# Fix CI failures only (no rebase). Use when the branch is current but
+# CI is failing due to code issues.
+[repos."joshrotenberg/forza".routes.fix-ci]
+type = "pr"
+label = "forza:fix-ci"
+workflow = "pr-fix-ci"
+concurrency = 2
+
+# Rebase only. Use when the branch just needs to be rebased but the
+# code itself is fine.
+[repos."joshrotenberg/forza".routes.rebase]
+type = "pr"
+label = "forza:rebase"
+workflow = "pr-rebase"
+concurrency = 2
