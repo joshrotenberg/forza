@@ -41,6 +41,8 @@ enum Command {
     Fix(FixArgs),
     /// Remove worktrees or run state.
     Clean(CleanArgs),
+    /// Serve the REST API.
+    Serve(ServeArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -139,6 +141,19 @@ struct CleanArgs {
     dry_run: bool,
 }
 
+#[derive(Debug, Parser)]
+struct ServeArgs {
+    /// Host address to bind to.
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+    /// Port to listen on.
+    #[arg(long, default_value_t = 8080)]
+    port: u16,
+    /// Repository directory (passed to repo resolution).
+    #[arg(long)]
+    repo_dir: Option<PathBuf>,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -173,8 +188,10 @@ async fn main() -> ExitCode {
         Err(code) => return code,
     };
 
-    if !matches!(cli.command, Command::Status(_) | Command::Clean(_))
-        && let Err(e) = forza::deps::validate_dependencies(&config.global.agent).await
+    if !matches!(
+        cli.command,
+        Command::Status(_) | Command::Clean(_) | Command::Serve(_)
+    ) && let Err(e) = forza::deps::validate_dependencies(&config.global.agent).await
     {
         eprintln!("error: {e}");
         return ExitCode::FAILURE;
@@ -189,6 +206,7 @@ async fn main() -> ExitCode {
         Command::Status(args) => cmd_status(args),
         Command::Fix(args) => cmd_fix(args, &config).await,
         Command::Clean(args) => cmd_clean(args, &config).await,
+        Command::Serve(args) => cmd_serve(args, config).await,
     }
 }
 
@@ -874,6 +892,73 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
         }
     }
 
+    ExitCode::SUCCESS
+}
+
+async fn cmd_serve(args: ServeArgs, config: forza::RunnerConfig) -> ExitCode {
+    use std::sync::Arc;
+
+    let sd = state_dir();
+    let state = Arc::new(forza::api::AppState {
+        config,
+        state_dir: sd,
+    });
+
+    let addr: std::net::SocketAddr = match format!("{}:{}", args.host, args.port).parse() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("error: invalid address {}:{}: {e}", args.host, args.port);
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let router = forza::api::router(state);
+
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("error: could not bind to {addr}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    info!(address = %addr, "REST API server listening");
+
+    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+
+    // SIGTERM handler (Unix only).
+    #[cfg(unix)]
+    {
+        let tx = cancel_tx.clone();
+        tokio::spawn(async move {
+            use tokio::signal::unix::{SignalKind, signal};
+            if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+                sigterm.recv().await;
+                let _ = tx.send(true);
+            }
+        });
+    }
+
+    // SIGINT / Ctrl-C handler (all platforms).
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        let _ = cancel_tx.send(true);
+    });
+
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            let mut rx = cancel_rx;
+            // Wait until the channel signals true.
+            loop {
+                if rx.changed().await.is_err() || *rx.borrow() {
+                    break;
+                }
+            }
+        })
+        .await
+        .ok();
+
+    info!("REST API server stopped");
     ExitCode::SUCCESS
 }
 

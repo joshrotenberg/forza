@@ -14,6 +14,7 @@
 //! - **Domain** (`policy`, `triage`, `planner`, `workflow`): Orchestration logic
 //! - **Execution** (`executor`, `isolation`): Agent invocation and work isolation
 
+pub mod api;
 pub mod config;
 pub mod deps;
 pub mod error;
