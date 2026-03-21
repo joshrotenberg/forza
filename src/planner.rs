@@ -187,26 +187,40 @@ fn generate_stage_prompt(
             title = issue.title,
             body = issue.body,
         ),
-        StageKind::Implement => format!(
-            "Implement the changes for issue #{number}.\n\n\
-             Issue title: {title}\n\n\
-             ## Context\n\n\
-             Read the plan breadcrumb at `.plan_breadcrumb.md` for the list of files to modify \
-             and the approach decided in the plan stage.\n\n\
-             ## Instructions\n\n\
-             1. Only modify the files listed in the breadcrumb. Do NOT touch any other files.\n\
-             2. Follow the existing code patterns and style.\n\
-             3. For Rust code: use Rust 2024 if-let chains — write \
-               `if let Some(x) = y && condition {{` instead of nested if-let/if blocks.\n\
-             4. After making changes, run `cargo fmt --all` to format the code.\n\
-             5. Commit using the exact commit message from the breadcrumb.\n\n\
-             Do NOT create a PR in this stage.",
-            number = issue.number,
-            title = issue.title,
-        ),
+        StageKind::Implement => {
+            let (run_step, commit_num) = if validation_commands.is_empty() {
+                (String::new(), 4)
+            } else {
+                let cmds = validation_commands
+                    .iter()
+                    .map(|c| format!("`{c}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (format!("4. After making changes, run {cmds}.\n"), 5)
+            };
+            format!(
+                "Implement the changes for issue #{number}.\n\n\
+                 Issue title: {title}\n\n\
+                 ## Context\n\n\
+                 Read the plan breadcrumb at `.plan_breadcrumb.md` for the list of files to modify \
+                 and the approach decided in the plan stage.\n\n\
+                 ## Instructions\n\n\
+                 1. Only modify the files listed in the breadcrumb. Do NOT touch any other files.\n\
+                 2. Follow the existing code patterns and style.\n\
+                 3. For Rust code: use Rust 2024 if-let chains — write \
+                   `if let Some(x) = y && condition {{` instead of nested if-let/if blocks.\n\
+                 {run_step}\
+                 {commit_num}. Commit using the exact commit message from the breadcrumb.\n\n\
+                 Do NOT create a PR in this stage.",
+                number = issue.number,
+                title = issue.title,
+                run_step = run_step,
+                commit_num = commit_num,
+            )
+        }
         StageKind::Test => {
             let cmds = if validation_commands.is_empty() {
-                "cargo test --lib --all-features".to_string()
+                "Run your project's validation commands".to_string()
             } else {
                 validation_commands
                     .iter()
@@ -249,7 +263,7 @@ fn generate_stage_prompt(
         ),
         StageKind::OpenPr => {
             let test_plan = if validation_commands.is_empty() {
-                "- [ ] cargo test passes".to_string()
+                "- [ ] All validation checks pass".to_string()
             } else {
                 validation_commands
                     .iter()
@@ -403,8 +417,17 @@ mod tests {
         let prompt = generate_stage_prompt(StageKind::Implement, &issue, &[]);
         assert!(prompt.contains("#42"));
         assert!(prompt.contains(".plan_breadcrumb.md"));
-        assert!(prompt.contains("cargo fmt --all"));
+        assert!(!prompt.contains("cargo fmt --all"));
         assert!(prompt.contains("Do NOT create a PR"));
+    }
+
+    #[test]
+    fn implement_prompt_lists_validation_commands_when_provided() {
+        let issue = make_issue(42, "feat: add something");
+        let cmds = vec!["cargo fmt --all".to_string(), "cargo clippy".to_string()];
+        let prompt = generate_stage_prompt(StageKind::Implement, &issue, &cmds);
+        assert!(prompt.contains("cargo fmt --all"));
+        assert!(prompt.contains("cargo clippy"));
     }
 
     #[test]
@@ -420,7 +443,8 @@ mod tests {
     fn test_prompt_falls_back_when_no_validation_commands() {
         let issue = make_issue(42, "feat: add something");
         let prompt = generate_stage_prompt(StageKind::Test, &issue, &[]);
-        assert!(prompt.contains("cargo test --lib --all-features"));
+        assert!(prompt.contains("Run your project's validation commands"));
+        assert!(!prompt.contains("cargo test --lib --all-features"));
     }
 
     #[test]
