@@ -348,6 +348,7 @@ fn load_prompt_template(
                 .replace("{issue_number}", &issue.number.to_string())
                 .replace("{issue_title}", &issue.title)
                 .replace("{issue_body}", &issue.body)
+                .replace("{issue_context}", &issue_context(issue))
                 .replace("{branch}", branch)
                 .replace("{repo}", &issue.repo),
         ),
@@ -733,5 +734,231 @@ mod tests {
         for stage in &plan.stages {
             assert_eq!(stage.validation, vec!["cargo test --lib"]);
         }
+    }
+
+    fn make_issue_with_comments(number: u64, title: &str, comments: Vec<String>) -> IssueCandidate {
+        IssueCandidate {
+            comments,
+            ..make_issue(number, title)
+        }
+    }
+
+    #[test]
+    fn file_template_variables_substituted() {
+        let dir = tempfile::tempdir().unwrap();
+        let template_path = dir.path().join("plan.md");
+        std::fs::write(
+            &template_path,
+            "issue={issue_number} title={issue_title} body={issue_body} \
+             context={issue_context} branch={branch} repo={repo}",
+        )
+        .unwrap();
+
+        let issue = make_issue_with_comments(7, "feat: something", vec!["a comment".to_string()]);
+        let result =
+            load_prompt_template("plan.md", dir.path(), &issue, "automation/7-feat-something")
+                .unwrap();
+
+        assert!(result.contains("issue=7"));
+        assert!(result.contains("title=feat: something"));
+        assert!(result.contains("body=issue body"));
+        assert!(result.contains("branch=automation/7-feat-something"));
+        assert!(result.contains("repo=owner/repo"));
+        // {issue_context} includes the body and the comment discussion
+        assert!(result.contains("a comment"));
+        assert!(result.contains("## Discussion"));
+    }
+
+    #[test]
+    fn file_template_missing_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let issue = make_issue(1, "test");
+        let result = load_prompt_template("nonexistent.md", dir.path(), &issue, "branch");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn file_template_takes_priority_over_policy_stage_prompts() {
+        let dir = tempfile::tempdir().unwrap();
+        let template_path = dir.path().join("plan_override.md");
+        std::fs::write(&template_path, "file-based plan prompt for #{issue_number}").unwrap();
+
+        let issue = make_issue(42, "feat: add something");
+        let mut policy = make_policy(vec![]);
+        policy
+            .stage_prompts
+            .insert("plan".to_string(), "policy plan prompt".to_string());
+
+        let mut cfg = RunnerConfig {
+            global: crate::config::GlobalConfig {
+                repo: Some("owner/repo".to_string()),
+                repo_dir: None,
+                max_concurrency: 5,
+                max_cost_per_issue: None,
+                max_cost_per_hour: None,
+                agent: "claude".to_string(),
+                model: None,
+                gate_label: None,
+                in_progress_label: "forza:in-progress".to_string(),
+                complete_label: "forza:complete".to_string(),
+                failed_label: "forza:failed".to_string(),
+                branch_pattern: "automation/{issue}-{slug}".to_string(),
+                stale_lease_timeout: 3600,
+                default_workflow: None,
+                auto_merge: false,
+                notifications: None,
+            },
+            security: Default::default(),
+            validation: Default::default(),
+            routes: Default::default(),
+            repos: Default::default(),
+            workflow_templates: vec![],
+            agent_config: Default::default(),
+            stage_hooks: Default::default(),
+            prompt_templates: Default::default(),
+        };
+        cfg.prompt_templates
+            .insert("plan".to_string(), "plan_override.md".to_string());
+
+        let template = crate::workflow::builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "feature")
+            .unwrap();
+        let plan = create_plan_with_config(
+            &issue,
+            &template,
+            "automation/42-feat-add-something",
+            Some(&policy),
+            Some((&cfg, dir.path())),
+            "run-test",
+        );
+        let plan_stage = plan
+            .stages
+            .iter()
+            .find(|s| s.kind == StageKind::Plan)
+            .unwrap();
+        assert!(plan_stage.prompt.contains("file-based plan prompt"));
+        assert!(!plan_stage.prompt.contains("policy plan prompt"));
+    }
+
+    #[test]
+    fn file_template_missing_falls_back_to_builtin() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let issue = make_issue(42, "feat: add something");
+        let mut cfg = RunnerConfig {
+            global: crate::config::GlobalConfig {
+                repo: Some("owner/repo".to_string()),
+                repo_dir: None,
+                max_concurrency: 5,
+                max_cost_per_issue: None,
+                max_cost_per_hour: None,
+                agent: "claude".to_string(),
+                model: None,
+                gate_label: None,
+                in_progress_label: "forza:in-progress".to_string(),
+                complete_label: "forza:complete".to_string(),
+                failed_label: "forza:failed".to_string(),
+                branch_pattern: "automation/{issue}-{slug}".to_string(),
+                stale_lease_timeout: 3600,
+                default_workflow: None,
+                auto_merge: false,
+                notifications: None,
+            },
+            security: Default::default(),
+            validation: Default::default(),
+            routes: Default::default(),
+            repos: Default::default(),
+            workflow_templates: vec![],
+            agent_config: Default::default(),
+            stage_hooks: Default::default(),
+            prompt_templates: Default::default(),
+        };
+        cfg.prompt_templates
+            .insert("plan".to_string(), "does_not_exist.md".to_string());
+
+        let template = crate::workflow::builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "feature")
+            .unwrap();
+        let plan = create_plan_with_config(
+            &issue,
+            &template,
+            "automation/42-feat-add-something",
+            None,
+            Some((&cfg, dir.path())),
+            "run-test",
+        );
+        let plan_stage = plan
+            .stages
+            .iter()
+            .find(|s| s.kind == StageKind::Plan)
+            .unwrap();
+        // Falls back to built-in plan prompt
+        assert!(plan_stage.prompt.contains("#42"));
+        assert!(plan_stage.prompt.contains(".plan_breadcrumb.md"));
+    }
+
+    #[test]
+    fn breadcrumb_instruction_appended_for_file_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let template_path = dir.path().join("impl.md");
+        std::fs::write(&template_path, "my custom implement prompt").unwrap();
+
+        let issue = make_issue(42, "feat: add something");
+        let mut cfg = RunnerConfig {
+            global: crate::config::GlobalConfig {
+                repo: Some("owner/repo".to_string()),
+                repo_dir: None,
+                max_concurrency: 5,
+                max_cost_per_issue: None,
+                max_cost_per_hour: None,
+                agent: "claude".to_string(),
+                model: None,
+                gate_label: None,
+                in_progress_label: "forza:in-progress".to_string(),
+                complete_label: "forza:complete".to_string(),
+                failed_label: "forza:failed".to_string(),
+                branch_pattern: "automation/{issue}-{slug}".to_string(),
+                stale_lease_timeout: 3600,
+                default_workflow: None,
+                auto_merge: false,
+                notifications: None,
+            },
+            security: Default::default(),
+            validation: Default::default(),
+            routes: Default::default(),
+            repos: Default::default(),
+            workflow_templates: vec![],
+            agent_config: Default::default(),
+            stage_hooks: Default::default(),
+            prompt_templates: Default::default(),
+        };
+        cfg.prompt_templates
+            .insert("implement".to_string(), "impl.md".to_string());
+
+        let template = crate::workflow::builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "feature")
+            .unwrap();
+        let plan = create_plan_with_config(
+            &issue,
+            &template,
+            "automation/42-feat-add-something",
+            None,
+            Some((&cfg, dir.path())),
+            "run-breadcrumb",
+        );
+        let impl_stage = plan
+            .stages
+            .iter()
+            .find(|s| s.kind == StageKind::Implement)
+            .unwrap();
+        assert!(impl_stage.prompt.contains("my custom implement prompt"));
+        assert!(
+            impl_stage
+                .prompt
+                .contains(".forza/breadcrumbs/run-breadcrumb/implement.md")
+        );
     }
 }

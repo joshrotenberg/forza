@@ -688,6 +688,28 @@ auto_merge = true
     }
 
     #[test]
+    fn prompt_templates_parsed_from_toml() {
+        let content = r#"
+[global]
+repo = "owner/repo"
+
+[prompt_templates]
+plan = "prompts/plan.md"
+implement = "prompts/implement.md"
+"#;
+        let config: RunnerConfig = toml::from_str(content).unwrap();
+        assert_eq!(
+            config.prompt_templates.get("plan").map(|s| s.as_str()),
+            Some("prompts/plan.md")
+        );
+        assert_eq!(
+            config.prompt_templates.get("implement").map(|s| s.as_str()),
+            Some("prompts/implement.md")
+        );
+        assert_eq!(config.prompt_templates.len(), 2);
+    }
+
+    #[test]
     fn slug_generation() {
         assert_eq!(slugify("fix: handle the thing", 40), "fix-handle-the-thing");
         assert_eq!(
