@@ -125,6 +125,14 @@ pub async fn process_issue_with_config(
             run_stage_hooks(&h.pre, &worktree_dir, "pre").await;
         }
 
+        if planned_stage.kind == StageKind::Merge && !config.global.auto_merge {
+            info!(
+                issue = number,
+                "skipping merge stage: auto_merge is disabled"
+            );
+            continue;
+        }
+
         if planned_stage.kind == StageKind::OpenPr {
             let open_pr_success =
                 match handle_open_pr(repo, &branch, &issue.title, number, &worktree_dir).await {
