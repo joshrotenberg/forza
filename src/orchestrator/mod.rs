@@ -1255,13 +1255,24 @@ pub async fn process_batch_for_repo(
         let label = pr_route.label.as_deref().unwrap();
         match github::fetch_prs_with_label(repo, label).await {
             Ok(prs) => {
+                // Filter out PRs that are already complete, needs-human, or in-progress.
+                let actionable: Vec<_> = prs
+                    .into_iter()
+                    .filter(|pr| {
+                        !pr.labels.iter().any(|l| {
+                            l == &config.global.complete_label
+                                || l == &config.global.in_progress_label
+                                || l == "forza:needs-human"
+                        })
+                    })
+                    .collect();
                 info!(
                     repo = repo,
                     route = pr_route_name,
-                    count = prs.len(),
+                    count = actionable.len(),
                     "found eligible PRs"
                 );
-                for pr in prs {
+                for pr in actionable {
                     pending.push_back((pr_route_name.to_string(), PendingSubject::Pr(pr)));
                 }
             }
@@ -1489,10 +1500,18 @@ pub async fn process_batch_for_repo(
         }
     }
 
-    // Process PR-type routes with reactive dispatch (label-based only in legacy path).
+    // Process PR-type routes with reactive dispatch (only reactive-mode workflows).
     let pr_routes: Vec<(String, String)> = routes
         .iter()
-        .filter(|(_, r)| r.route_type == "pr" && r.label.is_some())
+        .filter(|(_, r)| {
+            r.route_type == "pr"
+                && r.label.is_some()
+                && r.workflow.as_deref().is_some_and(|wf| {
+                    config
+                        .resolve_workflow(wf)
+                        .is_some_and(|t| t.mode == crate::workflow::WorkflowMode::Reactive)
+                })
+        })
         .map(|(name, r)| (name.clone(), r.label.clone().unwrap()))
         .collect();
 
