@@ -22,6 +22,9 @@ pub struct IssueCandidate {
     pub updated_at: String,
     pub is_assigned: bool,
     pub html_url: String,
+    /// Login of the issue author.
+    #[serde(default)]
+    pub author: String,
     /// Issue comments (discussion, design decisions).
     #[serde(default)]
     pub comments: Vec<String>,
@@ -68,8 +71,14 @@ struct GhIssue {
     updated_at: String,
     assignees: Vec<serde_json::Value>,
     url: String,
+    author: GhAuthor,
     #[serde(default)]
     comments: Vec<GhComment>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GhAuthor {
+    login: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,7 +139,7 @@ pub async fn fetch_issue(repo: &str, number: u64) -> Result<IssueCandidate> {
             repo,
             &number.to_string(),
             "--json",
-            "number,title,body,labels,state,createdAt,updatedAt,assignees,url,comments",
+            "number,title,body,labels,state,createdAt,updatedAt,assignees,url,author,comments",
         ])
         .output()
         .await
@@ -155,6 +164,7 @@ pub async fn fetch_issue(repo: &str, number: u64) -> Result<IssueCandidate> {
         updated_at: raw.updated_at,
         is_assigned: !raw.assignees.is_empty(),
         html_url: raw.url,
+        author: raw.author.login,
         comments: raw.comments.into_iter().map(|c| c.body).collect(),
     })
 }
@@ -173,7 +183,8 @@ pub async fn fetch_eligible_issues(
         "--state".to_string(),
         "open".to_string(),
         "--json".to_string(),
-        "number,title,body,labels,state,createdAt,updatedAt,assignees,url,comments".to_string(),
+        "number,title,body,labels,state,createdAt,updatedAt,assignees,url,author,comments"
+            .to_string(),
         "--limit".to_string(),
         limit.to_string(),
     ];
@@ -210,6 +221,7 @@ pub async fn fetch_eligible_issues(
             updated_at: r.updated_at,
             is_assigned: !r.assignees.is_empty(),
             html_url: r.url,
+            author: r.author.login,
             comments: r.comments.into_iter().map(|c| c.body).collect(),
         })
         .collect())
@@ -228,7 +240,7 @@ pub async fn fetch_issues_with_label(repo: &str, label: &str) -> Result<Vec<Issu
             "--label",
             label,
             "--json",
-            "number,title,body,labels,state,createdAt,updatedAt,assignees,url,comments",
+            "number,title,body,labels,state,createdAt,updatedAt,assignees,url,author,comments",
             "--limit",
             "100",
         ])
@@ -259,9 +271,30 @@ pub async fn fetch_issues_with_label(repo: &str, label: &str) -> Result<Vec<Issu
             updated_at: r.updated_at,
             is_assigned: !r.assignees.is_empty(),
             html_url: r.url,
+            author: r.author.login,
             comments: r.comments.into_iter().map(|c| c.body).collect(),
         })
         .collect())
+}
+
+/// Fetch the login of the currently authenticated GitHub user.
+pub async fn fetch_authenticated_user() -> Result<String> {
+    let output = tokio::process::Command::new("gh")
+        .args(["api", "user", "--jq", ".login"])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh api user: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh api user failed: {stderr}")));
+    }
+
+    let login = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if login.is_empty() {
+        return Err(Error::GitHub("gh api user returned empty login".into()));
+    }
+    Ok(login)
 }
 
 /// Push a branch from a worktree to the remote.
