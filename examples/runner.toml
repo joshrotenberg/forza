@@ -133,6 +133,19 @@ stages = [
     { kind = "open_pr" },
 ]
 
+# Per-stage agent config example: override model, skills, or MCP config for
+# specific stages. Stage config takes precedence over route config, which takes
+# precedence over [agent_config].
+#
+# [[workflow_templates]]
+# name = "deep-feature"
+# stages = [
+#     { kind = "plan", model = "claude-opus-4-6", skills = ["./skills/architect.md"] },
+#     { kind = "implement" },
+#     { kind = "test", mcp_config = ".mcp.test.json" },
+#     { kind = "open_pr" },
+# ]
+
 [[workflow_templates]]
 name = "discuss"
 stages = [

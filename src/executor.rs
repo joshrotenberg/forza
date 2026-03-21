@@ -38,6 +38,9 @@ pub struct ClaudeAdapter {
     binary: Option<PathBuf>,
     model: Option<String>,
     max_turns: Option<u32>,
+    skills: Vec<String>,
+    mcp_config: Option<String>,
+    append_system_prompt: Option<String>,
 }
 
 impl ClaudeAdapter {
@@ -46,6 +49,9 @@ impl ClaudeAdapter {
             binary: None,
             model: None,
             max_turns: None,
+            skills: Vec::new(),
+            mcp_config: None,
+            append_system_prompt: None,
         }
     }
 
@@ -61,6 +67,21 @@ impl ClaudeAdapter {
 
     pub fn binary(mut self, path: impl Into<PathBuf>) -> Self {
         self.binary = Some(path.into());
+        self
+    }
+
+    pub fn skills(mut self, skills: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.skills = skills.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    pub fn mcp_config(mut self, path: impl Into<String>) -> Self {
+        self.mcp_config = Some(path.into());
+        self
+    }
+
+    pub fn append_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.append_system_prompt = Some(prompt.into());
         self
     }
 }
@@ -95,6 +116,15 @@ impl AgentAdapter for ClaudeAdapter {
         }
         if let Some(turns) = self.max_turns {
             cmd = cmd.max_turns(turns);
+        }
+        for skill in &self.skills {
+            cmd = cmd.file(skill);
+        }
+        if let Some(ref p) = self.mcp_config {
+            cmd = cmd.mcp_config(p);
+        }
+        if let Some(ref s) = self.append_system_prompt {
+            cmd = cmd.append_system_prompt(s);
         }
 
         // Scope tools based on stage kind.
