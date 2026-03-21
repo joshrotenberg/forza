@@ -36,6 +36,21 @@ pub struct PullRequest {
     pub html_url: String,
 }
 
+/// A normalized PR representation for label-driven PR workflows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrCandidate {
+    pub number: u64,
+    pub repo: String,
+    pub title: String,
+    pub body: String,
+    pub labels: Vec<String>,
+    pub state: String,
+    pub html_url: String,
+    pub head_branch: String,
+    pub base_branch: String,
+    pub is_draft: bool,
+}
+
 // ── Raw gh CLI JSON shapes (private) ─────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -65,15 +80,20 @@ struct GhComment {
     body: String,
 }
 
-// GhPr can be used later for PR status checking.
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct GhPr {
+struct GhPrFull {
     number: u64,
-    #[serde(rename = "headRefName")]
-    head_ref_name: String,
+    title: String,
+    body: Option<String>,
+    labels: Vec<GhLabel>,
     state: String,
     url: String,
+    #[serde(rename = "headRefName")]
+    head_ref_name: String,
+    #[serde(rename = "baseRefName")]
+    base_ref_name: String,
+    #[serde(rename = "isDraft")]
+    is_draft: bool,
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -365,6 +385,137 @@ pub async fn create_label(repo: &str, name: &str, color: &str, description: &str
         return Err(Error::GitHub(format!("gh label create failed: {stderr}")));
     }
 
+    Ok(())
+}
+
+/// Fetch a PR from GitHub.
+pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "view",
+            "--repo",
+            repo,
+            &number.to_string(),
+            "--json",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft",
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr view failed: {stderr}")));
+    }
+
+    let raw: GhPrFull = serde_json::from_slice(&output.stdout)
+        .map_err(|e| Error::GitHub(format!("failed to parse gh output: {e}")))?;
+
+    Ok(PrCandidate {
+        number: raw.number,
+        repo: repo.to_string(),
+        title: raw.title,
+        body: raw.body.unwrap_or_default(),
+        labels: raw.labels.into_iter().map(|l| l.name).collect(),
+        state: raw.state,
+        html_url: raw.url,
+        head_branch: raw.head_ref_name,
+        base_branch: raw.base_ref_name,
+        is_draft: raw.is_draft,
+    })
+}
+
+/// Fetch all open PRs that have a specific label.
+pub async fn fetch_prs_with_label(repo: &str, label: &str) -> Result<Vec<PrCandidate>> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--label",
+            label,
+            "--json",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft",
+            "--limit",
+            "100",
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!(
+            "gh pr list (label={label}) failed: {stderr}"
+        )));
+    }
+
+    let raw: Vec<GhPrFull> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| Error::GitHub(format!("failed to parse gh output: {e}")))?;
+
+    Ok(raw
+        .into_iter()
+        .map(|r| PrCandidate {
+            number: r.number,
+            repo: repo.to_string(),
+            title: r.title,
+            body: r.body.unwrap_or_default(),
+            labels: r.labels.into_iter().map(|l| l.name).collect(),
+            state: r.state,
+            html_url: r.url,
+            head_branch: r.head_ref_name,
+            base_branch: r.base_ref_name,
+            is_draft: r.is_draft,
+        })
+        .collect())
+}
+
+/// Add a label to a PR.
+pub async fn add_pr_label(repo: &str, number: u64, label: &str) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "edit",
+            "--repo",
+            repo,
+            &number.to_string(),
+            "--add-label",
+            label,
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh pr edit failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("add pr label failed: {stderr}")));
+    }
+    Ok(())
+}
+
+/// Remove a label from a PR.
+pub async fn remove_pr_label(repo: &str, number: u64, label: &str) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "edit",
+            "--repo",
+            repo,
+            &number.to_string(),
+            "--remove-label",
+            label,
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh pr edit failed: {e}")))?;
+
+    if !output.status.success() {
+        tracing::debug!(label = label, "remove pr label failed (non-fatal)");
+    }
     Ok(())
 }
 

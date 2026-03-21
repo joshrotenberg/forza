@@ -5,6 +5,15 @@ use serde::{Deserialize, Serialize};
 use crate::executor::StageResult;
 use crate::workflow::StageKind;
 
+/// Whether the run subject is an issue or a PR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SubjectKind {
+    #[default]
+    Issue,
+    Pr,
+}
+
 /// State of an issue in the automation pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,6 +81,9 @@ pub struct RunRecord {
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Total cost across all stages.
     pub total_cost_usd: Option<f64>,
+    /// Whether this run is for an issue or a PR.
+    #[serde(default)]
+    pub subject_kind: SubjectKind,
 }
 
 /// Per-stage record within a run.
@@ -121,7 +133,7 @@ impl RunRecord {
         }
     }
 
-    /// Create a new run record.
+    /// Create a new run record for an issue.
     pub fn new(run_id: &str, repo: &str, issue_number: u64, workflow: &str, branch: &str) -> Self {
         Self {
             run_id: run_id.to_string(),
@@ -135,6 +147,31 @@ impl RunRecord {
             started_at: chrono::Utc::now(),
             completed_at: None,
             total_cost_usd: None,
+            subject_kind: SubjectKind::Issue,
+        }
+    }
+
+    /// Create a new run record for a PR.
+    pub fn new_for_pr(
+        run_id: &str,
+        repo: &str,
+        pr_number: u64,
+        workflow: &str,
+        branch: &str,
+    ) -> Self {
+        Self {
+            run_id: run_id.to_string(),
+            repo: repo.to_string(),
+            issue_number: pr_number,
+            status: RunStatus::Running,
+            workflow: workflow.to_string(),
+            branch: branch.to_string(),
+            pr_number: Some(pr_number),
+            stages: Vec::new(),
+            started_at: chrono::Utc::now(),
+            completed_at: None,
+            total_cost_usd: None,
+            subject_kind: SubjectKind::Pr,
         }
     }
 
@@ -405,6 +442,7 @@ mod tests {
             started_at: chrono::Utc::now(),
             completed_at: None,
             total_cost_usd: cost,
+            subject_kind: SubjectKind::Issue,
         }
     }
 

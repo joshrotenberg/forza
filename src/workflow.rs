@@ -195,6 +195,35 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Comment),
             ],
         },
+        WorkflowTemplate {
+            name: "pr-review".into(),
+            stages: vec![Stage::new(StageKind::Review)],
+        },
+        WorkflowTemplate {
+            name: "pr-fix-ci".into(),
+            stages: vec![
+                Stage::new(StageKind::FixCi),
+                Stage::new(StageKind::Merge)
+                    .optional()
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+            ],
+        },
+        WorkflowTemplate {
+            name: "pr-rebase".into(),
+            stages: vec![
+                Stage::new(StageKind::RevisePr),
+                Stage::new(StageKind::Merge)
+                    .optional()
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+            ],
+        },
+        WorkflowTemplate {
+            name: "pr-merge".into(),
+            stages: vec![
+                Stage::new(StageKind::Merge)
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+            ],
+        },
     ]
 }
 

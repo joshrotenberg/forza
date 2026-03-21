@@ -28,4 +28,4 @@ pub mod triage;
 pub mod workflow;
 
 pub use config::RunnerConfig;
-pub use orchestrator::{process_batch, process_issue};
+pub use orchestrator::{process_batch, process_issue, process_pr_with_config};

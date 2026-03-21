@@ -29,6 +29,8 @@ enum Command {
     Init(InitArgs),
     /// Process a single issue by number.
     Issue(IssueArgs),
+    /// Process a single PR by number.
+    Pr(PrArgs),
     /// Run once — poll for eligible issues and process them.
     Run(RunArgs),
     /// Watch mode — continuously poll and process issues.
@@ -64,6 +66,21 @@ struct FixArgs {
 #[derive(Debug, Parser)]
 struct IssueArgs {
     /// Issue number to process.
+    number: u64,
+    /// Repository to process (owner/name). Required when multiple repos are configured.
+    #[arg(long)]
+    repo: Option<String>,
+    /// Repository directory (default: current directory).
+    #[arg(long)]
+    repo_dir: Option<PathBuf>,
+    /// Dry run — show the plan without executing.
+    #[arg(long)]
+    dry_run: bool,
+}
+
+#[derive(Debug, Parser)]
+struct PrArgs {
+    /// PR number to process.
     number: u64,
     /// Repository to process (owner/name). Required when multiple repos are configured.
     #[arg(long)]
@@ -165,6 +182,7 @@ async fn main() -> ExitCode {
     match cli.command {
         Command::Init(_) => unreachable!(),
         Command::Issue(args) => cmd_issue(args, &config).await,
+        Command::Pr(args) => cmd_pr(args, &config).await,
         Command::Run(args) => cmd_run(args, &config).await,
         Command::Watch(args) => cmd_watch(args, &config).await,
         Command::Status(args) => cmd_status(args),
@@ -370,6 +388,72 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         &rd,
     )
     .await
+    {
+        Ok(record) => print_run_result(&record),
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
+    let sd = state_dir();
+
+    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config) {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    if args.dry_run {
+        let pr = match forza::github::fetch_pr(&repo, args.number).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let (route_name, route) = match forza::RunnerConfig::match_pr_route_in(routes, &pr) {
+            Some(r) => r,
+            None => {
+                eprintln!(
+                    "no route matches PR #{} (labels: {:?})",
+                    pr.number, pr.labels
+                );
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let template = match config.resolve_workflow(&route.workflow) {
+            Some(t) => t,
+            None => {
+                eprintln!("unknown workflow: {}", route.workflow);
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let branch = forza::RunnerConfig::branch_for_pr(&pr);
+        let run_id = forza::state::generate_run_id();
+        let plan = forza::planner::create_pr_plan(&pr, &template, &branch, &run_id);
+
+        println!("PR:       #{} — {}", pr.number, pr.title);
+        println!("Route:    {route_name}");
+        println!("Workflow: {}", template.name);
+        println!("Branch:   {branch}");
+        if let Some(model) = config.effective_model(route) {
+            println!("Model:    {model}");
+        }
+        println!("Stages:");
+        for (i, stage) in plan.stages.iter().enumerate() {
+            let optional = if stage.optional { " (optional)" } else { "" };
+            println!("  {}. {}{optional}", i + 1, stage.kind_name());
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    match forza::orchestrator::process_pr_with_config(args.number, &repo, routes, config, &sd, &rd)
+        .await
     {
         Ok(record) => print_run_result(&record),
         Err(e) => {
@@ -733,12 +817,16 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
 }
 
 fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
+    let subject = match record.subject_kind {
+        forza::state::SubjectKind::Issue => format!("issue #{}", record.issue_number),
+        forza::state::SubjectKind::Pr => format!("PR #{}", record.issue_number),
+    };
     println!();
     println!(
-        "Run {} — {} (issue #{})",
+        "Run {} — {} ({})",
         record.run_id,
         record.status_text(),
-        record.issue_number
+        subject
     );
     for stage in &record.stages {
         let cost = stage

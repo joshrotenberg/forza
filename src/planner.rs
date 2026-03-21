@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::config::RunnerConfig;
-use crate::github::IssueCandidate;
+use crate::github::{IssueCandidate, PrCandidate};
 use crate::workflow::{StageKind, WorkflowTemplate};
 
 /// A work plan derived from an issue and workflow template.
@@ -159,6 +159,176 @@ pub fn create_plan_with_config(
         workflow: template.name.clone(),
         stages,
         branch: branch.to_string(),
+    }
+}
+
+/// Generate a work plan from a PR and workflow template.
+pub fn create_pr_plan(
+    pr: &PrCandidate,
+    template: &WorkflowTemplate,
+    branch: &str,
+    run_id: &str,
+) -> WorkPlan {
+    create_pr_plan_with_config(pr, template, branch, None, run_id)
+}
+
+/// Generate a work plan from a PR, workflow template, and optional config.
+pub fn create_pr_plan_with_config(
+    pr: &PrCandidate,
+    template: &WorkflowTemplate,
+    branch: &str,
+    config: Option<(&RunnerConfig, &Path)>,
+    run_id: &str,
+) -> WorkPlan {
+    let stage_count = template.stages.len();
+    let stages = template
+        .stages
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| {
+            let stage_name = kind_name(stage.kind);
+            let prompt = if let Some((cfg, base_dir)) = config
+                && let Some(file_path) = cfg.prompt_templates.get(stage_name)
+                && let Some(content) = load_pr_prompt_template(file_path, base_dir, pr, branch)
+            {
+                content
+            } else {
+                generate_pr_stage_prompt(stage.kind, pr)
+            };
+            let prompt = if i + 1 < stage_count {
+                format!(
+                    "{prompt}\n\n## Breadcrumb\n\nWhen done, write a brief context summary to \
+                     `.forza/breadcrumbs/{run_id}/{stage_name}.md`. Include key decisions, \
+                     findings, and any information the next stage will need."
+                )
+            } else {
+                prompt
+            };
+            PlannedStage {
+                kind: stage.kind,
+                prompt,
+                allowed_files: None,
+                validation: vec![],
+                optional: stage.optional,
+                max_retries: stage.max_retries,
+                condition: stage.condition.clone(),
+                agentless: stage.agentless,
+                command: stage.command.clone(),
+                model: stage.model.clone(),
+                skills: stage.skills.clone(),
+                mcp_config: stage.mcp_config.clone(),
+            }
+        })
+        .collect();
+
+    WorkPlan {
+        plan_id: generate_plan_id(),
+        issue_number: pr.number,
+        repo: pr.repo.clone(),
+        workflow: template.name.clone(),
+        stages,
+        branch: branch.to_string(),
+    }
+}
+
+/// Load a prompt template file and substitute PR/branch variables.
+fn load_pr_prompt_template(
+    file_path: &str,
+    base_dir: &Path,
+    pr: &PrCandidate,
+    branch: &str,
+) -> Option<String> {
+    let full_path = base_dir.join(file_path);
+    match std::fs::read_to_string(&full_path) {
+        Ok(content) => Some(
+            content
+                .replace("{pr_number}", &pr.number.to_string())
+                .replace("{pr_title}", &pr.title)
+                .replace("{pr_body}", &pr.body)
+                .replace("{branch}", branch)
+                .replace("{repo}", &pr.repo)
+                .replace("{head_branch}", &pr.head_branch)
+                .replace("{base_branch}", &pr.base_branch),
+        ),
+        Err(e) => {
+            tracing::warn!(
+                path = %full_path.display(),
+                error = %e,
+                "failed to load prompt template file, falling back to built-in prompt"
+            );
+            None
+        }
+    }
+}
+
+fn generate_pr_stage_prompt(kind: StageKind, pr: &PrCandidate) -> String {
+    match kind {
+        StageKind::Review => format!(
+            "Review PR #{number} in {repo}.\n\n\
+             PR title: {title}\n\n\
+             PR description:\n{body}\n\n\
+             Branch: `{head_branch}` -> `{base_branch}`\n\n\
+             ## What to check\n\n\
+             - Correctness: does the implementation look correct?\n\
+             - Tests: are there tests for new behavior?\n\
+             - Code quality: any obvious bugs, panics, or unsafe patterns?\n\
+             - Consistency: does the style match the surrounding code?\n\n\
+             ## Output format\n\n\
+             Post a review comment on the PR summarizing your findings:\n\n\
+             ```\n\
+             gh pr review {number} --repo {repo} --comment --body \"...\"\n\
+             ```\n\n\
+             Do NOT modify any source files in this stage.",
+            number = pr.number,
+            repo = pr.repo,
+            title = pr.title,
+            body = pr.body,
+            head_branch = pr.head_branch,
+            base_branch = pr.base_branch,
+        ),
+        StageKind::FixCi => format!(
+            "Fix CI failures on PR #{number} in {repo}.\n\n\
+             PR title: {title}\n\n\
+             Branch: `{head_branch}`\n\n\
+             ## Steps\n\n\
+             1. Check the current CI status: `gh pr checks {number} --repo {repo}`\n\
+             2. Read the failure logs to understand what is failing.\n\
+             3. Fix the failing checks in the source files.\n\
+             4. Run the relevant validation commands locally to confirm the fix.\n\
+             5. Commit the fix and push: `git push --force-with-lease origin {head_branch}`\n\n\
+             Focus only on fixing CI failures — do not add unrelated changes.",
+            number = pr.number,
+            repo = pr.repo,
+            title = pr.title,
+            head_branch = pr.head_branch,
+        ),
+        StageKind::RevisePr => format!(
+            "Update PR #{number} in {repo} to incorporate review feedback or resolve conflicts.\n\n\
+             PR title: {title}\n\n\
+             Branch: `{head_branch}` -> `{base_branch}`\n\n\
+             ## Steps\n\n\
+             1. Check for unresolved review comments: \
+                `gh pr view {number} --repo {repo} --comments`\n\
+             2. If there are conflicts, rebase onto the base branch: \
+                `git fetch origin && git rebase origin/{base_branch}`\n\
+             3. Address any outstanding review feedback.\n\
+             4. Push the updated branch: `git push --force-with-lease origin {head_branch}`\n\n\
+             Do not add unrelated changes.",
+            number = pr.number,
+            repo = pr.repo,
+            title = pr.title,
+            head_branch = pr.head_branch,
+            base_branch = pr.base_branch,
+        ),
+        StageKind::Merge => format!(
+            "Merge PR #{number} in {repo} after CI passes.\n\n\
+             Wait for checks to complete, then merge:\n\
+             `gh pr checks {number} --repo {repo} --watch && \
+              gh pr merge {number} --repo {repo} --squash --delete-branch`",
+            number = pr.number,
+            repo = pr.repo,
+        ),
+        _ => format!("Handle {} stage for PR #{}.", kind_name(kind), pr.number),
     }
 }
 
