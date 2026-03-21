@@ -43,6 +43,8 @@ enum Command {
     Clean(CleanArgs),
     /// Serve the REST API.
     Serve(ServeArgs),
+    /// Start the MCP server (stdio transport).
+    Mcp(McpArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -129,6 +131,9 @@ struct StatusArgs {
 }
 
 #[derive(Debug, Parser)]
+struct McpArgs {}
+
+#[derive(Debug, Parser)]
 struct CleanArgs {
     /// Repository directory (default: current directory).
     #[arg(long)]
@@ -190,7 +195,7 @@ async fn main() -> ExitCode {
 
     if !matches!(
         cli.command,
-        Command::Status(_) | Command::Clean(_) | Command::Serve(_)
+        Command::Status(_) | Command::Clean(_) | Command::Serve(_) | Command::Mcp(_)
     ) && let Err(e) = forza::deps::validate_dependencies(&config.global.agent).await
     {
         eprintln!("error: {e}");
@@ -207,6 +212,7 @@ async fn main() -> ExitCode {
         Command::Fix(args) => cmd_fix(args, &config).await,
         Command::Clean(args) => cmd_clean(args, &config).await,
         Command::Serve(args) => cmd_serve(args, config).await,
+        Command::Mcp(_args) => cmd_mcp(&config).await,
     }
 }
 
@@ -959,6 +965,17 @@ async fn cmd_serve(args: ServeArgs, config: forza::RunnerConfig) -> ExitCode {
         .ok();
 
     info!("REST API server stopped");
+    ExitCode::SUCCESS
+}
+
+async fn cmd_mcp(config: &forza::RunnerConfig) -> ExitCode {
+    let sd = state_dir();
+    let state = forza::mcp::AppState::new(config.clone(), sd);
+    let router = forza::mcp::build_router(state);
+    if let Err(e) = tower_mcp::StdioTransport::new(router).run().await {
+        eprintln!("mcp server error: {e}");
+        return ExitCode::FAILURE;
+    }
     ExitCode::SUCCESS
 }
 
