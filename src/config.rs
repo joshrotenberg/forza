@@ -276,8 +276,8 @@ impl RunnerConfig {
         stage_mcp: Option<&'a str>,
     ) -> Option<&'a str> {
         stage_mcp
-            .or_else(|| route.mcp_config.as_deref())
-            .or_else(|| self.agent_config.mcp_config.as_deref())
+            .or(route.mcp_config.as_deref())
+            .or(self.agent_config.mcp_config.as_deref())
     }
 
     /// Get the global append_system_prompt from agent_config.

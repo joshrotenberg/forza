@@ -282,7 +282,10 @@ pub async fn process_issue_with_config(
             stage_adapter = stage_adapter.append_system_prompt(s);
         }
 
-        match stage_adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
+        match stage_adapter
+            .execute_stage(&stage_for_exec, &worktree_dir)
+            .await
+        {
             Ok(result) => {
                 let status = if result.success {
                     StageStatus::Succeeded
