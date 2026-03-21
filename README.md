@@ -1,6 +1,6 @@
 # forza
 
-Autonomous GitHub issue runner — turns issues into pull requests.
+Configurable workflow orchestrator for agent driven software development.
 
 ## How it works
 
