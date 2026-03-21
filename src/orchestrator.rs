@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use chrono::Utc;
 use tracing::{error, info, warn};
 
 use crate::config::RunnerConfig;
@@ -270,8 +271,33 @@ pub async fn process_batch_with_config(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+    cancel: &tokio::sync::watch::Receiver<bool>,
 ) -> Vec<RunRecord> {
     let repo = &config.global.repo;
+
+    // Recover stale leases before processing new work.
+    let stale_timeout = std::time::Duration::from_secs(config.global.stale_lease_timeout);
+    let now = Utc::now();
+    match github::fetch_issues_with_label(repo, &config.global.in_progress_label).await {
+        Ok(in_progress) => {
+            for issue in &in_progress {
+                let lease_age = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
+                    .ok()
+                    .and_then(|t| (now - t.with_timezone(&Utc)).to_std().ok());
+                if lease_age.is_some_and(|age| age >= stale_timeout) {
+                    warn!(
+                        issue = issue.number,
+                        age_secs = lease_age.unwrap().as_secs(),
+                        "removing stale in-progress lease"
+                    );
+                    let _ =
+                        github::remove_label(repo, issue.number, &config.global.in_progress_label)
+                            .await;
+                }
+            }
+        }
+        Err(e) => warn!(error = %e, "failed to fetch in-progress issues for stale lease check"),
+    }
 
     // Fetch issues with the gate label if configured.
     let labels = config
@@ -293,6 +319,11 @@ pub async fn process_batch_with_config(
 
     let mut records = Vec::new();
     for issue in issues {
+        if *cancel.borrow() {
+            info!("cancellation requested, stopping batch");
+            break;
+        }
+
         // Only process if a route matches.
         if config.match_route(&issue).is_none() {
             tracing::debug!(issue = issue.number, "no route match, skipping");
