@@ -10,7 +10,7 @@ use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::github::IssueCandidate;
+use crate::github::{IssueCandidate, PrCandidate};
 
 /// Per-repo entry in the multi-repo configuration table.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -355,6 +355,24 @@ impl RunnerConfig {
             }
         }
         None
+    }
+
+    /// Find the route matching a PR within the given route map.
+    pub fn match_pr_route_in<'a>(
+        routes: &'a HashMap<String, Route>,
+        pr: &PrCandidate,
+    ) -> Option<(&'a str, &'a Route)> {
+        for (name, route) in routes {
+            if route.route_type == "pr" && pr.labels.iter().any(|l| l == &route.label) {
+                return Some((name.as_str(), route));
+            }
+        }
+        None
+    }
+
+    /// Get the branch for a PR — uses the PR's existing head branch.
+    pub fn branch_for_pr(pr: &PrCandidate) -> String {
+        pr.head_branch.clone()
     }
 
     /// Get routes filtered by type ("issue" or "pr").

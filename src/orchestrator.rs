@@ -19,6 +19,12 @@ use crate::state::{self, RunRecord, RunStatus, StageStatus};
 use crate::triage::{self, TriageDecision};
 use crate::workflow::{self, StageKind};
 
+/// A pending work item in the batch queue — either an issue or a PR.
+enum PendingSubject {
+    Issue(github::IssueCandidate),
+    Pr(github::PrCandidate),
+}
+
 /// Process a single issue through the full pipeline using the new config model.
 pub async fn process_issue_with_config(
     number: u64,
@@ -419,6 +425,337 @@ pub async fn process_issue_with_config(
     Ok(record)
 }
 
+/// Process a single PR through the full pipeline using the new config model.
+pub async fn process_pr_with_config(
+    number: u64,
+    repo: &str,
+    routes: &HashMap<String, Route>,
+    config: &RunnerConfig,
+    state_dir: &Path,
+    repo_dir: &Path,
+) -> Result<RunRecord> {
+    info!(repo = repo, pr = number, "processing PR");
+
+    // 1. Fetch the PR.
+    let pr = github::fetch_pr(repo, number).await?;
+    info!(
+        pr = number,
+        title = pr.title,
+        labels = ?pr.labels,
+        "fetched PR"
+    );
+
+    // 2. Match route.
+    let (route_name, route) = RunnerConfig::match_pr_route_in(routes, &pr)
+        .ok_or_else(|| Error::Triage("no route matches this PR's labels".into()))?;
+    info!(pr = number, route = route_name, "matched route");
+
+    // 3. Acquire lease.
+    let _ = github::add_pr_label(repo, number, &config.global.in_progress_label).await;
+    if let Some(ref gate) = config.global.gate_label {
+        let _ = github::remove_pr_label(repo, number, gate).await;
+    }
+
+    // 4. Resolve workflow template.
+    let template = config
+        .resolve_workflow(&route.workflow)
+        .ok_or_else(|| Error::Policy(format!("unknown workflow: {}", route.workflow)))?;
+    let branch = RunnerConfig::branch_for_pr(&pr);
+    info!(
+        pr = number,
+        route = route_name,
+        workflow = template.name,
+        branch = branch,
+        stages = template.stages.len(),
+        "selected workflow"
+    );
+
+    // 5. Create work plan.
+    let run_id = state::generate_run_id();
+    let plan = planner::create_pr_plan_with_config(
+        &pr,
+        &template,
+        &branch,
+        Some((config, repo_dir)),
+        &run_id,
+    );
+
+    // 6. Set up isolation (skip worktree for read-only or agentless-only workflows).
+    let needs_worktree = !matches!(template.name.as_str(), "pr-review" | "pr-merge");
+    let worktree_dir = if needs_worktree {
+        let dir = isolation::create_worktree(repo_dir, &branch, ".worktrees").await?;
+        info!(pr = number, worktree = %dir.display(), "created worktree");
+        dir
+    } else {
+        repo_dir.to_path_buf()
+    };
+
+    // 7. Execute stages.
+    let validation = config.effective_validation(route);
+    let mut record = RunRecord::new_for_pr(&run_id, repo, number, &template.name, &branch);
+    let mut all_succeeded = true;
+    let mut pending_breadcrumb: Option<String> = None;
+
+    for (stage_idx, planned_stage) in plan.stages.iter().enumerate() {
+        let stage_for_exec = if let Some(ref crumb) = pending_breadcrumb {
+            let mut s = planned_stage.clone();
+            s.prompt = format!(
+                "## Context from previous stage\n\n{crumb}\n\n---\n\n{}",
+                s.prompt
+            );
+            s
+        } else {
+            planned_stage.clone()
+        };
+        pending_breadcrumb = None;
+
+        // Skip optional stages if condition says so.
+        if planned_stage.optional
+            && let Some(ref condition) = planned_stage.condition
+            && let Ok(o) = tokio::process::Command::new("sh")
+                .args(["-c", condition])
+                .current_dir(&worktree_dir)
+                .output()
+                .await
+            && o.status.success()
+        {
+            info!(
+                pr = number,
+                stage = planned_stage.kind_name(),
+                "skipping optional stage (condition met)"
+            );
+            continue;
+        }
+
+        // Look up per-stage hooks.
+        let stage_hooks = config.stage_hooks.get(planned_stage.kind_name());
+
+        // Run pre hooks.
+        if let Some(h) = stage_hooks
+            && !h.pre.is_empty()
+        {
+            run_stage_hooks(&h.pre, &worktree_dir, "pre").await;
+        }
+
+        if planned_stage.kind == StageKind::Merge && !config.global.auto_merge {
+            info!(pr = number, "skipping merge stage: auto_merge is disabled");
+            continue;
+        }
+
+        info!(
+            pr = number,
+            stage = planned_stage.kind_name(),
+            agentless = planned_stage.agentless,
+            "running stage"
+        );
+
+        // Agentless stages.
+        if planned_stage.agentless {
+            let command = planned_stage
+                .command
+                .as_deref()
+                .unwrap_or("echo 'no command specified'");
+            let start = std::time::Instant::now();
+            let output = tokio::process::Command::new("sh")
+                .args(["-c", command])
+                .current_dir(&worktree_dir)
+                .output()
+                .await;
+            let duration = start.elapsed();
+            let (success, output_text) = match output {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                    let text = if stderr.is_empty() { stdout } else { stderr };
+                    (o.status.success(), text)
+                }
+                Err(e) => (false, e.to_string()),
+            };
+            let result = StageResult {
+                stage: planned_stage.kind_name().to_string(),
+                success,
+                duration_secs: duration.as_secs_f64(),
+                cost_usd: None,
+                output: output_text,
+                files_modified: None,
+            };
+            info!(
+                pr = number,
+                stage = planned_stage.kind_name(),
+                success = success,
+                duration = format!("{:.1}s", duration.as_secs_f64()),
+                "agentless stage complete"
+            );
+            let failed = !success;
+            record.record_stage(
+                planned_stage.kind,
+                if success {
+                    StageStatus::Succeeded
+                } else {
+                    StageStatus::Failed
+                },
+                result,
+            );
+            if success
+                && let Some(h) = stage_hooks
+                && !h.post.is_empty()
+            {
+                run_stage_hooks(&h.post, &worktree_dir, "post").await;
+            }
+            if let Some(h) = stage_hooks
+                && !h.finally.is_empty()
+            {
+                run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+            }
+            if failed {
+                all_succeeded = false;
+                if !planned_stage.optional {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        let stage_model = planned_stage
+            .model
+            .as_deref()
+            .or_else(|| config.effective_model(route));
+        let stage_skills = config.effective_skills(route, planned_stage.skills.as_deref());
+        let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
+        let stage_syspr = config.effective_append_system_prompt();
+        let mut stage_adapter = ClaudeAdapter::new();
+        if let Some(m) = stage_model {
+            stage_adapter = stage_adapter.model(m);
+        }
+        if !stage_skills.is_empty() {
+            stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
+        }
+        if let Some(p) = stage_mcp {
+            stage_adapter = stage_adapter.mcp_config(p);
+        }
+        if let Some(s) = stage_syspr {
+            stage_adapter = stage_adapter.append_system_prompt(s);
+        }
+
+        match stage_adapter
+            .execute_stage(&stage_for_exec, &worktree_dir)
+            .await
+        {
+            Ok(result) => {
+                let status = if result.success {
+                    StageStatus::Succeeded
+                } else {
+                    StageStatus::Failed
+                };
+                info!(
+                    pr = number,
+                    stage = planned_stage.kind_name(),
+                    success = result.success,
+                    duration = format!("{:.1}s", result.duration_secs),
+                    cost = result.cost_usd,
+                    "stage complete"
+                );
+                let failed = !result.success;
+                if !failed && stage_idx + 1 < plan.stages.len() {
+                    let crumb_path = worktree_dir
+                        .join(".forza")
+                        .join("breadcrumbs")
+                        .join(&run_id)
+                        .join(format!("{}.md", planned_stage.kind_name()));
+                    if let Ok(content) = std::fs::read_to_string(&crumb_path) {
+                        info!(
+                            pr = number,
+                            stage = planned_stage.kind_name(),
+                            "loaded breadcrumb for next stage"
+                        );
+                        pending_breadcrumb = Some(content);
+                    }
+                }
+                record.record_stage(planned_stage.kind, status, result);
+                if !failed
+                    && let Some(h) = stage_hooks
+                    && !h.post.is_empty()
+                {
+                    run_stage_hooks(&h.post, &worktree_dir, "post").await;
+                }
+                if let Some(h) = stage_hooks
+                    && !h.finally.is_empty()
+                {
+                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+                }
+                if failed {
+                    all_succeeded = false;
+                    if !planned_stage.optional {
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                error!(pr = number, stage = planned_stage.kind_name(), error = %e, "stage error");
+                record.record_stage(
+                    planned_stage.kind,
+                    StageStatus::Failed,
+                    StageResult {
+                        stage: planned_stage.kind_name().to_string(),
+                        success: false,
+                        duration_secs: 0.0,
+                        cost_usd: None,
+                        output: e.to_string(),
+                        files_modified: None,
+                    },
+                );
+                if let Some(h) = stage_hooks
+                    && !h.finally.is_empty()
+                {
+                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
+                }
+                all_succeeded = false;
+                if !planned_stage.optional {
+                    break;
+                }
+            }
+        }
+
+        // Run validation.
+        if !validation.is_empty() {
+            run_validation(validation, &worktree_dir).await;
+        }
+    }
+
+    // 8. Finish.
+    let final_status = if all_succeeded {
+        RunStatus::Succeeded
+    } else {
+        RunStatus::Failed
+    };
+    record.finish(final_status);
+    state::save_run(&record, state_dir)?;
+    info!(pr = number, run_id = record.run_id, status = ?final_status, cost = record.total_cost_usd, "run complete");
+
+    // Fire notifications.
+    if let Some(notif_config) = config.global.notifications.as_ref() {
+        notifications::notify_run_complete(notif_config, &record).await;
+    }
+
+    // 9. Update lease labels.
+    let _ = github::remove_pr_label(repo, number, &config.global.in_progress_label).await;
+    if all_succeeded {
+        let _ = github::add_pr_label(repo, number, &config.global.complete_label).await;
+    } else {
+        let _ = github::add_pr_label(repo, number, &config.global.failed_label).await;
+    }
+
+    // 10. Cleanup.
+    if needs_worktree
+        && all_succeeded
+        && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
+    {
+        warn!(error = %e, "failed to clean worktree (non-fatal)");
+    }
+
+    Ok(record)
+}
+
 /// Process all eligible issues for a single repo using its route table.
 pub async fn process_batch_for_repo(
     repo: &str,
@@ -483,7 +820,7 @@ pub async fn process_batch_for_repo(
 
     // Pre-filter: keep only issues that match a route and are within their schedule window.
     let now = chrono::Utc::now();
-    let mut pending: VecDeque<(String, crate::github::IssueCandidate)> = issues
+    let mut pending: VecDeque<(String, PendingSubject)> = issues
         .into_iter()
         .filter_map(|issue| {
             if let Some((route_name, route)) = RunnerConfig::match_route_in(routes, &issue) {
@@ -497,13 +834,45 @@ pub async fn process_batch_for_repo(
                     );
                     return None;
                 }
-                Some((route_name.to_string(), issue))
+                Some((route_name.to_string(), PendingSubject::Issue(issue)))
             } else {
                 tracing::debug!(issue = issue.number, "no route match, skipping");
                 None
             }
         })
         .collect();
+
+    // Discover PRs for all "pr"-type routes.
+    let pr_routes: Vec<(&str, &Route)> = routes
+        .iter()
+        .filter(|(_, r)| r.route_type == "pr")
+        .map(|(name, route)| (name.as_str(), route))
+        .collect();
+
+    for (pr_route_name, pr_route) in &pr_routes {
+        if let Some(schedule) = &pr_route.schedule
+            && !schedule.is_active(now)
+        {
+            tracing::debug!(route = pr_route_name, "PR route outside schedule window, skipping");
+            continue;
+        }
+        match github::fetch_prs_with_label(repo, &pr_route.label).await {
+            Ok(prs) => {
+                info!(
+                    repo = repo,
+                    route = pr_route_name,
+                    count = prs.len(),
+                    "found eligible PRs"
+                );
+                for pr in prs {
+                    pending.push_back((pr_route_name.to_string(), PendingSubject::Pr(pr)));
+                }
+            }
+            Err(e) => {
+                warn!(route = pr_route_name, error = %e, "failed to fetch PRs for route");
+            }
+        }
+    }
 
     let max_concurrency = config.global.max_concurrency;
     // Seed active counts from non-stale in-progress issues so that limits
@@ -532,8 +901,8 @@ pub async fn process_batch_for_repo(
         }
 
         // Try to fill available slots from pending queue.
-        let mut deferred: VecDeque<(String, crate::github::IssueCandidate)> = VecDeque::new();
-        while let Some((route_name, issue)) = pending.pop_front() {
+        let mut deferred: VecDeque<(String, PendingSubject)> = VecDeque::new();
+        while let Some((route_name, subject)) = pending.pop_front() {
             let route_active = *active_per_route.get(&route_name).unwrap_or(&0);
             let route_limit = routes.get(&route_name).map(|r| r.concurrency).unwrap_or(1);
 
@@ -544,39 +913,56 @@ pub async fn process_batch_for_repo(
                 let config_clone = config.clone();
                 let state_dir_owned: PathBuf = state_dir.to_path_buf();
                 let repo_dir_owned: PathBuf = repo_dir.to_path_buf();
-                let issue_number = issue.number;
                 let repo_owned = repo.to_string();
                 let routes_clone = routes.clone();
-                join_set.spawn(async move {
-                    let result = process_issue_with_config(
-                        issue_number,
-                        &repo_owned,
-                        &routes_clone,
-                        &config_clone,
-                        &state_dir_owned,
-                        &repo_dir_owned,
-                    )
-                    .await;
-                    (route_name, result)
-                });
+                match subject {
+                    PendingSubject::Issue(issue) => {
+                        let issue_number = issue.number;
+                        join_set.spawn(async move {
+                            let result = process_issue_with_config(
+                                issue_number,
+                                &repo_owned,
+                                &routes_clone,
+                                &config_clone,
+                                &state_dir_owned,
+                                &repo_dir_owned,
+                            )
+                            .await;
+                            (route_name, result)
+                        });
+                    }
+                    PendingSubject::Pr(pr) => {
+                        let pr_number = pr.number;
+                        join_set.spawn(async move {
+                            let result = process_pr_with_config(
+                                pr_number,
+                                &repo_owned,
+                                &routes_clone,
+                                &config_clone,
+                                &state_dir_owned,
+                                &repo_dir_owned,
+                            )
+                            .await;
+                            (route_name, result)
+                        });
+                    }
+                }
             } else if total_active >= max_concurrency {
                 info!(
-                    issue = issue.number,
                     route = route_name,
                     active = total_active,
                     max = max_concurrency,
-                    "global concurrency limit reached, deferring issue"
+                    "global concurrency limit reached, deferring"
                 );
-                deferred.push_back((route_name, issue));
+                deferred.push_back((route_name, subject));
             } else {
                 info!(
-                    issue = issue.number,
                     route = route_name,
                     active = route_active,
                     limit = route_limit,
-                    "per-route concurrency limit reached, deferring issue"
+                    "per-route concurrency limit reached, deferring"
                 );
-                deferred.push_back((route_name, issue));
+                deferred.push_back((route_name, subject));
             }
         }
         pending = deferred;
