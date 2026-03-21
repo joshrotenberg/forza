@@ -134,6 +134,22 @@ pub async fn process_issue_with_config(
     let mut all_succeeded = true;
     let mut pending_breadcrumb: Option<String> = None;
 
+    // Check hourly cost cap before starting any stages.
+    if let Some(cap) = config.global.max_cost_per_hour {
+        let spent = state::hourly_cost(state_dir);
+        if spent >= cap {
+            warn!(
+                issue = number,
+                spent = spent,
+                cap = cap,
+                "hourly cost cap exceeded, aborting run"
+            );
+            record.finish(RunStatus::Failed);
+            state::save_run(&record, state_dir)?;
+            return Ok(record);
+        }
+    }
+
     for (stage_idx, planned_stage) in plan.stages.iter().enumerate() {
         // Clone the stage and prepend breadcrumb from the previous stage when available.
         let stage_for_exec = if let Some(ref crumb) = pending_breadcrumb {
