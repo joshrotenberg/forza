@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.90.0"
 authors = ["Josh Rotenberg <joshrotenberg@gmail.com>"]
 license = "MIT OR Apache-2.0"
-description = "Autonomous GitHub issue runner — turns issues into pull requests"
+description = "Configurable workflow orchestrator for agent driven software development"
 repository = "https://github.com/joshrotenberg/forza"
 
 [dependencies]
