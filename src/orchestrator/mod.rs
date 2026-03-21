@@ -1585,7 +1585,6 @@ pub async fn process_batch_with_config(
     all_records
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

@@ -248,7 +248,6 @@ pub(super) fn build_pr_body(
     body
 }
 
-
 pub(super) async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &str) {
     for cmd in hooks {
         let output = tokio::process::Command::new("sh")
