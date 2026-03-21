@@ -15,6 +15,7 @@
 //! - **Execution** (`executor`, `isolation`): Agent invocation and work isolation
 
 pub mod config;
+pub mod deps;
 pub mod error;
 pub mod executor;
 pub mod github;
