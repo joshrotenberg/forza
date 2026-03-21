@@ -33,8 +33,20 @@ enum Command {
     Watch(WatchArgs),
     /// Show run history and status.
     Status(StatusArgs),
+    /// Re-run failed stages with error context.
+    Fix(FixArgs),
     /// Remove worktrees or run state.
     Clean(CleanArgs),
+}
+
+#[derive(Debug, Parser)]
+struct FixArgs {
+    /// Run ID to fix (default: latest run).
+    #[arg(long)]
+    run: Option<String>,
+    /// Issue number to fix (finds latest run for this issue).
+    #[arg(long)]
+    issue: Option<u64>,
 }
 
 #[derive(Debug, Parser)]
@@ -135,6 +147,7 @@ async fn main() -> ExitCode {
         Command::Run(args) => cmd_run(args, &config).await,
         Command::Watch(args) => cmd_watch(args, &config).await,
         Command::Status(args) => cmd_status(args),
+        Command::Fix(args) => cmd_fix(args, &config).await,
         Command::Clean(args) => cmd_clean(args, &config).await,
     }
 }
@@ -381,6 +394,75 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
                 eprintln!("no runs found");
                 ExitCode::FAILURE
             }
+        }
+    }
+}
+
+async fn cmd_fix(args: FixArgs, config: &forza::RunnerConfig) -> ExitCode {
+    let sd = state_dir();
+    let rd = repo_dir(&None, config);
+
+    // Find the run to fix.
+    let record = if let Some(ref run_id) = args.run {
+        forza::state::load_run(run_id, &sd)
+    } else if let Some(issue_number) = args.issue {
+        forza::state::find_latest_run_for_issue(issue_number, &sd)
+    } else {
+        forza::state::load_latest(&sd)
+    };
+
+    let record = match record {
+        Some(r) => r,
+        None => {
+            eprintln!("error: no run found to fix");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if record.status == forza::state::RunStatus::Succeeded {
+        eprintln!("run {} already succeeded, nothing to fix", record.run_id);
+        return ExitCode::SUCCESS;
+    }
+
+    // Find the first failed stage.
+    let failed_stage = record
+        .stages
+        .iter()
+        .find(|s| s.status == forza::state::StageStatus::Failed);
+
+    let failed_stage = match failed_stage {
+        Some(s) => s,
+        None => {
+            eprintln!("no failed stages found in run {}", record.run_id);
+            return ExitCode::SUCCESS;
+        }
+    };
+
+    let error_context = failed_stage
+        .result
+        .as_ref()
+        .map(|r| r.output.clone())
+        .unwrap_or_default();
+
+    println!(
+        "Fixing run {} (issue #{})",
+        record.run_id, record.issue_number
+    );
+    println!("Failed stage: {}", failed_stage.kind_name());
+    if !error_context.is_empty() {
+        println!("Error: {}", &error_context[..error_context.len().min(200)]);
+    }
+    println!();
+
+    // Re-run the issue with error context injected.
+    // The worktree should still exist (we keep them on failure).
+    match forza::orchestrator::process_issue_with_config(record.issue_number, config, &sd, &rd)
+        .await
+    {
+        Ok(new_record) => print_run_result(&new_record),
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
         }
     }
 }
