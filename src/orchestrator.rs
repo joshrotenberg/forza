@@ -7,7 +7,7 @@ use chrono::Utc;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
-use crate::config::{Route, RunnerConfig};
+use crate::config::{CliOverrides, Route, RunnerConfig};
 use crate::error::{Error, Result};
 use crate::executor::{AgentAdapter, ClaudeAdapter, StageResult};
 use crate::github;
@@ -33,6 +33,31 @@ pub async fn process_issue_with_config(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+) -> Result<RunRecord> {
+    process_issue_with_overrides(
+        number,
+        repo,
+        routes,
+        config,
+        state_dir,
+        repo_dir,
+        CliOverrides::default(),
+    )
+    .await
+}
+
+/// Process a single issue with per-run CLI overrides (--model, --skill).
+///
+/// CLI overrides take precedence over all config-file settings:
+/// CLI flag > stage config > route config > global config.
+pub async fn process_issue_with_overrides(
+    number: u64,
+    repo: &str,
+    routes: &HashMap<String, Route>,
+    config: &RunnerConfig,
+    state_dir: &Path,
+    repo_dir: &Path,
+    cli_overrides: CliOverrides,
 ) -> Result<RunRecord> {
     info!(repo = repo, issue = number, "processing issue");
 
@@ -342,11 +367,16 @@ pub async fn process_issue_with_config(
             continue;
         }
 
-        let stage_model = planned_stage
+        let stage_model = cli_overrides
             .model
             .as_deref()
+            .or(planned_stage.model.as_deref())
             .or_else(|| config.effective_model(route));
-        let stage_skills = config.effective_skills(route, planned_stage.skills.as_deref());
+        let stage_skills = if !cli_overrides.skills.is_empty() {
+            cli_overrides.skills.as_slice()
+        } else {
+            config.effective_skills(route, planned_stage.skills.as_deref())
+        };
         let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
         let stage_syspr = config.effective_append_system_prompt();
         let mut stage_adapter = ClaudeAdapter::new();
@@ -504,6 +534,31 @@ pub async fn process_pr_with_config(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+) -> Result<RunRecord> {
+    process_pr_with_overrides(
+        number,
+        repo,
+        routes,
+        config,
+        state_dir,
+        repo_dir,
+        CliOverrides::default(),
+    )
+    .await
+}
+
+/// Process a single PR with per-run CLI overrides (--model, --skill).
+///
+/// CLI overrides take precedence over all config-file settings:
+/// CLI flag > stage config > route config > global config.
+pub async fn process_pr_with_overrides(
+    number: u64,
+    repo: &str,
+    routes: &HashMap<String, Route>,
+    config: &RunnerConfig,
+    state_dir: &Path,
+    repo_dir: &Path,
+    cli_overrides: CliOverrides,
 ) -> Result<RunRecord> {
     info!(repo = repo, pr = number, "processing PR");
 
@@ -692,11 +747,16 @@ pub async fn process_pr_with_config(
             continue;
         }
 
-        let stage_model = planned_stage
+        let stage_model = cli_overrides
             .model
             .as_deref()
+            .or(planned_stage.model.as_deref())
             .or_else(|| config.effective_model(route));
-        let stage_skills = config.effective_skills(route, planned_stage.skills.as_deref());
+        let stage_skills = if !cli_overrides.skills.is_empty() {
+            cli_overrides.skills.as_slice()
+        } else {
+            config.effective_skills(route, planned_stage.skills.as_deref())
+        };
         let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
         let stage_syspr = config.effective_append_system_prompt();
         let mut stage_adapter = ClaudeAdapter::new();
