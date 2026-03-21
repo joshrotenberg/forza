@@ -1,0 +1,54 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug and what you expected to happen.
+      placeholder: What went wrong? What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. Configure forza.toml with ...
+        2. Run `forza ...`
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: What must be true for this bug to be considered fixed?
+      placeholder: |
+        - [ ] Running `forza ...` no longer produces the error
+        - [ ] Existing behavior X is preserved
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected_files
+    attributes:
+      label: Affected Files
+      description: File paths likely involved in the fix, if known.
+      placeholder: |
+        src/executor.rs
+        src/triage.rs
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Forza Version
+      placeholder: e.g. 0.5.1
+    validations:
+      required: false

@@ -1,0 +1,44 @@
+name: Feature Request
+description: Propose a new feature or enhancement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the feature and the problem it solves.
+      placeholder: What should forza be able to do that it cannot do today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Specific, testable conditions that define when this feature is complete.
+      placeholder: |
+        - [ ] `forza.toml` supports new field `X`
+        - [ ] Running `forza ...` with config produces output Y
+        - [ ] Existing behavior Z is unchanged
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected_files
+    attributes:
+      label: Affected Files
+      description: File paths likely involved in the implementation, if known.
+      placeholder: |
+        src/config.rs
+        src/executor.rs
+    validations:
+      required: false
+
+  - type: textarea
+    id: implementation_notes
+    attributes:
+      label: Implementation Notes
+      description: Any design constraints, alternatives considered, or context useful for the implementor.
+      placeholder: Could be implemented by extending the existing stage hooks mechanism...
+    validations:
+      required: false
