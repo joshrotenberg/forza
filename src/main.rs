@@ -756,22 +756,23 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
             return ExitCode::FAILURE;
         }
         println!(
-            "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  started_at",
-            "run_id", "issue#", "workflow", "status", "cost"
+            "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  {:<25}  started_at",
+            "run_id", "issue#", "workflow", "status", "cost", "outcome"
         );
-        println!("{}", "-".repeat(100));
+        println!("{}", "-".repeat(127));
         for r in &records {
             let cost = r
                 .total_cost_usd
                 .map(|c| format!("${c:.2}"))
                 .unwrap_or_else(|| "-".into());
             println!(
-                "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  {}",
+                "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  {:<25}  {}",
                 r.run_id,
                 r.issue_number,
                 r.workflow,
                 r.status_text(),
                 cost,
+                format_outcome(r.outcome.as_ref()),
                 r.started_at.format("%Y-%m-%d %H:%M:%S"),
             );
         }
@@ -1092,6 +1093,20 @@ async fn cmd_mcp(config: &forza::RunnerConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn format_outcome(outcome: Option<&forza::state::RouteOutcome>) -> String {
+    use forza::state::RouteOutcome;
+    match outcome {
+        None => "-".into(),
+        Some(RouteOutcome::PrCreated { number }) => format!("pr_created (#{number})"),
+        Some(RouteOutcome::PrUpdated { number }) => format!("pr_updated (#{number})"),
+        Some(RouteOutcome::PrMerged { number }) => format!("pr_merged (#{number})"),
+        Some(RouteOutcome::CommentPosted) => "comment_posted".into(),
+        Some(RouteOutcome::NothingToDo) => "nothing_to_do".into(),
+        Some(RouteOutcome::Failed { stage, .. }) => format!("failed (stage: {stage})"),
+        Some(RouteOutcome::Exhausted { retries }) => format!("exhausted ({retries} retries)"),
+    }
+}
+
 fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
     let subject = match record.subject_kind {
         forza::state::SubjectKind::Issue => format!("issue #{}", record.issue_number),
@@ -1104,6 +1119,7 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
         record.status_text(),
         subject
     );
+    println!("  Outcome:  {}", format_outcome(record.outcome.as_ref()));
     for stage in &record.stages {
         let cost = stage
             .result
