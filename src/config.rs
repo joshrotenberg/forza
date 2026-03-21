@@ -114,6 +114,12 @@ pub struct GlobalConfig {
     #[serde(default = "default_stale_lease_timeout")]
     pub stale_lease_timeout: u64,
 
+    /// Age threshold in days for automatic stale worktree cleanup.
+    /// Worktrees older than this are removed by `forza clean --stale` and
+    /// during watch mode. Default: 7.
+    #[serde(default = "default_stale_worktree_days")]
+    pub stale_worktree_days: u64,
+
     /// Default workflow when no route label matches.
     pub default_workflow: Option<String>,
 
@@ -413,6 +419,10 @@ fn default_branch_pattern() -> String {
 
 fn default_stale_lease_timeout() -> u64 {
     3600
+}
+
+fn default_stale_worktree_days() -> u64 {
+    7
 }
 
 fn default_auth_level() -> String {
