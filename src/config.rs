@@ -561,4 +561,98 @@ auto_merge = true
         assert!(!slugify("  leading  ", 40).starts_with('-'));
         assert!(!slugify("  trailing  ", 40).ends_with('-'));
     }
+
+    #[test]
+    fn workflow_templates_parsed_from_toml() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[[workflow_templates]]
+name = "quick-fix"
+
+[[workflow_templates.stages]]
+kind = "implement"
+
+[[workflow_templates.stages]]
+kind = "open_pr"
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.workflow_templates.len(), 1);
+        assert_eq!(config.workflow_templates[0].name, "quick-fix");
+        assert_eq!(config.workflow_templates[0].stages.len(), 2);
+    }
+
+    #[test]
+    fn resolve_workflow_returns_custom() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[[workflow_templates]]
+name = "quick-fix"
+
+[[workflow_templates.stages]]
+kind = "implement"
+
+[[workflow_templates.stages]]
+kind = "open_pr"
+"#,
+        )
+        .unwrap();
+        let template = config.resolve_workflow("quick-fix").unwrap();
+        assert_eq!(template.name, "quick-fix");
+        assert_eq!(template.stages.len(), 2);
+    }
+
+    #[test]
+    fn resolve_workflow_custom_overrides_builtin() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[[workflow_templates]]
+name = "bug"
+
+[[workflow_templates.stages]]
+kind = "implement"
+"#,
+        )
+        .unwrap();
+        // The custom "bug" template has only 1 stage; the built-in has more.
+        let template = config.resolve_workflow("bug").unwrap();
+        assert_eq!(template.name, "bug");
+        assert_eq!(template.stages.len(), 1);
+    }
+
+    #[test]
+    fn resolve_workflow_falls_back_to_builtin() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+"#,
+        )
+        .unwrap();
+        // No custom templates — should return the built-in "feature" template.
+        let template = config.resolve_workflow("feature").unwrap();
+        assert_eq!(template.name, "feature");
+        assert!(!template.stages.is_empty());
+    }
+
+    #[test]
+    fn resolve_workflow_unknown_returns_none() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+"#,
+        )
+        .unwrap();
+        assert!(config.resolve_workflow("nonexistent").is_none());
+    }
 }
