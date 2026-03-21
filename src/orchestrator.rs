@@ -836,7 +836,11 @@ pub async fn process_batch_for_repo(
                 }
                 Some((route_name.to_string(), PendingSubject::Issue(issue)))
             } else {
-                tracing::debug!(issue = issue.number, "no route match, skipping");
+                warn!(
+                    issue = issue.number,
+                    labels = ?issue.labels,
+                    "no route matches issue labels, skipping — add a matching route to config"
+                );
                 None
             }
         })
