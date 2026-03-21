@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/joshrotenberg/forza/compare/v0.2.0...v0.3.0) - 2026-03-21
+
+### Added
+
+- route conditions, retry budget, and PR health monitoring ([#104](https://github.com/joshrotenberg/forza/pull/104))
+
+### Other
+
+- add Cargo.toml keywords and categories for crates.io discoverability closes #86 ([#106](https://github.com/joshrotenberg/forza/pull/106))
+
 ## [0.2.0](https://github.com/joshrotenberg/forza/compare/v0.1.0...v0.2.0) - 2026-03-21
 
 ### Added
