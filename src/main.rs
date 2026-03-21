@@ -19,6 +19,10 @@ struct Cli {
     #[arg(long, short, default_value = "forza.toml", global = true)]
     config: PathBuf,
 
+    /// Write tracing output to this file instead of stderr.
+    #[arg(long, global = true)]
+    log_file: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -184,11 +188,25 @@ fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> 
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
     let cli = Cli::parse();
+
+    let _guard = if let Some(path) = &cli.log_file {
+        let file_appender = tracing_appender::rolling::never(
+            path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+            path.file_name().unwrap_or_default(),
+        );
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_writer(non_blocking)
+            .init();
+        Some(guard)
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .init();
+        None
+    };
 
     if let Command::Init(args) = cli.command {
         return cmd_init(args).await;
