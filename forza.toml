@@ -69,14 +69,25 @@ poll_interval = 600
 # These routes handle PRs that need automated fixes. Label a PR with
 # the route label to trigger processing via `forza pr` or watch mode.
 
-# Fix CI failures (clippy, test, fmt errors).
+# Full PR fix — rebase onto main, fix CI failures, then merge.
+# This is the most common PR maintenance workflow: rebase first so the
+# branch is up to date, then fix whatever breaks (clippy, tests, etc.).
+[repos."joshrotenberg/forza".routes.fix-pr]
+type = "pr"
+label = "forza:fix-pr"
+workflow = "pr-fix"
+concurrency = 2
+
+# Fix CI failures only (no rebase). Use when the branch is current but
+# CI is failing due to code issues.
 [repos."joshrotenberg/forza".routes.fix-ci]
 type = "pr"
 label = "forza:fix-ci"
 workflow = "pr-fix-ci"
 concurrency = 2
 
-# Rebase and resolve merge conflicts.
+# Rebase only. Use when the branch just needs to be rebased but the
+# code itself is fine.
 [repos."joshrotenberg/forza".routes.rebase]
 type = "pr"
 label = "forza:rebase"
