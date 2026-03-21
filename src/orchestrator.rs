@@ -95,8 +95,13 @@ pub async fn process_issue_with_config(
 
     // 4. Resolve workflow template.
     let template = config
-        .resolve_workflow(&route.workflow)
-        .ok_or_else(|| Error::Policy(format!("unknown workflow: {}", route.workflow)))?;
+        .resolve_workflow(route.workflow.as_deref().unwrap_or(""))
+        .ok_or_else(|| {
+            Error::Policy(format!(
+                "unknown workflow: {}",
+                route.workflow.as_deref().unwrap_or("<none>")
+            ))
+        })?;
     let branch = config.branch_for_issue(&issue);
     info!(
         issue = number,
@@ -510,8 +515,13 @@ pub async fn process_pr_with_config(
 
     // 4. Resolve workflow template.
     let template = config
-        .resolve_workflow(&route.workflow)
-        .ok_or_else(|| Error::Policy(format!("unknown workflow: {}", route.workflow)))?;
+        .resolve_workflow(route.workflow.as_deref().unwrap_or(""))
+        .ok_or_else(|| {
+            Error::Policy(format!(
+                "unknown workflow: {}",
+                route.workflow.as_deref().unwrap_or("<none>")
+            ))
+        })?;
     let branch = RunnerConfig::branch_for_pr(&pr);
     info!(
         pr = number,
@@ -918,8 +928,13 @@ pub async fn process_reactive_pr(
         .get(route_name)
         .ok_or_else(|| Error::Policy(format!("route not found: {route_name}")))?;
     let template = config
-        .resolve_workflow(&route.workflow)
-        .ok_or_else(|| Error::Policy(format!("unknown workflow: {}", route.workflow)))?;
+        .resolve_workflow(route.workflow.as_deref().unwrap_or(""))
+        .ok_or_else(|| {
+            Error::Policy(format!(
+                "unknown workflow: {}",
+                route.workflow.as_deref().unwrap_or("<none>")
+            ))
+        })?;
 
     if template.mode != WorkflowMode::Reactive {
         return Err(Error::Policy(format!(
@@ -1211,14 +1226,14 @@ pub async fn process_batch_for_repo(
         })
         .collect();
 
-    // Discover PRs for all "pr"-type routes.
-    let pr_routes: Vec<(&str, &Route)> = routes
+    // Discover PRs for label-based "pr"-type routes.
+    let label_pr_routes: Vec<(&str, &Route)> = routes
         .iter()
-        .filter(|(_, r)| r.route_type == "pr")
+        .filter(|(_, r)| r.route_type == "pr" && r.label.is_some() && r.condition.is_none())
         .map(|(name, route)| (name.as_str(), route))
         .collect();
 
-    for (pr_route_name, pr_route) in &pr_routes {
+    for (pr_route_name, pr_route) in &label_pr_routes {
         if let Some(schedule) = &pr_route.schedule
             && !schedule.is_active(now)
         {
@@ -1228,7 +1243,8 @@ pub async fn process_batch_for_repo(
             );
             continue;
         }
-        match github::fetch_prs_with_label(repo, &pr_route.label).await {
+        let label = pr_route.label.as_deref().unwrap();
+        match github::fetch_prs_with_label(repo, label).await {
             Ok(prs) => {
                 info!(
                     repo = repo,
@@ -1242,6 +1258,91 @@ pub async fn process_batch_for_repo(
             }
             Err(e) => {
                 warn!(route = pr_route_name, error = %e, "failed to fetch PRs for route");
+            }
+        }
+    }
+
+    // Discover PRs for condition-based routes.
+    let condition_routes: Vec<(&str, &Route)> = routes
+        .iter()
+        .filter(|(_, r)| r.route_type == "pr" && r.condition.is_some())
+        .map(|(name, route)| (name.as_str(), route))
+        .collect();
+
+    if !condition_routes.is_empty() {
+        let all_prs = match github::fetch_all_open_prs(repo, 100).await {
+            Ok(prs) => prs,
+            Err(e) => {
+                warn!(error = %e, "failed to fetch open PRs for condition routes");
+                vec![]
+            }
+        };
+
+        let branch_prefix = config
+            .global
+            .branch_pattern
+            .split('{')
+            .next()
+            .unwrap_or("automation/");
+
+        for (route_name, route) in &condition_routes {
+            let condition = route.condition.as_ref().unwrap();
+            for pr in &all_prs {
+                // Skip PRs already in progress or marked needs-human.
+                if pr
+                    .labels
+                    .iter()
+                    .any(|l| l == &config.global.in_progress_label || l == "forza:needs-human")
+                {
+                    continue;
+                }
+
+                // Apply scope filter.
+                if route.scope == crate::config::ConditionScope::ForzaOwned
+                    && !pr.head_branch.starts_with(branch_prefix)
+                {
+                    continue;
+                }
+
+                if !condition.matches(pr) {
+                    continue;
+                }
+
+                // Check retry budget.
+                if let Some(max) = route.max_retries {
+                    let workflow_name = route.workflow.as_deref().unwrap_or("");
+                    let prior_runs =
+                        state::count_runs_for_subject(pr.number, workflow_name, state_dir);
+                    if prior_runs >= max {
+                        warn!(
+                            pr = pr.number,
+                            route = route_name,
+                            prior_runs = prior_runs,
+                            max_retries = max,
+                            "retry budget exhausted, applying needs-human label"
+                        );
+                        let _ = github::add_pr_label(repo, pr.number, "forza:needs-human").await;
+                        let _ = github::comment_on_pr(
+                            repo,
+                            pr.number,
+                            &format!(
+                                "Retry budget exhausted for route `{route_name}` \
+                                 ({prior_runs}/{max} attempts). Applying `forza:needs-human` \
+                                 for manual review."
+                            ),
+                        )
+                        .await;
+                        continue;
+                    }
+                }
+
+                info!(
+                    pr = pr.number,
+                    route = route_name,
+                    condition = ?condition,
+                    "condition matched, queuing PR"
+                );
+                pending.push_back((route_name.to_string(), PendingSubject::Pr(pr.clone())));
             }
         }
     }
@@ -1379,11 +1480,11 @@ pub async fn process_batch_for_repo(
         }
     }
 
-    // Process PR-type routes with reactive dispatch.
+    // Process PR-type routes with reactive dispatch (label-based only in legacy path).
     let pr_routes: Vec<(String, String)> = routes
         .iter()
-        .filter(|(_, r)| r.route_type == "pr")
-        .map(|(name, r)| (name.clone(), r.label.clone()))
+        .filter(|(_, r)| r.route_type == "pr" && r.label.is_some())
+        .map(|(name, r)| (name.clone(), r.label.clone().unwrap()))
         .collect();
 
     if !pr_routes.is_empty() && !*cancel.borrow() {

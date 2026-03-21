@@ -232,10 +232,11 @@ async fn trigger_issue(
                 ))
             })?;
 
+        let wf_name = route.workflow.as_deref().unwrap_or("");
         let template = state
             .config
-            .resolve_workflow(&route.workflow)
-            .ok_or_else(|| ApiError::Internal(format!("unknown workflow: {}", route.workflow)))?;
+            .resolve_workflow(wf_name)
+            .ok_or_else(|| ApiError::Internal(format!("unknown workflow: {wf_name}")))?;
 
         let branch = state.config.branch_for_issue(&issue);
         let run_id = crate::state::generate_run_id();
@@ -302,10 +303,11 @@ async fn trigger_pr(
                 ))
             })?;
 
+        let wf_name = route.workflow.as_deref().unwrap_or("");
         let template = state
             .config
-            .resolve_workflow(&route.workflow)
-            .ok_or_else(|| ApiError::Internal(format!("unknown workflow: {}", route.workflow)))?;
+            .resolve_workflow(wf_name)
+            .ok_or_else(|| ApiError::Internal(format!("unknown workflow: {wf_name}")))?;
 
         let branch = RunnerConfig::branch_for_pr(&pr);
         let run_id = crate::state::generate_run_id();

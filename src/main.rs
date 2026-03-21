@@ -239,6 +239,11 @@ async fn cmd_init(args: InitArgs) -> ExitCode {
             "d73a4a",
             "Forza encountered an error processing this issue",
         ),
+        (
+            "forza:needs-human",
+            "c2e0c6",
+            "Retry budget exhausted, needs human review",
+        ),
     ];
 
     println!("Creating forza labels in {}...", args.repo);
@@ -380,10 +385,11 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
             }
         };
 
-        let template = match config.resolve_workflow(&route.workflow) {
+        let wf_name = route.workflow.as_deref().unwrap_or("");
+        let template = match config.resolve_workflow(wf_name) {
             Some(t) => t,
             None => {
-                eprintln!("unknown workflow: {}", route.workflow);
+                eprintln!("unknown workflow: {wf_name}");
                 return ExitCode::FAILURE;
             }
         };
@@ -460,10 +466,11 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
             }
         };
 
-        let template = match config.resolve_workflow(&route.workflow) {
+        let wf_name = route.workflow.as_deref().unwrap_or("");
+        let template = match config.resolve_workflow(wf_name) {
             Some(t) => t,
             None => {
-                eprintln!("unknown workflow: {}", route.workflow);
+                eprintln!("unknown workflow: {wf_name}");
                 return ExitCode::FAILURE;
             }
         };
