@@ -31,3 +31,8 @@ path = "src/main.rs"
 [lib]
 name = "forza"
 path = "src/lib.rs"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
