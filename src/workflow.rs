@@ -294,6 +294,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                     .optional()
                     .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
+            ..Default::default()
         },
         WorkflowTemplate {
             name: "pr-merge".into(),
