@@ -417,26 +417,37 @@ pub async fn process_batch_with_config(
     // Recover stale leases before processing new work.
     let stale_timeout = std::time::Duration::from_secs(config.global.stale_lease_timeout);
     let now = Utc::now();
-    match github::fetch_issues_with_label(repo, &config.global.in_progress_label).await {
-        Ok(in_progress) => {
-            for issue in &in_progress {
-                let lease_age = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
-                    .ok()
-                    .and_then(|t| (now - t.with_timezone(&Utc)).to_std().ok());
-                if lease_age.is_some_and(|age| age >= stale_timeout) {
-                    warn!(
-                        issue = issue.number,
-                        age_secs = lease_age.unwrap().as_secs(),
-                        "removing stale in-progress lease"
-                    );
-                    let _ =
-                        github::remove_label(repo, issue.number, &config.global.in_progress_label)
-                            .await;
+    let surviving_in_progress: Vec<crate::github::IssueCandidate> =
+        match github::fetch_issues_with_label(repo, &config.global.in_progress_label).await {
+            Ok(in_progress) => {
+                let mut survivors = Vec::new();
+                for issue in in_progress {
+                    let lease_age = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
+                        .ok()
+                        .and_then(|t| (now - t.with_timezone(&Utc)).to_std().ok());
+                    if lease_age.is_some_and(|age| age >= stale_timeout) {
+                        warn!(
+                            issue = issue.number,
+                            age_secs = lease_age.unwrap().as_secs(),
+                            "removing stale in-progress lease"
+                        );
+                        let _ = github::remove_label(
+                            repo,
+                            issue.number,
+                            &config.global.in_progress_label,
+                        )
+                        .await;
+                    } else {
+                        survivors.push(issue);
+                    }
                 }
+                survivors
             }
-        }
-        Err(e) => warn!(error = %e, "failed to fetch in-progress issues for stale lease check"),
-    }
+            Err(e) => {
+                warn!(error = %e, "failed to fetch in-progress issues for stale lease check");
+                vec![]
+            }
+        };
 
     // Fetch issues with the gate label if configured.
     let labels = config
@@ -470,8 +481,22 @@ pub async fn process_batch_with_config(
         .collect();
 
     let max_concurrency = config.global.max_concurrency;
+    // Seed active counts from non-stale in-progress issues so that limits
+    // are respected correctly after a restart.
     let mut total_active: usize = 0;
     let mut active_per_route: HashMap<String, usize> = HashMap::new();
+    for issue in &surviving_in_progress {
+        total_active += 1;
+        if let Some((route_name, _)) = config.match_route(issue) {
+            *active_per_route.entry(route_name.to_string()).or_insert(0) += 1;
+        }
+    }
+    if total_active > 0 {
+        info!(
+            total_active,
+            "seeded active counts from surviving in-progress issues"
+        );
+    }
     let mut join_set: JoinSet<(String, Result<RunRecord>)> = JoinSet::new();
     let mut records = Vec::new();
 
@@ -509,7 +534,23 @@ pub async fn process_batch_with_config(
                     .await;
                     (route_name, result)
                 });
+            } else if total_active >= max_concurrency {
+                info!(
+                    issue = issue.number,
+                    route = route_name,
+                    active = total_active,
+                    max = max_concurrency,
+                    "global concurrency limit reached, deferring issue"
+                );
+                deferred.push_back((route_name, issue));
             } else {
+                info!(
+                    issue = issue.number,
+                    route = route_name,
+                    active = route_active,
+                    limit = route_limit,
+                    "per-route concurrency limit reached, deferring issue"
+                );
                 deferred.push_back((route_name, issue));
             }
         }
@@ -1192,4 +1233,156 @@ pub async fn process_batch(
     }
 
     records
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::config::RunnerConfig;
+    use crate::github::IssueCandidate;
+
+    fn make_issue(number: u64, labels: Vec<&str>) -> IssueCandidate {
+        IssueCandidate {
+            number,
+            repo: "owner/repo".into(),
+            title: "test issue".into(),
+            body: String::new(),
+            labels: labels.into_iter().map(String::from).collect(),
+            state: "open".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            is_assigned: false,
+            html_url: String::new(),
+            comments: vec![],
+        }
+    }
+
+    fn two_route_config(max_concurrency: usize, bug_concurrency: usize) -> RunnerConfig {
+        let toml = format!(
+            r#"
+[global]
+repo = "owner/repo"
+max_concurrency = {max_concurrency}
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = {bug_concurrency}
+
+[routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 1
+"#
+        );
+        toml::from_str(&toml).unwrap()
+    }
+
+    /// Simulate one pass of the scheduling inner loop. Returns (scheduled, deferred).
+    fn simulate_scheduling_pass(
+        pending: &[(String, IssueCandidate)],
+        total_active: usize,
+        active_per_route: &HashMap<String, usize>,
+        max_concurrency: usize,
+        config: &RunnerConfig,
+    ) -> (usize, usize) {
+        let mut scheduled = 0usize;
+        let mut deferred = 0usize;
+        let mut ta = total_active;
+        let mut apr = active_per_route.clone();
+
+        for (route_name, _issue) in pending {
+            let route_active = *apr.get(route_name).unwrap_or(&0);
+            let route_limit = config
+                .routes
+                .get(route_name)
+                .map(|r| r.concurrency)
+                .unwrap_or(1);
+
+            if ta < max_concurrency && route_active < route_limit {
+                ta += 1;
+                *apr.entry(route_name.clone()).or_insert(0) += 1;
+                scheduled += 1;
+            } else {
+                deferred += 1;
+            }
+        }
+        (scheduled, deferred)
+    }
+
+    #[test]
+    fn seed_active_counts_from_surviving_in_progress() {
+        let config = two_route_config(5, 2);
+        let in_progress = vec![
+            make_issue(1, vec!["bug"]),
+            make_issue(2, vec!["bug"]),
+            make_issue(3, vec!["enhancement"]),
+        ];
+
+        let mut total_active = 0usize;
+        let mut active_per_route: HashMap<String, usize> = HashMap::new();
+        for issue in &in_progress {
+            total_active += 1;
+            if let Some((route_name, _)) = config.match_route(issue) {
+                *active_per_route.entry(route_name.to_string()).or_insert(0) += 1;
+            }
+        }
+
+        assert_eq!(total_active, 3);
+        assert_eq!(active_per_route["bugfix"], 2);
+        assert_eq!(active_per_route["features"], 1);
+    }
+
+    #[test]
+    fn global_cap_defers_issue_when_at_limit() {
+        let config = two_route_config(2, 5);
+        let pending = vec![("bugfix".to_string(), make_issue(10, vec!["bug"]))];
+        let apr = HashMap::new();
+        // total_active == max_concurrency — should defer
+        let (scheduled, deferred) = simulate_scheduling_pass(&pending, 2, &apr, 2, &config);
+        assert_eq!(scheduled, 0);
+        assert_eq!(deferred, 1);
+    }
+
+    #[test]
+    fn per_route_cap_defers_issue_when_at_limit() {
+        let config = two_route_config(10, 1); // bugfix concurrency = 1
+        let pending = vec![("bugfix".to_string(), make_issue(10, vec!["bug"]))];
+        // bugfix already has 1 active — at its per-route limit
+        let mut apr = HashMap::new();
+        apr.insert("bugfix".to_string(), 1usize);
+        let (scheduled, deferred) = simulate_scheduling_pass(&pending, 1, &apr, 10, &config);
+        assert_eq!(scheduled, 0);
+        assert_eq!(deferred, 1);
+    }
+
+    #[test]
+    fn scheduling_resumes_after_slot_frees() {
+        // max_concurrency=2 with 3 pending bugfix issues.
+        let config = two_route_config(2, 3);
+        let three_pending = vec![
+            ("bugfix".to_string(), make_issue(1, vec!["bug"])),
+            ("bugfix".to_string(), make_issue(2, vec!["bug"])),
+            ("bugfix".to_string(), make_issue(3, vec!["bug"])),
+        ];
+        let apr = HashMap::new();
+
+        // First pass: 2 slots available — first two scheduled, third deferred.
+        let (scheduled, deferred) = simulate_scheduling_pass(&three_pending, 0, &apr, 2, &config);
+        assert_eq!(scheduled, 2);
+        assert_eq!(deferred, 1);
+
+        // One task finishes (total_active drops from 2 to 1).
+        // Second pass with remaining deferred issue — slot is available.
+        let one_pending = vec![("bugfix".to_string(), make_issue(3, vec!["bug"]))];
+        let mut apr_after = HashMap::new();
+        apr_after.insert("bugfix".to_string(), 1usize); // one still running
+        let (scheduled, deferred) =
+            simulate_scheduling_pass(&one_pending, 1, &apr_after, 2, &config);
+        assert_eq!(scheduled, 1);
+        assert_eq!(deferred, 0);
+    }
 }
