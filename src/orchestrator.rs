@@ -17,7 +17,7 @@ use crate::planner;
 use crate::policy::RepoPolicy;
 use crate::state::{self, RunRecord, RunStatus, StageStatus};
 use crate::triage::{self, TriageDecision};
-use crate::workflow::{self, StageKind};
+use crate::workflow::{self, StageKind, WorkflowMode};
 
 /// A pending work item in the batch queue — either an issue or a PR.
 enum PendingSubject {
@@ -756,6 +756,320 @@ pub async fn process_pr_with_config(
     Ok(record)
 }
 
+
+/// Build a `PlannedStage` for a PR stage in reactive mode.
+fn build_pr_planned_stage(
+    stage: &workflow::Stage,
+    pr: &github::PrCandidate,
+    run_id: &str,
+    all_stages: &[workflow::Stage],
+) -> planner::PlannedStage {
+    let is_last = all_stages
+        .last()
+        .map(|s| s.kind == stage.kind)
+        .unwrap_or(false);
+    let prompt = generate_reactive_pr_prompt(stage.kind, pr, run_id, !is_last);
+    planner::PlannedStage {
+        kind: stage.kind,
+        prompt,
+        allowed_files: None,
+        validation: vec![],
+        optional: stage.optional,
+        max_retries: stage.max_retries,
+        condition: stage.condition.clone(),
+        agentless: stage.agentless,
+        command: stage.command.clone(),
+        model: stage.model.clone(),
+        skills: stage.skills.clone(),
+        mcp_config: stage.mcp_config.clone(),
+    }
+}
+
+/// Generate a stage prompt for a reactive PR maintenance stage.
+fn generate_reactive_pr_prompt(
+    kind: StageKind,
+    pr: &github::PrCandidate,
+    run_id: &str,
+    has_successor: bool,
+) -> String {
+    let breadcrumb = if has_successor {
+        format!(
+            "\n\n## Breadcrumb\n\nWhen done, write a brief context summary to \
+             `.forza/breadcrumbs/{run_id}/{stage_name}.md`. Include key decisions and \
+             any information the next stage will need.",
+            stage_name = kind.name()
+        )
+    } else {
+        String::new()
+    };
+
+    match kind {
+        StageKind::FixCi => format!(
+            "Fix the CI failures for PR #{number}: {title}\n\n\
+             ## Steps\n\n\
+             1. Read the CI failure output (`gh pr checks {number}`).\n\
+             2. Identify the failing checks and their error messages.\n\
+             3. Fix the failures — compilation errors, test failures, lint issues.\n\
+             4. Commit the fixes and push (`git push`).\n\n\
+             Branch: `{branch}`{breadcrumb}",
+            number = pr.number,
+            title = pr.title,
+            branch = pr.head_branch,
+            breadcrumb = breadcrumb,
+        ),
+        StageKind::RevisePr => format!(
+            "Address the review feedback for PR #{number}: {title}\n\n\
+             ## Steps\n\n\
+             1. Run `gh pr view {number} --json reviews` to see review comments.\n\
+             2. Address each CHANGES_REQUESTED comment.\n\
+             3. Commit the revisions and push (`git push`).\n\n\
+             Branch: `{branch}`{breadcrumb}",
+            number = pr.number,
+            title = pr.title,
+            branch = pr.head_branch,
+            breadcrumb = breadcrumb,
+        ),
+        _ => format!(
+            "Handle {} stage for PR #{}: {}",
+            kind.name(),
+            pr.number,
+            pr.title,
+        ),
+    }
+}
+
+/// Process a single PR through one reactive maintenance cycle.
+///
+/// Evaluates each template stage's condition and runs the first stage whose
+/// condition exits 0. Only one stage executes per cycle (the reactive dispatch
+/// model). Returns the run record regardless of whether a stage ran.
+pub async fn process_reactive_pr(
+    pr_number: u64,
+    repo: &str,
+    route_name: &str,
+    routes: &HashMap<String, Route>,
+    config: &RunnerConfig,
+    state_dir: &Path,
+    repo_dir: &Path,
+) -> Result<RunRecord> {
+    info!(
+        repo = repo,
+        pr = pr_number,
+        "processing PR in reactive mode"
+    );
+
+    // 1. Fetch the PR.
+    let pr = github::fetch_pr(repo, pr_number).await?;
+    info!(pr = pr_number, title = pr.title, "fetched PR");
+
+    // 2. Resolve route and template.
+    let route = routes
+        .get(route_name)
+        .ok_or_else(|| Error::Policy(format!("route not found: {route_name}")))?;
+    let template = config
+        .resolve_workflow(&route.workflow)
+        .ok_or_else(|| Error::Policy(format!("unknown workflow: {}", route.workflow)))?;
+
+    if template.mode != WorkflowMode::Reactive {
+        return Err(Error::Policy(format!(
+            "workflow '{}' is not in reactive mode",
+            template.name
+        )));
+    }
+
+    let branch = pr.head_branch.clone();
+    info!(
+        pr = pr_number,
+        route = route_name,
+        workflow = template.name,
+        branch = branch,
+        "selected reactive workflow"
+    );
+
+    // 3. Set up isolation.
+    let worktree_dir = isolation::create_worktree(repo_dir, &branch, ".worktrees").await?;
+    info!(pr = pr_number, worktree = %worktree_dir.display(), "created worktree");
+
+    // 4. Create run record.
+    let run_id = state::generate_run_id();
+    let mut record = RunRecord::new(&run_id, repo, pr_number, &template.name, &branch);
+
+    // 5. Reactive dispatch: evaluate each stage condition, run the first that passes.
+    let mut stage_ran = false;
+    for stage in &template.stages {
+        // In reactive mode, condition exit 0 = run this stage.
+        let should_run = if let Some(ref condition) = stage.condition {
+            tokio::process::Command::new("sh")
+                .args(["-c", condition])
+                .current_dir(&worktree_dir)
+                .env("FORZA_PR_NUMBER", pr_number.to_string())
+                .output()
+                .await
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        } else {
+            true // No condition → always eligible.
+        };
+
+        if !should_run {
+            info!(
+                pr = pr_number,
+                stage = stage.kind.name(),
+                "reactive stage condition not met, trying next"
+            );
+            continue;
+        }
+
+        info!(
+            pr = pr_number,
+            stage = stage.kind.name(),
+            agentless = stage.agentless,
+            "reactive stage selected"
+        );
+
+        let planned = build_pr_planned_stage(stage, &pr, &run_id, &template.stages);
+
+        if planned.agentless {
+            let command = planned
+                .command
+                .as_deref()
+                .unwrap_or("echo 'no command specified'");
+            let start = std::time::Instant::now();
+            let output = tokio::process::Command::new("sh")
+                .args(["-c", command])
+                .current_dir(&worktree_dir)
+                .env("FORZA_PR_NUMBER", pr_number.to_string())
+                .output()
+                .await;
+            let duration = start.elapsed();
+            let (success, output_text) = match output {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                    let text = if stderr.is_empty() { stdout } else { stderr };
+                    (o.status.success(), text)
+                }
+                Err(e) => (false, e.to_string()),
+            };
+            info!(
+                pr = pr_number,
+                stage = planned.kind_name(),
+                success = success,
+                duration = format!("{:.1}s", duration.as_secs_f64()),
+                "reactive agentless stage complete"
+            );
+            record.record_stage(
+                planned.kind,
+                if success {
+                    StageStatus::Succeeded
+                } else {
+                    StageStatus::Failed
+                },
+                StageResult {
+                    stage: planned.kind_name().to_string(),
+                    success,
+                    duration_secs: duration.as_secs_f64(),
+                    cost_usd: None,
+                    output: output_text,
+                    files_modified: None,
+                },
+            );
+        } else {
+            let stage_model = planned
+                .model
+                .as_deref()
+                .or_else(|| config.effective_model(route));
+            let stage_skills = config.effective_skills(route, planned.skills.as_deref());
+            let stage_mcp = config.effective_mcp_config(route, planned.mcp_config.as_deref());
+            let stage_syspr = config.effective_append_system_prompt();
+            let mut stage_adapter = ClaudeAdapter::new();
+            if let Some(m) = stage_model {
+                stage_adapter = stage_adapter.model(m);
+            }
+            if !stage_skills.is_empty() {
+                stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
+            }
+            if let Some(p) = stage_mcp {
+                stage_adapter = stage_adapter.mcp_config(p);
+            }
+            if let Some(s) = stage_syspr {
+                stage_adapter = stage_adapter.append_system_prompt(s);
+            }
+
+            match stage_adapter.execute_stage(&planned, &worktree_dir).await {
+                Ok(result) => {
+                    info!(
+                        pr = pr_number,
+                        stage = planned.kind_name(),
+                        success = result.success,
+                        duration = format!("{:.1}s", result.duration_secs),
+                        "reactive stage complete"
+                    );
+                    record.record_stage(
+                        planned.kind,
+                        if result.success {
+                            StageStatus::Succeeded
+                        } else {
+                            StageStatus::Failed
+                        },
+                        result,
+                    );
+                }
+                Err(e) => {
+                    error!(pr = pr_number, stage = planned.kind_name(), error = %e, "reactive stage error");
+                    record.record_stage(
+                        planned.kind,
+                        StageStatus::Failed,
+                        StageResult {
+                            stage: planned.kind_name().to_string(),
+                            success: false,
+                            duration_secs: 0.0,
+                            cost_usd: None,
+                            output: e.to_string(),
+                            files_modified: None,
+                        },
+                    );
+                }
+            }
+        }
+
+        stage_ran = true;
+        break; // Reactive mode: only one stage per cycle.
+    }
+
+    if !stage_ran {
+        info!(pr = pr_number, "no reactive stage condition met this cycle");
+    }
+
+    // 6. Finish.
+    let all_succeeded = !stage_ran
+        || record
+            .stages
+            .iter()
+            .all(|s| s.status == StageStatus::Succeeded);
+    let final_status = if all_succeeded {
+        RunStatus::Succeeded
+    } else {
+        RunStatus::Failed
+    };
+    record.finish(final_status);
+    state::save_run(&record, state_dir)?;
+    info!(pr = pr_number, run_id = record.run_id, status = ?final_status, "reactive PR run complete");
+
+    // Fire notifications (best-effort).
+    if let Some(notif_config) = config.global.notifications.as_ref() {
+        notifications::notify_run_complete(notif_config, &record).await;
+    }
+
+    // 7. Cleanup.
+    if all_succeeded && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
+    {
+        warn!(error = %e, "failed to clean worktree (non-fatal)");
+    }
+
+    Ok(record)
+}
+
 /// Process all eligible issues for a single repo using its route table.
 pub async fn process_batch_for_repo(
     repo: &str,
@@ -1007,6 +1321,73 @@ pub async fn process_batch_for_repo(
                 warn!(route = route_name, error = %e, "failed to process issue");
             }
             Err(e) => warn!(error = %e, "task join error"),
+        }
+    }
+
+    // Process PR-type routes with reactive dispatch.
+    let pr_routes: Vec<(String, String)> = routes
+        .iter()
+        .filter(|(_, r)| r.route_type == "pr")
+        .map(|(name, r)| (name.clone(), r.label.clone()))
+        .collect();
+
+    if !pr_routes.is_empty() && !*cancel.borrow() {
+        let mut pr_join_set: JoinSet<(String, Result<RunRecord>)> = JoinSet::new();
+
+        for (route_name, label) in pr_routes {
+            if *cancel.borrow() {
+                break;
+            }
+            let prs = match github::fetch_eligible_prs(repo, &[label], 10).await {
+                Ok(prs) => prs,
+                Err(e) => {
+                    error!(error = %e, route = route_name, "failed to fetch eligible PRs");
+                    continue;
+                }
+            };
+
+            info!(
+                repo = repo,
+                route = route_name,
+                count = prs.len(),
+                "found eligible PRs"
+            );
+
+            for pr in prs {
+                if *cancel.borrow() {
+                    break;
+                }
+                let config_clone = config.clone();
+                let state_dir_owned = state_dir.to_path_buf();
+                let repo_dir_owned = repo_dir.to_path_buf();
+                let pr_number = pr.number;
+                let repo_owned = repo.to_string();
+                let route_name_clone = route_name.clone();
+                let routes_clone = routes.clone();
+                pr_join_set.spawn(async move {
+                    let result = process_reactive_pr(
+                        pr_number,
+                        &repo_owned,
+                        &route_name_clone,
+                        &routes_clone,
+                        &config_clone,
+                        &state_dir_owned,
+                        &repo_dir_owned,
+                    )
+                    .await;
+                    (route_name_clone, result)
+                });
+            }
+        }
+
+        while let Some(join_result) = pr_join_set.join_next().await {
+            match join_result {
+                Ok((_, Ok(record))) => records.push(record),
+                Ok((route_name, Err(e))) => {
+                    warn!(route = route_name, error = %e, "failed to process PR");
+                }
+                Err(e) => warn!(error = %e, "PR task join error"),
+            }
         }
     }
 

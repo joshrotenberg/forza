@@ -410,7 +410,7 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
 async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
     let sd = state_dir();
 
-    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config) {
+    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config).await {
         Ok(r) => r,
         Err(code) => return code,
     };
