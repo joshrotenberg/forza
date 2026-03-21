@@ -257,8 +257,7 @@ pub async fn process_issue_with_config(
     }
 
     // 10. Cleanup.
-    if all_succeeded
-        && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, false).await
+    if all_succeeded && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
     {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
@@ -634,7 +633,7 @@ pub async fn process_issue(
 
     // 10. Cleanup on success.
     if all_succeeded {
-        if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, false).await {
+        if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await {
             warn!(error = %e, "failed to clean worktree (non-fatal)");
         }
     } else {
@@ -705,8 +704,8 @@ async fn handle_open_pr(
         );
     }
 
-    // Push.
-    github::push_branch(work_dir, branch).await?;
+    // Push (force to handle stale remote branches from previous failed runs).
+    github::push_branch_force(work_dir, branch).await?;
 
     // Create PR.
     let body = format!(

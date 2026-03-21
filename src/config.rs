@@ -187,15 +187,15 @@ fn default_agent() -> String {
 }
 
 fn default_in_progress_label() -> String {
-    "runner:in-progress".to_string()
+    "forza:in-progress".to_string()
 }
 
 fn default_complete_label() -> String {
-    "runner:complete".to_string()
+    "forza:complete".to_string()
 }
 
 fn default_failed_label() -> String {
-    "runner:failed".to_string()
+    "forza:failed".to_string()
 }
 
 fn default_branch_pattern() -> String {
