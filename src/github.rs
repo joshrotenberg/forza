@@ -341,6 +341,33 @@ pub async fn remove_label(repo: &str, number: u64, label: &str) -> Result<()> {
     Ok(())
 }
 
+/// Create a label in a repository (idempotent — uses --force to update if it exists).
+pub async fn create_label(repo: &str, name: &str, color: &str, description: &str) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "label",
+            "create",
+            "--repo",
+            repo,
+            name,
+            "--color",
+            color,
+            "--description",
+            description,
+            "--force",
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh label create failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh label create failed: {stderr}")));
+    }
+
+    Ok(())
+}
+
 /// Post a comment on an issue.
 pub async fn comment_on_issue(repo: &str, number: u64, body: &str) -> Result<()> {
     let output = tokio::process::Command::new("gh")
