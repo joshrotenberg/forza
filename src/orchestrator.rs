@@ -762,7 +762,6 @@ pub async fn process_issue(
     );
 
     // 6. Execute stages.
-    let adapter = build_adapter(policy);
     let mut record = RunRecord::new(&run_id, repo, number, &template.name, &branch);
 
     let mut all_succeeded = true;
@@ -907,7 +906,27 @@ pub async fn process_issue(
             continue;
         }
 
-        match adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
+        let stage_model = planned_stage.model.as_deref().or(policy.model.as_deref());
+        let stage_skills: &[String] = planned_stage
+            .skills
+            .as_deref()
+            .unwrap_or(&policy.skills);
+        let stage_mcp = planned_stage
+            .mcp_config
+            .as_deref()
+            .or(policy.mcp_config.as_deref());
+        let mut stage_adapter = ClaudeAdapter::new();
+        if let Some(m) = stage_model {
+            stage_adapter = stage_adapter.model(m);
+        }
+        if !stage_skills.is_empty() {
+            stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
+        }
+        if let Some(p) = stage_mcp {
+            stage_adapter = stage_adapter.mcp_config(p);
+        }
+
+        match stage_adapter.execute_stage(&stage_for_exec, &worktree_dir).await {
             Ok(result) => {
                 let status = if result.success {
                     StageStatus::Succeeded
@@ -1212,13 +1231,6 @@ async fn eval_stage_condition(
     }
 }
 
-fn build_adapter(policy: &RepoPolicy) -> ClaudeAdapter {
-    let mut adapter = ClaudeAdapter::new();
-    if let Some(ref model) = policy.model {
-        adapter = adapter.model(model);
-    }
-    adapter
-}
 
 async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &str) {
     for cmd in hooks {
