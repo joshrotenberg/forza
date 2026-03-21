@@ -783,8 +783,11 @@ mod tests {
                 .unwrap();
 
         assert!(result.contains("issue=7"));
-        assert!(result.contains("title=feat: something"));
-        assert!(result.contains("body=issue body"));
+        // {issue_title} is wrapped in security delimiters
+        assert!(result.contains("Title: feat: something"));
+        assert!(result.contains("BEGIN USER-PROVIDED ISSUE CONTENT"));
+        // {issue_body} is wrapped in security delimiters
+        assert!(result.contains("issue body"));
         assert!(result.contains("branch=automation/7-feat-something"));
         assert!(result.contains("repo=owner/repo"));
         // {issue_context} includes the body and the comment discussion
