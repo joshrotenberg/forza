@@ -442,6 +442,8 @@ mod tests {
             stage_prompts: Default::default(),
             default_workflow: None,
             workflow_templates: vec![],
+            skills: vec![],
+            mcp_config: None,
         }
     }
 

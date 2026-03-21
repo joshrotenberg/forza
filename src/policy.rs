@@ -67,6 +67,13 @@ pub struct RepoPolicy {
     /// custom templates shadow built-ins with the same name.
     #[serde(default)]
     pub workflow_templates: Vec<WorkflowTemplate>,
+
+    /// Skill files to inject into the agent for all stages.
+    #[serde(default)]
+    pub skills: Vec<String>,
+
+    /// MCP config file path for all stages.
+    pub mcp_config: Option<String>,
 }
 
 fn default_branch_pattern() -> String {
@@ -218,6 +225,8 @@ mod tests {
             stage_prompts: Default::default(),
             default_workflow: None,
             workflow_templates: vec![],
+            skills: vec![],
+            mcp_config: None,
         };
         let issue = make_issue(42, "fix: handle the thing");
         let branch = policy.branch_for_issue(&issue);
@@ -273,6 +282,8 @@ mod tests {
             stage_prompts: Default::default(),
             default_workflow: None,
             workflow_templates: vec![],
+            skills: vec![],
+            mcp_config: None,
         };
         let issue = make_issue(471, &"a".repeat(200));
         let branch = policy.branch_for_issue(&issue);

@@ -1031,6 +1031,109 @@ workflow = "bug"
         assert_eq!(route.workflow, "bug");
     }
 
+    fn make_config_with_agent(
+        global_skills: Vec<String>,
+        global_mcp: Option<String>,
+        route_skills: Option<Vec<String>>,
+        route_mcp: Option<String>,
+    ) -> (RunnerConfig, Route) {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap();
+        let mut config = config;
+        config.agent_config.skills = global_skills;
+        config.agent_config.mcp_config = global_mcp;
+        let mut route = config.routes["bugfix"].clone();
+        route.skills = route_skills;
+        route.mcp_config = route_mcp;
+        (config, route)
+    }
+
+    #[test]
+    fn effective_skills_stage_overrides_route_and_global() {
+        let (config, route) = make_config_with_agent(
+            vec!["global.md".into()],
+            None,
+            Some(vec!["route.md".into()]),
+            None,
+        );
+        let stage_skills = vec!["stage.md".into()];
+        assert_eq!(
+            config.effective_skills(&route, Some(&stage_skills)),
+            &["stage.md"]
+        );
+    }
+
+    #[test]
+    fn effective_skills_route_overrides_global_when_no_stage() {
+        let (config, route) = make_config_with_agent(
+            vec!["global.md".into()],
+            None,
+            Some(vec!["route.md".into()]),
+            None,
+        );
+        assert_eq!(config.effective_skills(&route, None), &["route.md"]);
+    }
+
+    #[test]
+    fn effective_skills_falls_back_to_global_when_no_stage_or_route() {
+        let (config, route) = make_config_with_agent(vec!["global.md".into()], None, None, None);
+        assert_eq!(config.effective_skills(&route, None), &["global.md"]);
+    }
+
+    #[test]
+    fn effective_mcp_config_stage_overrides_route_and_global() {
+        let (config, route) = make_config_with_agent(
+            vec![],
+            Some("global.json".into()),
+            None,
+            Some("route.json".into()),
+        );
+        assert_eq!(
+            config.effective_mcp_config(&route, Some("stage.json")),
+            Some("stage.json")
+        );
+    }
+
+    #[test]
+    fn effective_mcp_config_route_overrides_global_when_no_stage() {
+        let (config, route) = make_config_with_agent(
+            vec![],
+            Some("global.json".into()),
+            None,
+            Some("route.json".into()),
+        );
+        assert_eq!(
+            config.effective_mcp_config(&route, None),
+            Some("route.json")
+        );
+    }
+
+    #[test]
+    fn effective_mcp_config_falls_back_to_global_when_no_stage_or_route() {
+        let (config, route) =
+            make_config_with_agent(vec![], Some("global.json".into()), None, None);
+        assert_eq!(
+            config.effective_mcp_config(&route, None),
+            Some("global.json")
+        );
+    }
+
+    #[test]
+    fn effective_mcp_config_none_when_all_absent() {
+        let (config, route) = make_config_with_agent(vec![], None, None, None);
+        assert_eq!(config.effective_mcp_config(&route, None), None);
+    }
+
     #[test]
     fn resolve_workflow_unknown_returns_none() {
         let config: RunnerConfig = toml::from_str(
