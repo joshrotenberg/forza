@@ -40,6 +40,12 @@ authorization_level = "contributor"
 # Only process issues from these authors. Empty = authenticated user only.
 allowed_authors = []
 
+# Additional label required on an issue before processing begins.
+# Unlike gate_label (the opt-in trigger that gets removed at lease time),
+# require_label is a security gate checked after the issue is fetched and
+# never removed automatically. Useful for enforcing a human-review stamp.
+# require_label = "security:approved"
+
 # ── Validation ───────────────────────────────────────────────────────
 
 # Commands run between stages (in addition to per-stage hooks).

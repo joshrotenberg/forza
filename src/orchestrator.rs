@@ -50,6 +50,43 @@ pub async fn process_issue_with_config(
         .ok_or_else(|| Error::Triage("no route matches this issue's labels".into()))?;
     info!(issue = number, route = route_name, "matched route");
 
+    // 2a. Security gates (checked before acquiring the lease so rejected issues never get
+    //     the in_progress label applied).
+    if let Some(ref required) = config.security.require_label
+        && !issue.labels.iter().any(|l| l == required)
+    {
+        return Err(Error::Authorization(format!(
+            "issue #{number} is missing required security label '{required}'"
+        )));
+    }
+    info!(
+        issue = number,
+        authorization_level = config.security.authorization_level,
+        "security authorization level"
+    );
+    if !config.security.allowed_authors.is_empty() {
+        if !config
+            .security
+            .allowed_authors
+            .iter()
+            .any(|a| a == &issue.author)
+        {
+            return Err(Error::Authorization(format!(
+                "issue #{number} author '{}' is not in allowed_authors",
+                issue.author
+            )));
+        }
+    } else {
+        // Empty allowed_authors: only the authenticated gh user may trigger runs.
+        let authenticated = github::fetch_authenticated_user().await?;
+        if issue.author != authenticated {
+            return Err(Error::Authorization(format!(
+                "issue #{number} author '{}' does not match authenticated user '{authenticated}'",
+                issue.author
+            )));
+        }
+    }
+
     // 3. Acquire lease.
     let _ = github::add_label(repo, number, &config.global.in_progress_label).await;
     if let Some(ref gate) = config.global.gate_label {
@@ -385,6 +422,21 @@ pub async fn process_issue_with_config(
                     break;
                 }
             }
+        }
+
+        // Check accumulated cost against cap.
+        if let Some(cap) = config.global.max_cost_per_issue
+            && let Some(total) = record.total_cost_usd
+            && total > cap
+        {
+            warn!(
+                issue = number,
+                total_cost = total,
+                cap = cap,
+                "cost cap exceeded, aborting remaining stages"
+            );
+            all_succeeded = false;
+            break;
         }
 
         // Run validation.
@@ -2171,6 +2223,7 @@ mod tests {
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            author: String::new(),
             comments: vec![],
         }
     }
@@ -2320,6 +2373,7 @@ concurrency = 1
             updated_at: String::new(),
             is_assigned: false,
             html_url: "https://github.com/owner/repo/issues/42".into(),
+            author: String::new(),
             comments: vec![],
         };
 

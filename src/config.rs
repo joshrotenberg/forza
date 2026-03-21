@@ -149,6 +149,12 @@ pub struct SecurityConfig {
     /// Only process issues from these authors. Empty = authenticated user only.
     #[serde(default)]
     pub allowed_authors: Vec<String>,
+
+    /// Additional label that must be present for an issue to be processed.
+    /// Distinct from `gate_label` (which is the opt-in trigger); this label
+    /// acts as a security gate checked after the issue is fetched.
+    #[serde(default)]
+    pub require_label: Option<String>,
 }
 
 /// Global validation commands.
@@ -571,6 +577,7 @@ workflow = "bug"
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            author: String::new(),
             comments: vec![],
         };
 
@@ -605,6 +612,7 @@ workflow = "bug"
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            author: String::new(),
             comments: vec![],
         };
 
@@ -1063,6 +1071,7 @@ workflow = "bug"
             updated_at: String::new(),
             is_assigned: false,
             html_url: String::new(),
+            author: String::new(),
             comments: vec![],
         };
 
