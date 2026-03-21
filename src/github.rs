@@ -226,6 +226,23 @@ pub async fn push_branch(work_dir: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+/// Push a branch with --force-with-lease (handles stale remote branches).
+pub async fn push_branch_force(work_dir: &Path, branch: &str) -> Result<()> {
+    let output = tokio::process::Command::new("git")
+        .args(["push", "--force-with-lease", "-u", "origin", branch])
+        .current_dir(work_dir)
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("git push failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("git push failed: {stderr}")));
+    }
+
+    Ok(())
+}
+
 /// Create a pull request via gh CLI.
 pub async fn create_pull_request(
     repo: &str,

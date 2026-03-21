@@ -2,7 +2,7 @@
 repo = "joshrotenberg/forza"
 max_concurrency = 3
 model = "claude-sonnet-4-6"
-gate_label = "runner:ready"
+gate_label = "forza:ready"
 branch_pattern = "automation/{issue}-{slug}"
 
 [security]
