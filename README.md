@@ -18,6 +18,11 @@ forza issue 123
 
 # Preview without executing
 forza issue 123 --dry-run
+# Example output:
+#   Would run workflow 'bug' for issue #123: Fix login crash
+#   Stages: plan → implement → test → review → open_pr
+#   Estimated cost: $0.80 - $1.50 (avg $1.05, based on 3 previous bug runs)
+#   (cost line shown only when historical run data exists)
 
 # Poll for eligible issues
 forza run
