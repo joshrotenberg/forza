@@ -853,7 +853,10 @@ pub async fn process_batch_for_repo(
         if let Some(schedule) = &pr_route.schedule
             && !schedule.is_active(now)
         {
-            tracing::debug!(route = pr_route_name, "PR route outside schedule window, skipping");
+            tracing::debug!(
+                route = pr_route_name,
+                "PR route outside schedule window, skipping"
+            );
             continue;
         }
         match github::fetch_prs_with_label(repo, &pr_route.label).await {

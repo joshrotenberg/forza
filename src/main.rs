@@ -452,15 +452,8 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    match forza::orchestrator::process_pr_with_config(
-        args.number,
-        &repo,
-        routes,
-        config,
-        &sd,
-        &rd,
-    )
-    .await
+    match forza::orchestrator::process_pr_with_config(args.number, &repo, routes, config, &sd, &rd)
+        .await
     {
         Ok(record) => print_run_result(&record),
         Err(e) => {
