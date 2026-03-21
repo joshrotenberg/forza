@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- *(dry-run)* show estimated cost range from historical run data in `--dry-run` output closes #16
+
 ## [0.1.0](https://github.com/joshrotenberg/forza/releases/tag/v0.1.0) - 2026-03-21
 
 ### Added
