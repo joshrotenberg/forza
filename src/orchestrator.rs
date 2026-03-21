@@ -7,7 +7,7 @@ use chrono::Utc;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
-use crate::config::RunnerConfig;
+use crate::config::{Route, RunnerConfig};
 use crate::error::{Error, Result};
 use crate::executor::{AgentAdapter, ClaudeAdapter, StageResult};
 use crate::github;
@@ -21,11 +21,12 @@ use crate::workflow::{self, StageKind};
 /// Process a single issue through the full pipeline using the new config model.
 pub async fn process_issue_with_config(
     number: u64,
+    repo: &str,
+    routes: &HashMap<String, Route>,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
 ) -> Result<RunRecord> {
-    let repo = &config.global.repo;
     info!(repo = repo, issue = number, "processing issue");
 
     // 1. Fetch the issue.
@@ -38,8 +39,7 @@ pub async fn process_issue_with_config(
     );
 
     // 2. Match route.
-    let (route_name, route) = config
-        .match_route(&issue)
+    let (route_name, route) = RunnerConfig::match_route_in(routes, &issue)
         .ok_or_else(|| Error::Triage("no route matches this issue's labels".into()))?;
     info!(issue = number, route = route_name, "matched route");
 
@@ -413,15 +413,15 @@ pub async fn process_issue_with_config(
     Ok(record)
 }
 
-/// Process all eligible issues for a config using route matching.
-pub async fn process_batch_with_config(
+/// Process all eligible issues for a single repo using its route table.
+pub async fn process_batch_for_repo(
+    repo: &str,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+    routes: &HashMap<String, Route>,
     cancel: &tokio::sync::watch::Receiver<bool>,
 ) -> Vec<RunRecord> {
-    let repo = &config.global.repo;
-
     // Recover stale leases before processing new work.
     let stale_timeout = std::time::Duration::from_secs(config.global.stale_lease_timeout);
     let now = Utc::now();
@@ -480,7 +480,7 @@ pub async fn process_batch_with_config(
     let mut pending: VecDeque<(String, crate::github::IssueCandidate)> = issues
         .into_iter()
         .filter_map(|issue| {
-            if let Some((route_name, route)) = config.match_route(&issue) {
+            if let Some((route_name, route)) = RunnerConfig::match_route_in(routes, &issue) {
                 if let Some(schedule) = &route.schedule
                     && !schedule.is_active(now)
                 {
@@ -506,7 +506,7 @@ pub async fn process_batch_with_config(
     let mut active_per_route: HashMap<String, usize> = HashMap::new();
     for issue in &surviving_in_progress {
         total_active += 1;
-        if let Some((route_name, _)) = config.match_route(issue) {
+        if let Some((route_name, _)) = RunnerConfig::match_route_in(routes, issue) {
             *active_per_route.entry(route_name.to_string()).or_insert(0) += 1;
         }
     }
@@ -529,11 +529,7 @@ pub async fn process_batch_with_config(
         let mut deferred: VecDeque<(String, crate::github::IssueCandidate)> = VecDeque::new();
         while let Some((route_name, issue)) = pending.pop_front() {
             let route_active = *active_per_route.get(&route_name).unwrap_or(&0);
-            let route_limit = config
-                .routes
-                .get(&route_name)
-                .map(|r| r.concurrency)
-                .unwrap_or(1);
+            let route_limit = routes.get(&route_name).map(|r| r.concurrency).unwrap_or(1);
 
             if total_active < max_concurrency && route_active < route_limit {
                 total_active += 1;
@@ -543,9 +539,13 @@ pub async fn process_batch_with_config(
                 let state_dir_owned: PathBuf = state_dir.to_path_buf();
                 let repo_dir_owned: PathBuf = repo_dir.to_path_buf();
                 let issue_number = issue.number;
+                let repo_owned = repo.to_string();
+                let routes_clone = routes.clone();
                 join_set.spawn(async move {
                     let result = process_issue_with_config(
                         issue_number,
+                        &repo_owned,
+                        &routes_clone,
                         &config_clone,
                         &state_dir_owned,
                         &repo_dir_owned,
@@ -616,6 +616,32 @@ pub async fn process_batch_with_config(
     }
 
     records
+}
+
+/// Process all eligible issues across all configured repos.
+///
+/// Iterates repos sequentially; within each repo issues run with per-route
+/// concurrency. `repo_dir` is used as a fallback when a repo entry has no
+/// explicit local path configured.
+pub async fn process_batch_with_config(
+    config: &RunnerConfig,
+    state_dir: &Path,
+    repo_dir: &Path,
+    cancel: &tokio::sync::watch::Receiver<bool>,
+) -> Vec<RunRecord> {
+    let mut all_records = Vec::new();
+    for (repo, repo_dir_opt, routes) in config.iter_repos() {
+        if *cancel.borrow() {
+            break;
+        }
+        let rd = repo_dir_opt
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo_dir.to_path_buf());
+        let mut records =
+            process_batch_for_repo(repo, config, state_dir, &rd, routes, cancel).await;
+        all_records.append(&mut records);
+    }
+    all_records
 }
 
 /// Process a single issue through the full pipeline (legacy API).

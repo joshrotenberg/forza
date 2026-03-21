@@ -65,6 +65,9 @@ struct FixArgs {
 struct IssueArgs {
     /// Issue number to process.
     number: u64,
+    /// Repository to process (owner/name). Required when multiple repos are configured.
+    #[arg(long)]
+    repo: Option<String>,
     /// Repository directory (default: current directory).
     #[arg(long)]
     repo_dir: Option<PathBuf>,
@@ -253,12 +256,59 @@ workflow = "feature"
     ExitCode::SUCCESS
 }
 
+/// Resolve which repo, repo_dir, and routes to use for a single-issue command.
+///
+/// Checks `args.repo` when multiple repos are configured; errors if ambiguous.
+fn resolve_repo<'a>(
+    args_repo: Option<&str>,
+    args_repo_dir: &Option<PathBuf>,
+    config: &'a forza::RunnerConfig,
+) -> Result<
+    (
+        String,
+        PathBuf,
+        &'a std::collections::HashMap<String, forza::config::Route>,
+    ),
+    ExitCode,
+> {
+    let repos = config.iter_repos();
+    let (repo_str, entry_repo_dir, routes) = if repos.len() == 1 {
+        repos.into_iter().next().unwrap()
+    } else {
+        match args_repo {
+            Some(r) => match repos.into_iter().find(|(repo, _, _)| *repo == r) {
+                Some(entry) => entry,
+                None => {
+                    eprintln!("error: repo '{r}' not found in config");
+                    return Err(ExitCode::FAILURE);
+                }
+            },
+            None => {
+                eprintln!("error: multiple repos configured — use --repo to specify which one");
+                return Err(ExitCode::FAILURE);
+            }
+        }
+    };
+
+    let rd = entry_repo_dir
+        .map(PathBuf::from)
+        .or_else(|| args_repo_dir.clone())
+        .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    Ok((repo_str.to_string(), rd, routes))
+}
+
 async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
-    let rd = repo_dir(&args.repo_dir, config);
     let sd = state_dir();
 
+    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config) {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
     if args.dry_run {
-        let issue = match forza::github::fetch_issue(&config.global.repo, args.number).await {
+        let issue = match forza::github::fetch_issue(&repo, args.number).await {
             Ok(i) => i,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -267,7 +317,7 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         };
 
         // Match route.
-        let (route_name, route) = match config.match_route(&issue) {
+        let (route_name, route) = match forza::RunnerConfig::match_route_in(routes, &issue) {
             Some(r) => r,
             None => {
                 eprintln!(
@@ -311,7 +361,16 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    match forza::orchestrator::process_issue_with_config(args.number, config, &sd, &rd).await {
+    match forza::orchestrator::process_issue_with_config(
+        args.number,
+        &repo,
+        routes,
+        config,
+        &sd,
+        &rd,
+    )
+    .await
+    {
         Ok(record) => print_run_result(&record),
         Err(e) => {
             eprintln!("error: {e}");
@@ -353,17 +412,32 @@ async fn cmd_run(args: RunArgs, config: &forza::RunnerConfig) -> ExitCode {
 }
 
 async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
-    let rd = repo_dir(&args.repo_dir, config);
     let sd = state_dir();
 
-    // Use the override interval or the minimum interval across matched routes.
+    // Use the override interval or the default of 60 seconds.
     let interval = args.interval.unwrap_or(60);
     let interval_dur = std::time::Duration::from_secs(interval);
 
+    let repos_data: Vec<(
+        String,
+        PathBuf,
+        std::collections::HashMap<String, forza::config::Route>,
+    )> = config
+        .iter_repos()
+        .into_iter()
+        .map(|(repo, repo_dir_opt, routes)| {
+            let rd = repo_dir_opt
+                .map(PathBuf::from)
+                .or_else(|| args.repo_dir.clone())
+                .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from))
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            (repo.to_string(), rd, routes.clone())
+        })
+        .collect();
+
     info!(
-        repo = config.global.repo,
+        repos = repos_data.len(),
         interval_secs = interval,
-        routes = config.routes.len(),
         "starting watch mode"
     );
 
@@ -388,30 +462,52 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
         let _ = cancel_tx.send(true);
     });
 
-    loop {
-        let records =
-            forza::orchestrator::process_batch_with_config(config, &sd, &rd, &cancel_rx).await;
-        if !records.is_empty() {
-            let succeeded = records
-                .iter()
-                .filter(|r| r.status == forza::state::RunStatus::Succeeded)
-                .count();
-            info!(
-                processed = records.len(),
-                succeeded = succeeded,
-                "batch complete"
-            );
-        }
+    // Spawn one independent poll-loop task per repo.
+    let mut handles = Vec::new();
+    for (repo, rd, routes) in repos_data {
+        let config_clone = config.clone();
+        let sd_clone = sd.clone();
+        let cancel_rx_clone = cancel_rx.clone();
+        handles.push(tokio::spawn(async move {
+            info!(repo = repo, "starting repo watch loop");
+            loop {
+                let records = forza::orchestrator::process_batch_for_repo(
+                    &repo,
+                    &config_clone,
+                    &sd_clone,
+                    &rd,
+                    &routes,
+                    &cancel_rx_clone,
+                )
+                .await;
+                if !records.is_empty() {
+                    let succeeded = records
+                        .iter()
+                        .filter(|r| r.status == forza::state::RunStatus::Succeeded)
+                        .count();
+                    info!(
+                        repo = repo,
+                        processed = records.len(),
+                        succeeded = succeeded,
+                        "batch complete"
+                    );
+                }
 
-        if *cancel_rx.borrow() {
-            break;
-        }
+                if *cancel_rx_clone.borrow() {
+                    break;
+                }
 
-        let mut cancel_rx_sleep = cancel_rx.clone();
-        tokio::select! {
-            _ = tokio::time::sleep(interval_dur) => {},
-            _ = cancel_rx_sleep.changed() => break,
-        }
+                let mut cancel_rx_sleep = cancel_rx_clone.clone();
+                tokio::select! {
+                    _ = tokio::time::sleep(interval_dur) => {},
+                    _ = cancel_rx_sleep.changed() => break,
+                }
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.await.ok();
     }
 
     info!("watch mode stopped, exiting cleanly");
@@ -501,7 +597,6 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
 
 async fn cmd_fix(args: FixArgs, config: &forza::RunnerConfig) -> ExitCode {
     let sd = state_dir();
-    let rd = repo_dir(&None, config);
 
     // Find the run to fix.
     let record = if let Some(ref run_id) = args.run {
@@ -555,10 +650,30 @@ async fn cmd_fix(args: FixArgs, config: &forza::RunnerConfig) -> ExitCode {
     }
     println!();
 
+    // Resolve the repo and routes from the run record.
+    let repo = record.repo.clone();
+    let (routes, rd) = if let Some(entry) = config.repos.get(&repo) {
+        let rd = entry
+            .repo_dir
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo_dir(&None, config));
+        (&entry.routes, rd)
+    } else {
+        (&config.routes, repo_dir(&None, config))
+    };
+
     // Re-run the issue with error context injected.
     // The worktree should still exist (we keep them on failure).
-    match forza::orchestrator::process_issue_with_config(record.issue_number, config, &sd, &rd)
-        .await
+    match forza::orchestrator::process_issue_with_config(
+        record.issue_number,
+        &repo,
+        routes,
+        config,
+        &sd,
+        &rd,
+    )
+    .await
     {
         Ok(new_record) => print_run_result(&new_record),
         Err(e) => {

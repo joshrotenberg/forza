@@ -1,5 +1,4 @@
 [global]
-repo = "joshrotenberg/forza"
 max_concurrency = 3
 model = "claude-sonnet-4-6"
 gate_label = "forza:ready"
@@ -15,14 +14,16 @@ commands = [
     "cargo test --lib",
 ]
 
-[routes.bugfix]
+[repos."joshrotenberg/forza"]
+
+[repos."joshrotenberg/forza".routes.bugfix]
 type = "issue"
 label = "bug"
 workflow = "bug"
 concurrency = 1
 poll_interval = 60
 
-[routes.features]
+[repos."joshrotenberg/forza".routes.features]
 type = "issue"
 label = "enhancement"
 workflow = "feature"
