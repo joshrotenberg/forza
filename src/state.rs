@@ -217,6 +217,87 @@ pub fn load_run(run_id: &str, state_dir: &std::path::Path) -> Option<RunRecord> 
     serde_json::from_str(&content).ok()
 }
 
+/// Load all runs from the state directory, sorted by `started_at` descending.
+pub fn load_all_runs(state_dir: &std::path::Path) -> Vec<RunRecord> {
+    let entries = match std::fs::read_dir(state_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut records: Vec<RunRecord> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+        .filter_map(|e| {
+            let content = std::fs::read_to_string(e.path()).ok()?;
+            serde_json::from_str(&content).ok()
+        })
+        .collect();
+    records.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    records
+}
+
+/// Per-workflow aggregate stats.
+#[derive(Debug, Clone)]
+pub struct WorkflowSummary {
+    /// Workflow name.
+    pub workflow: String,
+    /// Total number of runs.
+    pub total_runs: usize,
+    /// Number of succeeded runs.
+    pub succeeded: usize,
+    /// Number of failed runs.
+    pub failed: usize,
+    /// Minimum cost across all runs (if any have cost data).
+    pub min_cost: Option<f64>,
+    /// Maximum cost across all runs (if any have cost data).
+    pub max_cost: Option<f64>,
+    /// Average cost across all runs (if any have cost data).
+    pub avg_cost: Option<f64>,
+}
+
+/// Group all runs by workflow and compute per-workflow aggregate stats.
+pub fn summarize_by_workflow(state_dir: &std::path::Path) -> Vec<WorkflowSummary> {
+    let records = load_all_runs(state_dir);
+    let mut map: std::collections::HashMap<String, Vec<RunRecord>> =
+        std::collections::HashMap::new();
+    for record in records {
+        map.entry(record.workflow.clone()).or_default().push(record);
+    }
+    let mut summaries: Vec<WorkflowSummary> = map
+        .into_iter()
+        .map(|(workflow, runs)| {
+            let total_runs = runs.len();
+            let succeeded = runs
+                .iter()
+                .filter(|r| r.status == RunStatus::Succeeded)
+                .count();
+            let failed = runs
+                .iter()
+                .filter(|r| r.status == RunStatus::Failed)
+                .count();
+            let costs: Vec<f64> = runs.iter().filter_map(|r| r.total_cost_usd).collect();
+            let (min_cost, max_cost, avg_cost) = if costs.is_empty() {
+                (None, None, None)
+            } else {
+                let min = costs.iter().cloned().fold(f64::INFINITY, f64::min);
+                let max = costs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let avg = costs.iter().sum::<f64>() / costs.len() as f64;
+                (Some(min), Some(max), Some(avg))
+            };
+            WorkflowSummary {
+                workflow,
+                total_runs,
+                succeeded,
+                failed,
+                min_cost,
+                max_cost,
+                avg_cost,
+            }
+        })
+        .collect();
+    summaries.sort_by(|a, b| a.workflow.cmp(&b.workflow));
+    summaries
+}
+
 /// Cost estimate derived from historical runs of the same workflow type.
 #[derive(Debug, Clone)]
 pub struct CostEstimate {
