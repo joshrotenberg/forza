@@ -97,6 +97,10 @@ pub struct GlobalConfig {
 
     /// Default workflow when no route label matches.
     pub default_workflow: Option<String>,
+
+    /// Whether to automatically merge PRs after CI passes. Default: false.
+    #[serde(default)]
+    pub auto_merge: bool,
 }
 
 /// Security settings.
@@ -520,6 +524,31 @@ post = ["cargo test --lib"]
         let test_hooks = config.stage_hooks.get("test").unwrap();
         assert!(test_hooks.pre.is_empty());
         assert!(test_hooks.finally.is_empty());
+    }
+
+    #[test]
+    fn auto_merge_defaults_to_false() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+"#,
+        )
+        .unwrap();
+        assert!(!config.global.auto_merge);
+    }
+
+    #[test]
+    fn auto_merge_can_be_set_to_true() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+auto_merge = true
+"#,
+        )
+        .unwrap();
+        assert!(config.global.auto_merge);
     }
 
     #[test]

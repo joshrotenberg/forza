@@ -162,6 +162,8 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Test),
                 Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
+                Stage::new(StageKind::Merge)
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
         },
         WorkflowTemplate {
@@ -172,6 +174,8 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Test),
                 Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
+                Stage::new(StageKind::Merge)
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
         },
         WorkflowTemplate {
@@ -180,6 +184,8 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Implement),
                 Stage::new(StageKind::Test),
                 Stage::new(StageKind::OpenPr),
+                Stage::new(StageKind::Merge)
+                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
             ],
         },
         WorkflowTemplate {
@@ -195,6 +201,35 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bug_feature_chore_templates_end_with_merge() {
+        for name in &["bug", "feature", "chore"] {
+            let template = builtin_templates()
+                .into_iter()
+                .find(|t| t.name == *name)
+                .unwrap_or_else(|| panic!("{name} template must exist"));
+            let last = template.stages.last().expect("template must have stages");
+            assert_eq!(
+                last.kind,
+                StageKind::Merge,
+                "{name} template should end with Merge"
+            );
+            assert!(last.agentless, "{name} Merge stage must be agentless");
+        }
+    }
+
+    #[test]
+    fn research_template_has_no_merge_stage() {
+        let research = builtin_templates()
+            .into_iter()
+            .find(|t| t.name == "research")
+            .expect("research template must exist");
+        assert!(
+            !research.stages.iter().any(|s| s.kind == StageKind::Merge),
+            "research template should not include a Merge stage"
+        );
+    }
 
     #[test]
     fn feature_template_has_no_clarify_stage() {
