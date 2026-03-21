@@ -110,6 +110,43 @@ pub fn list_worktrees(repo_dir: &Path, base_dir: &str) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
+/// Remove worktrees under `repo_dir/base_dir` whose directory mtime is older
+/// than `max_age_days` days.
+///
+/// Returns the list of paths that were (or in dry-run mode, would have been)
+/// removed. Errors from individual removals are silently skipped so a single
+/// bad worktree does not abort the whole pass.
+pub async fn cleanup_stale_worktrees(
+    repo_dir: &Path,
+    base_dir: &str,
+    max_age_days: u64,
+    dry_run: bool,
+) -> Vec<PathBuf> {
+    let worktrees = list_worktrees(repo_dir, base_dir);
+    let threshold = std::time::Duration::from_secs(max_age_days * 86_400);
+    let now = std::time::SystemTime::now();
+
+    let mut stale = Vec::new();
+    for path in worktrees {
+        let age = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|mtime| now.duration_since(mtime).ok())
+            .unwrap_or(std::time::Duration::ZERO);
+        if age >= threshold {
+            stale.push(path);
+        }
+    }
+
+    if !dry_run {
+        for path in &stale {
+            let _ = remove_worktree(repo_dir, path, true).await;
+        }
+    }
+
+    stale
+}
+
 /// Validate that `repo_dir` is a local checkout of `repo` (owner/name).
 ///
 /// Runs `git remote get-url origin` and checks that the output contains the

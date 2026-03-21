@@ -141,6 +141,12 @@ struct CleanArgs {
     /// Remove run state files instead of worktrees.
     #[arg(long)]
     runs: bool,
+    /// Remove only worktrees older than the configured threshold (see --days).
+    #[arg(long)]
+    stale: bool,
+    /// Age threshold in days for --stale (overrides the configured default).
+    #[arg(long)]
+    days: Option<u64>,
     /// Print what would be removed without acting.
     #[arg(long)]
     dry_run: bool,
@@ -652,6 +658,17 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
                     );
                 }
 
+                let removed = forza::isolation::cleanup_stale_worktrees(
+                    &rd,
+                    ".worktrees",
+                    config_clone.global.stale_worktree_days,
+                    false,
+                )
+                .await;
+                for path in &removed {
+                    info!(repo = repo, worktree = %path.display(), "removed stale worktree");
+                }
+
                 if *cancel_rx_clone.borrow() {
                     break;
                 }
@@ -869,6 +886,39 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
                 }
             }
             println!("removed {} file(s)", files.len());
+        }
+    } else if args.stale {
+        let days = args.days.unwrap_or(config.global.stale_worktree_days);
+        for (repo, entry_repo_dir, _routes) in config.iter_repos() {
+            let explicit_dir = entry_repo_dir
+                .map(PathBuf::from)
+                .or_else(|| args.repo_dir.clone())
+                .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
+            let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let removed =
+                forza::isolation::cleanup_stale_worktrees(&rd, ".worktrees", days, args.dry_run)
+                    .await;
+            if removed.is_empty() {
+                println!("no stale worktrees found in {}", rd.display());
+            } else {
+                for wt in &removed {
+                    println!("{}", wt.display());
+                }
+                if args.dry_run {
+                    println!(
+                        "dry run: {} stale worktree(s) would be removed",
+                        removed.len()
+                    );
+                } else {
+                    println!("removed {} stale worktree(s)", removed.len());
+                }
+            }
         }
     } else {
         for (repo, entry_repo_dir, _routes) in config.iter_repos() {
