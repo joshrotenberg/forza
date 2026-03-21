@@ -120,6 +120,23 @@ pub struct GlobalConfig {
     /// Whether to automatically merge PRs after CI passes. Default: false.
     #[serde(default)]
     pub auto_merge: bool,
+
+    /// Notification settings. When absent, no notifications are sent.
+    pub notifications: Option<NotificationsConfig>,
+}
+
+/// Notification channels fired on run completion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationsConfig {
+    /// Send a desktop notification via `osascript` (macOS) or `notify-send` (Linux).
+    #[serde(default)]
+    pub desktop: bool,
+
+    /// Slack incoming-webhook URL. When set, a formatted message is POSTed.
+    pub slack_webhook: Option<String>,
+
+    /// Generic webhook URL. When set, the run record is POSTed as JSON.
+    pub webhook_url: Option<String>,
 }
 
 /// Security settings.
