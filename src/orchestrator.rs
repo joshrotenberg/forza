@@ -1616,7 +1616,15 @@ pub async fn process_issue(
     let _ = github::remove_label(repo, number, "runner:ready").await;
 
     // 3. Triage.
-    let decision = triage::triage(&issue, policy, &[]);
+    let dep_numbers = triage::parse_dependencies(&issue.body);
+    let mut open_deps: Vec<u64> = Vec::new();
+    for &num in &dep_numbers {
+        match github::fetch_issue_state(repo, num).await {
+            Ok(state) if state.eq_ignore_ascii_case("open") => open_deps.push(num),
+            _ => {}
+        }
+    }
+    let decision = triage::triage(&issue, policy, &[], &open_deps);
     let needs_clarification = match &decision {
         TriageDecision::Ready => {
             info!(issue = number, "issue is ready for automation");

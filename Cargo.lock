@@ -368,6 +368,7 @@ dependencies = [
  "clap",
  "claude-wrapper",
  "dirs",
+ "regex",
  "reqwest",
  "schemars",
  "serde",

@@ -202,6 +202,34 @@ pub async fn fetch_issue(repo: &str, number: u64) -> Result<IssueCandidate> {
     })
 }
 
+/// Fetch the state of a single issue (e.g. `"OPEN"` or `"CLOSED"`).
+///
+/// Lightweight — only fetches the `state` field, not the full issue body.
+pub async fn fetch_issue_state(repo: &str, number: u64) -> Result<String> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "issue",
+            "view",
+            "--repo",
+            repo,
+            &number.to_string(),
+            "--json",
+            "state",
+            "--jq",
+            ".state",
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh issue view failed: {stderr}")));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 /// Fetch multiple open issues matching eligible labels.
 pub async fn fetch_eligible_issues(
     repo: &str,
