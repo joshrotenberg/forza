@@ -408,6 +408,16 @@ pub fn estimate_cost(workflow: &str, state_dir: &std::path::Path) -> Option<Cost
     })
 }
 
+/// Sum `total_cost_usd` for all runs started within the last 60 minutes.
+pub fn hourly_cost(state_dir: &std::path::Path) -> f64 {
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(1);
+    load_all_runs(state_dir)
+        .iter()
+        .filter(|r| r.started_at >= cutoff)
+        .filter_map(|r| r.total_cost_usd)
+        .sum()
+}
+
 /// List all run state files (*.json and the `latest` pointer) in `state_dir`.
 pub fn list_run_files(state_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
@@ -535,5 +545,46 @@ mod tests {
         assert!((est.min - 0.80).abs() < 1e-9);
         assert!((est.max - 1.20).abs() < 1e-9);
         assert!((est.avg - 1.00).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hourly_cost_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(hourly_cost(dir.path()), 0.0);
+    }
+
+    #[test]
+    fn hourly_cost_sums_recent_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r1 = make_record("bug", RunStatus::Succeeded, Some(0.50));
+        save_run(&r1, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = make_record("feature", RunStatus::Succeeded, Some(1.25));
+        save_run(&r2, dir.path()).unwrap();
+        let total = hourly_cost(dir.path());
+        assert!((total - 1.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hourly_cost_excludes_old_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a run with started_at more than 1 hour in the past.
+        let mut old = make_record("bug", RunStatus::Succeeded, Some(5.00));
+        old.started_at = chrono::Utc::now() - chrono::Duration::hours(2);
+        save_run(&old, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let recent = make_record("bug", RunStatus::Succeeded, Some(0.30));
+        save_run(&recent, dir.path()).unwrap();
+        let total = hourly_cost(dir.path());
+        assert!((total - 0.30).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hourly_cost_skips_runs_without_cost() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = make_record("bug", RunStatus::Running, None);
+        save_run(&r, dir.path()).unwrap();
+        assert_eq!(hourly_cost(dir.path()), 0.0);
     }
 }
