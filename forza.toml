@@ -29,3 +29,17 @@ label = "enhancement"
 workflow = "feature"
 concurrency = 2
 poll_interval = 300
+
+[repos."joshrotenberg/forza".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 3
+poll_interval = 3600
+
+[repos."joshrotenberg/forza".routes.chores]
+type = "issue"
+label = "chore"
+workflow = "chore"
+concurrency = 2
+poll_interval = 600
