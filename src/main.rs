@@ -72,6 +72,12 @@ struct StatusArgs {
     /// Show a specific run by ID.
     #[arg(long)]
     run_id: Option<String>,
+    /// Show all runs as a history table (sorted newest first).
+    #[arg(long)]
+    all: bool,
+    /// Show per-workflow aggregate summary.
+    #[arg(long)]
+    summary: bool,
 }
 
 fn state_dir() -> PathBuf {
@@ -247,6 +253,62 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
 
 fn cmd_status(args: StatusArgs) -> ExitCode {
     let sd = state_dir();
+
+    if args.all {
+        let records = forza::state::load_all_runs(&sd);
+        if records.is_empty() {
+            eprintln!("no runs found");
+            return ExitCode::FAILURE;
+        }
+        println!(
+            "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  started_at",
+            "run_id", "issue#", "workflow", "status", "cost"
+        );
+        println!("{}", "-".repeat(100));
+        for r in &records {
+            let cost = r
+                .total_cost_usd
+                .map(|c| format!("${c:.2}"))
+                .unwrap_or_else(|| "-".into());
+            println!(
+                "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  {}",
+                r.run_id,
+                r.issue_number,
+                r.workflow,
+                r.status_text(),
+                cost,
+                r.started_at.format("%Y-%m-%d %H:%M:%S"),
+            );
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    if args.summary {
+        let summaries = forza::state::summarize_by_workflow(&sd);
+        if summaries.is_empty() {
+            eprintln!("no runs found");
+            return ExitCode::FAILURE;
+        }
+        println!(
+            "{:<20}  {:>6}  {:>9}  {:>6}  {:>8}  {:>8}  {:>8}",
+            "workflow", "total", "succeeded", "failed", "min $", "max $", "avg $"
+        );
+        println!("{}", "-".repeat(80));
+        for s in &summaries {
+            let fmt = |v: Option<f64>| v.map(|x| format!("${x:.2}")).unwrap_or_else(|| "-".into());
+            println!(
+                "{:<20}  {:>6}  {:>9}  {:>6}  {:>8}  {:>8}  {:>8}",
+                s.workflow,
+                s.total_runs,
+                s.succeeded,
+                s.failed,
+                fmt(s.min_cost),
+                fmt(s.max_cost),
+                fmt(s.avg_cost),
+            );
+        }
+        return ExitCode::SUCCESS;
+    }
 
     if let Some(ref run_id) = args.run_id {
         match forza::state::load_run(run_id, &sd) {
