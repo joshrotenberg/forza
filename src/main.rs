@@ -173,7 +173,8 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         };
 
         let branch = config.branch_for_issue(&issue);
-        let plan = forza::planner::create_plan(&issue, &template, &branch, None);
+        let run_id = forza::state::generate_run_id();
+        let plan = forza::planner::create_plan(&issue, &template, &branch, None, &run_id);
 
         println!("Issue:    #{} — {}", issue.number, issue.title);
         println!("Route:    {route_name}");
