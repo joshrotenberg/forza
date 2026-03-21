@@ -148,11 +148,10 @@ impl ScheduleWindow {
         // Check day constraint.
         if !self.days.is_empty() {
             let today = now.weekday();
-            let day_match = self.days.iter().any(|d| {
-                d.parse::<Weekday>()
-                    .map(|wd| wd == today)
-                    .unwrap_or(false)
-            });
+            let day_match = self
+                .days
+                .iter()
+                .any(|d| d.parse::<Weekday>().map(|wd| wd == today).unwrap_or(false));
             if !day_match {
                 return false;
             }
@@ -818,7 +817,13 @@ workflow = "bug"
     #[test]
     fn schedule_window_day_filter_active() {
         let window = ScheduleWindow {
-            days: vec!["Mon".into(), "Tue".into(), "Wed".into(), "Thu".into(), "Fri".into()],
+            days: vec![
+                "Mon".into(),
+                "Tue".into(),
+                "Wed".into(),
+                "Thu".into(),
+                "Fri".into(),
+            ],
             start: "09:00".into(),
             end: "17:00".into(),
         };
@@ -832,7 +837,13 @@ workflow = "bug"
     #[test]
     fn schedule_window_day_filter_inactive_on_weekend() {
         let window = ScheduleWindow {
-            days: vec!["Mon".into(), "Tue".into(), "Wed".into(), "Thu".into(), "Fri".into()],
+            days: vec![
+                "Mon".into(),
+                "Tue".into(),
+                "Wed".into(),
+                "Thu".into(),
+                "Fri".into(),
+            ],
             start: "09:00".into(),
             end: "17:00".into(),
         };
