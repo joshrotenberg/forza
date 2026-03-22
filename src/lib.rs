@@ -26,6 +26,7 @@ pub mod config;
 pub mod deps;
 pub mod error;
 pub mod executor;
+pub mod git;
 pub mod github;
 pub mod isolation;
 pub mod mcp;

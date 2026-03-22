@@ -133,6 +133,10 @@ pub struct GlobalConfig {
     /// GitHub API backend: "octocrab" (default) or "gh-cli".
     #[serde(default = "default_github_backend")]
     pub github_backend: String,
+
+    /// Git backend: "gix" (default) or "git-cli".
+    #[serde(default = "default_git_backend")]
+    pub git_backend: String,
 }
 
 /// Notification channels fired on run completion.
@@ -417,6 +421,10 @@ fn default_agent() -> String {
 
 fn default_github_backend() -> String {
     "octocrab".to_string()
+}
+
+fn default_git_backend() -> String {
+    "gix".to_string()
 }
 
 fn default_in_progress_label() -> String {

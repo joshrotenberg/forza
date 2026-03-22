@@ -19,6 +19,9 @@ pub enum Error {
     #[error("executor error: {0}")]
     Executor(String),
 
+    #[error("git error: {0}")]
+    Git(String),
+
     #[error("isolation error: {0}")]
     Isolation(String),
 

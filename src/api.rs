@@ -25,6 +25,7 @@ pub struct AppState {
     pub config: RunnerConfig,
     pub state_dir: PathBuf,
     pub gh: Arc<dyn crate::github::GitHubClient>,
+    pub git: Arc<dyn crate::git::GitClient>,
 }
 
 // --- Error type ---
@@ -124,6 +125,7 @@ struct TriggerQuery {
 async fn resolve_repo_for_api(
     args_repo: Option<&str>,
     config: &RunnerConfig,
+    git: &dyn crate::git::GitClient,
 ) -> Result<(String, PathBuf, HashMap<String, Route>), ApiError> {
     let repos = config.iter_repos();
     let (repo_str, entry_repo_dir, routes) = if repos.len() == 1 {
@@ -150,7 +152,7 @@ async fn resolve_repo_for_api(
         .map(PathBuf::from)
         .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
 
-    let rd = crate::isolation::find_or_clone_repo(repo_str, explicit_dir)
+    let rd = crate::isolation::find_or_clone_repo(repo_str, explicit_dir, git)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
 
@@ -218,7 +220,8 @@ async fn trigger_issue(
     Query(query): Query<TriggerQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Response, ApiError> {
-    let (repo, rd, routes) = resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
+    let (repo, rd, routes) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
 
     if query.dry_run.unwrap_or(false) {
         let issue = state
@@ -267,9 +270,10 @@ async fn trigger_issue(
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
     let gh = state.gh.clone();
+    let git = state.git.clone();
     tokio::spawn(async move {
         match crate::orchestrator::process_issue_with_config(
-            number, &repo, &routes, &config, &state_dir, &rd, &*gh,
+            number, &repo, &routes, &config, &state_dir, &rd, &*gh, &*git,
         )
         .await
         {
@@ -293,7 +297,8 @@ async fn trigger_pr(
     Query(query): Query<TriggerQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Response, ApiError> {
-    let (repo, rd, routes) = resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
+    let (repo, rd, routes) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
 
     if query.dry_run.unwrap_or(false) {
         let pr = state
@@ -340,9 +345,10 @@ async fn trigger_pr(
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
     let gh = state.gh.clone();
+    let git = state.git.clone();
     tokio::spawn(async move {
         match crate::orchestrator::process_pr_with_config(
-            number, &repo, &routes, &config, &state_dir, &rd, &*gh,
+            number, &repo, &routes, &config, &state_dir, &rd, &*gh, &*git,
         )
         .await
         {
@@ -367,7 +373,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
         let explicit_dir = entry_repo_dir
             .map(PathBuf::from)
             .or_else(|| state.config.global.repo_dir.as_ref().map(PathBuf::from));
-        let rd = crate::isolation::find_or_clone_repo(repo, explicit_dir)
+        let rd = crate::isolation::find_or_clone_repo(repo, explicit_dir, &*state.git)
             .await
             .map_err(|e| ApiError::Internal(e.to_string()))?;
         repos_resolved.push((repo.to_string(), rd, routes.clone()));
@@ -376,6 +382,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
     let gh = state.gh.clone();
+    let git = state.git.clone();
     tokio::spawn(async move {
         let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         for (repo, rd, routes) in &repos_resolved {
@@ -387,6 +394,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
                 routes,
                 &cancel_rx,
                 gh.clone(),
+                git.clone(),
             )
             .await;
             let succeeded = records

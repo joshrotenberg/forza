@@ -5,6 +5,7 @@ use std::path::Path;
 use tracing::warn;
 
 use crate::error::Result;
+use crate::git::GitClient;
 use crate::github;
 use crate::github::GitHubClient;
 use crate::planner;
@@ -93,6 +94,7 @@ pub(super) fn generate_reactive_pr_prompt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_open_pr(
     repo: &str,
     branch: &str,
@@ -101,54 +103,29 @@ pub(super) async fn handle_open_pr(
     run_id: &str,
     work_dir: &Path,
     gh: &dyn GitHubClient,
+    git: &dyn GitClient,
 ) -> Result<github::PullRequest> {
     let issue_number = issue.number;
 
     // Commit any uncommitted changes (tracked files only — skip breadcrumbs/temp files).
-    let status = tokio::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(work_dir)
-        .output()
-        .await?;
-    let has_changes = !String::from_utf8_lossy(&status.stdout).trim().is_empty();
+    let has_changes = git.has_changes(work_dir).await.unwrap_or(false);
 
     if has_changes {
-        let _ = tokio::process::Command::new("git")
-            .args(["add", "-u"])
-            .current_dir(work_dir)
-            .output()
-            .await;
-        let _ = tokio::process::Command::new("git")
-            .args([
-                "commit",
-                "-m",
+        let _ = git.stage_tracked(work_dir).await;
+        let _ = git
+            .commit(
+                work_dir,
                 &format!("automation: implement changes for #{issue_number}"),
-            ])
-            .current_dir(work_dir)
-            .output()
+            )
             .await;
     }
 
     // Rebase on latest origin/main to avoid conflicts with recently merged PRs.
-    let _ = tokio::process::Command::new("git")
-        .args(["fetch", "origin"])
-        .current_dir(work_dir)
-        .output()
-        .await;
-    let rebase = tokio::process::Command::new("git")
-        .args(["rebase", "origin/main"])
-        .current_dir(work_dir)
-        .output()
-        .await;
-    if let Ok(ref o) = rebase
-        && !o.status.success()
-    {
+    let _ = git.fetch(work_dir).await;
+    let rebase_ok = git.rebase(work_dir, "origin/main").await.unwrap_or(false);
+    if !rebase_ok {
         // Rebase failed — abort and try pushing anyway.
-        let _ = tokio::process::Command::new("git")
-            .args(["rebase", "--abort"])
-            .current_dir(work_dir)
-            .output()
-            .await;
+        let _ = git.rebase_abort(work_dir).await;
         tracing::warn!(
             issue = issue_number,
             "rebase on origin/main failed, pushing as-is"
@@ -156,7 +133,7 @@ pub(super) async fn handle_open_pr(
     }
 
     // Push (force to handle stale remote branches from previous failed runs).
-    github::push_branch_force(work_dir, branch).await?;
+    git.push_force(work_dir, branch).await?;
 
     // Read plan and review breadcrumbs — missing files are silently ignored.
     let crumb_base = work_dir.join(".forza").join("breadcrumbs").join(run_id);
@@ -164,12 +141,9 @@ pub(super) async fn handle_open_pr(
     let review_crumb = std::fs::read_to_string(crumb_base.join("review.md")).unwrap_or_default();
 
     // Get diff stat relative to origin/main — failure yields empty string.
-    let diff_stat = tokio::process::Command::new("git")
-        .args(["diff", "--stat", "origin/main"])
-        .current_dir(work_dir)
-        .output()
+    let diff_stat = git
+        .diff_stat(work_dir, "origin/main")
         .await
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
 
     let body = build_pr_body(issue, record, &plan_crumb, &review_crumb, &diff_stat);

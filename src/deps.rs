@@ -3,35 +3,25 @@
 use tokio::process::Command;
 
 use crate::error::{Error, Result};
+use crate::git::GitClient;
 
 /// Validate that all required external tools are present and usable.
 ///
 /// Checks `git`, `gh` (including auth), and the configured agent binary in order.
 /// Returns the first error encountered.
-pub async fn validate_dependencies(agent: &str) -> Result<()> {
-    check_git().await?;
+pub async fn validate_dependencies(agent: &str, git: &dyn GitClient) -> Result<()> {
+    check_git(git).await?;
     check_gh().await?;
     check_agent(agent).await?;
     Ok(())
 }
 
-async fn check_git() -> Result<()> {
-    let status = Command::new("git")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await;
-
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        Ok(_) => Err(Error::Dependency(
-            "git --version failed; install git from https://git-scm.com/downloads".into(),
+async fn check_git(git: &dyn GitClient) -> Result<()> {
+    match git.version().await {
+        Ok(_) => Ok(()),
+        Err(_) => Err(Error::Dependency(
+            "git not available; install git from https://git-scm.com/downloads".into(),
         )),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(Error::Dependency(
-            "git not found; install git from https://git-scm.com/downloads".into(),
-        )),
-        Err(e) => Err(Error::Dependency(format!("git check failed: {e}"))),
     }
 }
 

@@ -251,10 +251,17 @@ async fn main() -> ExitCode {
         }
     };
 
+    // Construct the git client based on config.
+    let git: std::sync::Arc<dyn forza::git::GitClient> = if config.global.git_backend == "git-cli" {
+        std::sync::Arc::new(forza::git::GitCliClient::new())
+    } else {
+        std::sync::Arc::new(forza::git::GixClient::new())
+    };
+
     if !matches!(
         cli.command,
         Command::Status(_) | Command::Clean(_) | Command::Serve(_) | Command::Mcp(_)
-    ) && let Err(e) = forza::deps::validate_dependencies(&config.global.agent).await
+    ) && let Err(e) = forza::deps::validate_dependencies(&config.global.agent, &*git).await
     {
         eprintln!("error: {e}");
         return ExitCode::FAILURE;
@@ -262,15 +269,15 @@ async fn main() -> ExitCode {
 
     match cli.command {
         Command::Init(_) => unreachable!(),
-        Command::Issue(args) => cmd_issue(args, &config, &gh).await,
-        Command::Pr(args) => cmd_pr(args, &config, &gh).await,
-        Command::Run(args) => cmd_run(args, &config, gh).await,
-        Command::Watch(args) => cmd_watch(args, &config, gh).await,
+        Command::Issue(args) => cmd_issue(args, &config, &gh, &git).await,
+        Command::Pr(args) => cmd_pr(args, &config, &gh, &git).await,
+        Command::Run(args) => cmd_run(args, &config, gh, git).await,
+        Command::Watch(args) => cmd_watch(args, &config, gh, git).await,
         Command::Status(args) => cmd_status(args),
-        Command::Fix(args) => cmd_fix(args, &config, &gh).await,
-        Command::Clean(args) => cmd_clean(args, &config).await,
-        Command::Serve(args) => cmd_serve(args, config, gh).await,
-        Command::Mcp(_args) => cmd_mcp(&config, gh).await,
+        Command::Fix(args) => cmd_fix(args, &config, &gh, &git).await,
+        Command::Clean(args) => cmd_clean(args, &config, &git).await,
+        Command::Serve(args) => cmd_serve(args, config, gh, git).await,
+        Command::Mcp(_args) => cmd_mcp(&config, gh, git).await,
     }
 }
 
@@ -369,6 +376,7 @@ async fn resolve_repo<'a>(
     args_repo: Option<&str>,
     args_repo_dir: &Option<PathBuf>,
     config: &'a forza::RunnerConfig,
+    git: &dyn forza::git::GitClient,
 ) -> Result<
     (
         String,
@@ -402,7 +410,7 @@ async fn resolve_repo<'a>(
         .or_else(|| args_repo_dir.clone())
         .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
 
-    let rd = match forza::isolation::find_or_clone_repo(repo_str, explicit_dir).await {
+    let rd = match forza::isolation::find_or_clone_repo(repo_str, explicit_dir, git).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -417,14 +425,15 @@ async fn cmd_issue(
     args: IssueArgs,
     config: &forza::RunnerConfig,
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
 
-    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config).await
-    {
-        Ok(r) => r,
-        Err(code) => return code,
-    };
+    let (repo, rd, routes) =
+        match resolve_repo(args.repo.as_deref(), &args.repo_dir, config, &**git).await {
+            Ok(r) => r,
+            Err(code) => return code,
+        };
 
     if args.dry_run {
         let issue = match gh.fetch_issue(&repo, args.number).await {
@@ -499,6 +508,7 @@ async fn cmd_issue(
         &rd,
         cli_overrides,
         &**gh,
+        &**git,
     )
     .await
     {
@@ -514,14 +524,15 @@ async fn cmd_pr(
     args: PrArgs,
     config: &forza::RunnerConfig,
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
 
-    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config).await
-    {
-        Ok(r) => r,
-        Err(code) => return code,
-    };
+    let (repo, rd, routes) =
+        match resolve_repo(args.repo.as_deref(), &args.repo_dir, config, &**git).await {
+            Ok(r) => r,
+            Err(code) => return code,
+        };
 
     if args.dry_run {
         let pr = match gh.fetch_pr(&repo, args.number).await {
@@ -588,6 +599,7 @@ async fn cmd_pr(
         &rd,
         cli_overrides,
         &**gh,
+        &**git,
     )
     .await
     {
@@ -603,6 +615,7 @@ async fn cmd_run(
     args: RunArgs,
     config: &forza::RunnerConfig,
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
 
@@ -617,7 +630,7 @@ async fn cmd_run(
             .map(PathBuf::from)
             .or_else(|| args.repo_dir.clone())
             .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
-        let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+        let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir, &*git).await {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -642,6 +655,7 @@ async fn cmd_run(
             routes,
             &cancel_rx,
             gh.clone(),
+            git.clone(),
         )
         .await;
         all_records.append(&mut records);
@@ -676,6 +690,7 @@ async fn cmd_watch(
     args: WatchArgs,
     config: &forza::RunnerConfig,
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
 
@@ -693,7 +708,7 @@ async fn cmd_watch(
             .map(PathBuf::from)
             .or_else(|| args.repo_dir.clone())
             .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
-        let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+        let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir, &*git).await {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -737,6 +752,7 @@ async fn cmd_watch(
         let sd_clone = sd.clone();
         let cancel_rx_clone = cancel_rx.clone();
         let gh_clone = gh.clone();
+        let git_clone = git.clone();
         handles.push(tokio::spawn(async move {
             info!(repo = repo, "starting repo watch loop");
             loop {
@@ -748,6 +764,7 @@ async fn cmd_watch(
                     &routes,
                     &cancel_rx_clone,
                     gh_clone.clone(),
+                    git_clone.clone(),
                 )
                 .await;
                 if !records.is_empty() {
@@ -768,6 +785,7 @@ async fn cmd_watch(
                     ".worktrees",
                     config_clone.global.stale_worktree_days,
                     false,
+                    &*git_clone,
                 )
                 .await;
                 for path in &removed {
@@ -883,6 +901,7 @@ async fn cmd_fix(
     args: FixArgs,
     config: &forza::RunnerConfig,
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
 
@@ -948,7 +967,7 @@ async fn cmd_fix(
             config.global.repo_dir.as_ref().map(PathBuf::from),
         )
     };
-    let rd = match forza::isolation::find_or_clone_repo(&repo, explicit_dir).await {
+    let rd = match forza::isolation::find_or_clone_repo(&repo, explicit_dir, &**git).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -966,6 +985,7 @@ async fn cmd_fix(
         &sd,
         &rd,
         &**gh,
+        &**git,
     )
     .await
     {
@@ -977,7 +997,11 @@ async fn cmd_fix(
     }
 }
 
-async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_clean(
+    args: CleanArgs,
+    config: &forza::RunnerConfig,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
+) -> ExitCode {
     let sd = state_dir();
 
     if args.runs {
@@ -1007,16 +1031,21 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
                 .map(PathBuf::from)
                 .or_else(|| args.repo_dir.clone())
                 .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
-            let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+            let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir, &**git).await {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!("error: {e}");
                     return ExitCode::FAILURE;
                 }
             };
-            let removed =
-                forza::isolation::cleanup_stale_worktrees(&rd, ".worktrees", days, args.dry_run)
-                    .await;
+            let removed = forza::isolation::cleanup_stale_worktrees(
+                &rd,
+                ".worktrees",
+                days,
+                args.dry_run,
+                &**git,
+            )
+            .await;
             if removed.is_empty() {
                 println!("no stale worktrees found in {}", rd.display());
             } else {
@@ -1039,7 +1068,7 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
                 .map(PathBuf::from)
                 .or_else(|| args.repo_dir.clone())
                 .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
-            let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir).await {
+            let rd = match forza::isolation::find_or_clone_repo(repo, explicit_dir, &**git).await {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -1058,7 +1087,7 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
                 println!("dry run: {} worktree(s) would be removed", worktrees.len());
             } else {
                 for wt in &worktrees {
-                    if let Err(e) = forza::isolation::remove_worktree(&rd, wt, true).await {
+                    if let Err(e) = forza::isolation::remove_worktree(&rd, wt, true, &**git).await {
                         eprintln!("error removing worktree {}: {e}", wt.display());
                         return ExitCode::FAILURE;
                     }
@@ -1075,6 +1104,7 @@ async fn cmd_serve(
     args: ServeArgs,
     config: forza::RunnerConfig,
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     use std::sync::Arc;
 
@@ -1083,6 +1113,7 @@ async fn cmd_serve(
         config,
         state_dir: sd,
         gh,
+        git,
     });
 
     let addr: std::net::SocketAddr = match format!("{}:{}", args.host, args.port).parse() {
@@ -1146,9 +1177,10 @@ async fn cmd_serve(
 async fn cmd_mcp(
     config: &forza::RunnerConfig,
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
-    let state = forza::mcp::AppState::new(config.clone(), sd, gh);
+    let state = forza::mcp::AppState::new(config.clone(), sd, gh, git);
     let router = forza::mcp::build_router(state);
     if let Err(e) = tower_mcp::StdioTransport::new(router).run().await {
         eprintln!("mcp server error: {e}");
