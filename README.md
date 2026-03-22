@@ -104,3 +104,4 @@ Agent-agnostic via the `AgentAdapter` trait. Claude is the default, pluggable fo
 ## Status
 
 MVP working. 12+ runs, 100% success rate. Processing its own issues to build itself.
+# Test marker B — this will conflict
