@@ -234,3 +234,17 @@ skills win if present, otherwise route skills, otherwise global.
 - **CLI**: `init`, `issue`, `pr`, `run`, `watch`, `status`, `fix`, `clean`, `serve`, `mcp`
 - **REST API** (`serve`) and **MCP server** (stdio, `mcp`) for tool integration
 - **Dependency validation**: checks `git`, `gh`, and the agent binary on startup
+
+## Pre-push checklist
+
+Always run before pushing:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all --all-targets -- -D warnings
+cargo test --all
+cargo doc --no-deps --all-features  # docs build without warnings
+```
+
+This is a workspace with two crates (`forza-core` and `forza`). All checks
+must pass across the entire workspace.
