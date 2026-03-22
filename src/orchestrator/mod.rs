@@ -980,7 +980,7 @@ pub async fn process_batch_for_repo(
                 if let Some(max) = route.max_retries {
                     let workflow_name = route.workflow.as_deref().unwrap_or("");
                     let prior_runs =
-                        state::count_runs_for_subject(pr.number, workflow_name, state_dir);
+                        state::count_failed_runs_for_subject(pr.number, workflow_name, state_dir);
                     if prior_runs >= max {
                         warn!(
                             pr = pr.number,
