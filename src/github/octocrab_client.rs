@@ -370,6 +370,7 @@ impl GitHubClient for OctocrabClient {
         title: &str,
         body: &str,
         _work_dir: &Path,
+        draft: bool,
     ) -> Result<PullRequest> {
         let (owner, name) = parse_repo(repo)?;
         let pr = self
@@ -377,6 +378,7 @@ impl GitHubClient for OctocrabClient {
             .pulls(owner, name)
             .create(title, branch, "main")
             .body(body)
+            .draft(draft)
             .send()
             .await
             .map_err(|e| Error::GitHub(format!("create PR: {e}")))?;
@@ -387,6 +389,40 @@ impl GitHubClient for OctocrabClient {
             state: "open".to_string(),
             html_url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
         })
+    }
+
+    async fn mark_pr_ready_for_review(&self, repo: &str, number: u64) -> Result<()> {
+        let (owner, name) = parse_repo(repo)?;
+        // Fetch the PR to get its node_id for the GraphQL mutation.
+        let pr = self
+            .client
+            .pulls(owner, name)
+            .get(number)
+            .await
+            .map_err(|e| Error::GitHub(format!("fetch PR #{number} for node_id: {e}")))?;
+        let node_id = &pr.node_id;
+        let body = serde_json::json!({
+            "query": "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { number } } }",
+            "variables": {"id": node_id}
+        });
+        let _: serde_json::Value = self
+            .client
+            .graphql(&body)
+            .await
+            .map_err(|e| Error::GitHub(format!("mark PR #{number} ready for review: {e}")))?;
+        Ok(())
+    }
+
+    async fn update_pr_body(&self, repo: &str, number: u64, body: &str) -> Result<()> {
+        let (owner, name) = parse_repo(repo)?;
+        self.client
+            .pulls(owner, name)
+            .update(number)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| Error::GitHub(format!("update PR body #{number}: {e}")))?;
+        Ok(())
     }
 
     async fn add_pr_label(&self, repo: &str, number: u64, label: &str) -> Result<()> {

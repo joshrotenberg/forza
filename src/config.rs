@@ -127,6 +127,10 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub auto_merge: bool,
 
+    /// Whether to create a draft PR immediately after the plan stage. Default: false.
+    #[serde(default)]
+    pub draft_pr: bool,
+
     /// Notification settings. When absent, no notifications are sent.
     pub notifications: Option<NotificationsConfig>,
 
@@ -364,6 +368,9 @@ pub struct Route {
     /// Maximum retry attempts for condition-triggered routes.
     /// When exceeded, `forza:needs-human` label is applied instead.
     pub max_retries: Option<usize>,
+
+    /// Override draft_pr setting for this route.
+    pub draft_pr: Option<bool>,
 }
 
 impl Route {
@@ -649,6 +656,11 @@ impl RunnerConfig {
             .unwrap_or(&self.validation.commands)
     }
 
+    /// Get the effective draft_pr setting (route override > global default).
+    pub fn effective_draft_pr(&self, route: &Route) -> bool {
+        route.draft_pr.unwrap_or(self.global.draft_pr)
+    }
+
     /// Generate a branch name for an issue.
     pub fn branch_for_issue(&self, issue: &IssueCandidate) -> String {
         let slug = slugify(&issue.title, 40);
@@ -903,6 +915,68 @@ auto_merge = true
         )
         .unwrap();
         assert!(config.global.auto_merge);
+    }
+
+    #[test]
+    fn draft_pr_defaults_to_false() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+"#,
+        )
+        .unwrap();
+        assert!(!config.global.draft_pr);
+    }
+
+    #[test]
+    fn draft_pr_can_be_set_to_true() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+draft_pr = true
+"#,
+        )
+        .unwrap();
+        assert!(config.global.draft_pr);
+    }
+
+    #[test]
+    fn effective_draft_pr_route_overrides_global() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+draft_pr = false
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+draft_pr = true
+"#,
+        )
+        .unwrap();
+        assert!(config.effective_draft_pr(&config.routes["bugfix"]));
+    }
+
+    #[test]
+    fn effective_draft_pr_falls_back_to_global() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+draft_pr = true
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap();
+        assert!(config.effective_draft_pr(&config.routes["bugfix"]));
     }
 
     #[test]
@@ -1270,6 +1344,7 @@ workflow = "bug"
                 schedule: None,
                 scope: ConditionScope::default(),
                 max_retries: None,
+                draft_pr: None,
             },
         );
 
@@ -1424,6 +1499,7 @@ repo = "owner/repo"
             schedule: None,
             scope: ConditionScope::default(),
             max_retries: None,
+            draft_pr: None,
         };
         assert!(route.validate("test").is_err()); // no trigger
 

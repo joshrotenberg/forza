@@ -65,7 +65,10 @@ pub trait GitHubClient: Send + Sync {
         title: &str,
         body: &str,
         work_dir: &Path,
+        draft: bool,
     ) -> Result<PullRequest>;
+    async fn mark_pr_ready_for_review(&self, repo: &str, number: u64) -> Result<()>;
+    async fn update_pr_body(&self, repo: &str, number: u64, body: &str) -> Result<()>;
     async fn add_pr_label(&self, repo: &str, number: u64, label: &str) -> Result<()>;
     async fn remove_pr_label(&self, repo: &str, number: u64, label: &str) -> Result<()>;
     async fn comment_on_pr(&self, repo: &str, number: u64, body: &str) -> Result<()>;
@@ -457,11 +460,25 @@ pub async fn create_pull_request(
     title: &str,
     body: &str,
     work_dir: &Path,
+    draft: bool,
 ) -> Result<PullRequest> {
+    let mut args = vec![
+        "pr".to_string(),
+        "create".to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        "--head".to_string(),
+        branch.to_string(),
+        "--title".to_string(),
+        title.to_string(),
+        "--body".to_string(),
+        body.to_string(),
+    ];
+    if draft {
+        args.push("--draft".to_string());
+    }
     let output = tokio::process::Command::new("gh")
-        .args([
-            "pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body,
-        ])
+        .args(&args)
         .current_dir(work_dir)
         .output()
         .await
@@ -883,6 +900,44 @@ pub async fn remove_pr_label(repo: &str, number: u64, label: &str) -> Result<()>
 
     if !output.status.success() {
         tracing::debug!(label = label, "remove pr label failed (non-fatal)");
+    }
+    Ok(())
+}
+
+/// Mark a draft PR as ready for review via gh CLI.
+pub async fn mark_pr_ready_for_review(repo: &str, number: u64) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args(["pr", "ready", &number.to_string(), "--repo", repo])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh pr ready failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr ready failed: {stderr}")));
+    }
+    Ok(())
+}
+
+/// Update the body of an existing PR via gh CLI.
+pub async fn update_pr_body(repo: &str, number: u64, body: &str) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "edit",
+            &number.to_string(),
+            "--repo",
+            repo,
+            "--body",
+            body,
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh pr edit failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr edit failed: {stderr}")));
     }
     Ok(())
 }
