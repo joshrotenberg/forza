@@ -13,10 +13,12 @@ model = "claude-sonnet-4-6"
 gate_label = "forza:ready"
 # Branch naming pattern. {issue} = issue/PR number, {slug} = title slug.
 branch_pattern = "automation/{issue}-{slug}"
+# Auto-merge PRs after CI passes (uses gh pr merge --auto --squash).
+auto_merge = true
 
 [security]
-# Only allow issues from contributors (not random users).
-authorization_level = "contributor"
+# "trusted" allows merge and push operations.
+authorization_level = "trusted"
 
 [validation]
 # These commands run between stages to catch regressions early.

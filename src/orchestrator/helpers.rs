@@ -172,7 +172,47 @@ pub(super) async fn handle_open_pr(
 
     let body = build_pr_body(issue, record, &plan_crumb, &review_crumb, &diff_stat);
 
-    github::create_pull_request(repo, branch, &issue.title, &body, work_dir).await
+    match github::create_pull_request(repo, branch, &issue.title, &body, work_dir).await {
+        Ok(pr) => Ok(pr),
+        Err(e) => {
+            let err_msg = e.to_string();
+            // If a PR already exists for this branch, find and return it.
+            if err_msg.contains("already exists") {
+                tracing::info!(
+                    issue = issue_number,
+                    branch = branch,
+                    "PR already exists for branch, looking up existing PR"
+                );
+                // Extract PR URL from the error message if present.
+                if let Some(url) = err_msg.lines().find(|l| l.contains("/pull/")) {
+                    let pr_number = url
+                        .trim()
+                        .rsplit('/')
+                        .next()
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    return Ok(github::PullRequest {
+                        number: pr_number,
+                        head_branch: branch.to_string(),
+                        state: "open".to_string(),
+                        html_url: url.trim().to_string(),
+                    });
+                }
+                // Fallback: fetch the PR by branch.
+                match github::fetch_pr_by_branch(repo, branch).await {
+                    Ok(Some(pr)) => Ok(github::PullRequest {
+                        number: pr.number,
+                        head_branch: pr.head_branch,
+                        state: pr.state,
+                        html_url: pr.html_url,
+                    }),
+                    _ => Err(e),
+                }
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 pub(super) fn build_pr_body(

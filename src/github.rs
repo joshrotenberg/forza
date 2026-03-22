@@ -735,6 +735,55 @@ pub async fn comment_on_pr(repo: &str, number: u64, body: &str) -> Result<()> {
     Ok(())
 }
 
+/// Fetch an open PR by its head branch name. Returns None if no PR exists.
+pub async fn fetch_pr_by_branch(repo: &str, branch: &str) -> Result<Option<PrCandidate>> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--json",
+            "number,title,body,labels,state,url,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup",
+            "--limit",
+            "1",
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("failed to run gh: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh pr list --head failed: {stderr}")));
+    }
+
+    let raw: Vec<GhPrFull> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| Error::GitHub(format!("failed to parse gh output: {e}")))?;
+
+    Ok(raw.into_iter().next().map(|r| {
+        let cp = checks_passing(&r.status_check_rollup);
+        PrCandidate {
+            number: r.number,
+            repo: repo.to_string(),
+            title: r.title,
+            body: r.body.unwrap_or_default(),
+            labels: r.labels.into_iter().map(|l| l.name).collect(),
+            state: r.state,
+            html_url: r.url,
+            head_branch: r.head_ref_name,
+            base_branch: r.base_ref_name,
+            is_draft: r.is_draft,
+            mergeable: r.mergeable,
+            review_decision: r.review_decision,
+            checks_passing: cp,
+        }
+    }))
+}
+
 /// Add a label to a PR.
 pub async fn add_pr_label(repo: &str, number: u64, label: &str) -> Result<()> {
     let output = tokio::process::Command::new("gh")
