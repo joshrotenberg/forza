@@ -115,13 +115,16 @@ concurrency = 2
 # These routes watch forza-owned PRs and automatically trigger fixes
 # when problems are detected. No manual labeling needed.
 
-# Auto-fix PRs with CI failures or merge conflicts.
-# Watches only forza-owned PRs (branches starting with "automation/").
+# Auto-maintain forza-owned PRs. Uses the reactive pr-maintenance workflow:
+# each poll cycle evaluates conditions and runs ONE action:
+#   - CI failing → fix CI
+#   - Review changes requested → address feedback
+#   - CI green + no objections → merge
 # After 3 failed attempts, applies forza:needs-human instead.
 [repos."joshrotenberg/forza".routes.auto-fix]
 type = "pr"
 condition = "ci_failing_or_conflicts"
-workflow = "pr-fix"
+workflow = "pr-maintenance"
 scope = "forza_owned"
 max_retries = 3
 concurrency = 2

@@ -202,6 +202,15 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
             name: "pr-maintenance".into(),
             mode: WorkflowMode::Reactive,
             stages: vec![
+                // Conflicts first — no point fixing CI on a conflicting branch.
+                Stage {
+                    condition: Some(
+                        "gh pr view --json mergeable --jq '.mergeable' 2>/dev/null \
+                         | grep -q CONFLICTING"
+                            .into(),
+                    ),
+                    ..Stage::new(StageKind::RevisePr)
+                },
                 Stage {
                     condition: Some("! gh pr checks --fail-fast 2>/dev/null".into()),
                     ..Stage::new(StageKind::FixCi)
@@ -221,7 +230,9 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                          | grep -q CHANGES_REQUESTED"
                             .into(),
                     ),
-                    ..Stage::new(StageKind::Merge).agentless("gh pr merge --squash --delete-branch")
+                    ..Stage::new(StageKind::Merge).agentless(
+                        "gh pr merge --auto --squash 2>/dev/null || gh pr merge --squash",
+                    )
                 },
             ],
         },
