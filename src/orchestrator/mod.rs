@@ -88,6 +88,17 @@ pub async fn process_issue_with_overrides(
         .ok_or_else(|| Error::Triage("no route matches this issue's labels".into()))?;
     info!(issue = number, route = route_name, "matched route");
 
+    // 2b. Parse label overrides (forza:model:*, forza:skill:*).
+    let label_overrides = crate::config::LabelOverrides::from_labels(&issue.labels);
+    if !label_overrides.is_empty() {
+        info!(
+            issue = number,
+            model = ?label_overrides.model,
+            skills = ?label_overrides.skills,
+            "label overrides detected"
+        );
+    }
+
     // 2a. Security gates (checked before acquiring the lease so rejected issues never get
     //     the in_progress label applied).
     if let Some(ref required) = config.security.require_label
@@ -406,10 +417,13 @@ pub async fn process_issue_with_overrides(
         let stage_model = cli_overrides
             .model
             .as_deref()
+            .or(label_overrides.model.as_deref())
             .or(planned_stage.model.as_deref())
             .or_else(|| config.effective_model(route));
         let stage_skills = if !cli_overrides.skills.is_empty() {
             cli_overrides.skills.as_slice()
+        } else if !label_overrides.skills.is_empty() {
+            label_overrides.skills.as_slice()
         } else {
             config.effective_skills(route, planned_stage.skills.as_deref())
         };
@@ -644,6 +658,17 @@ pub async fn process_pr_with_overrides(
     // 2. Match route.
     let (route_name, route) = RunnerConfig::match_pr_route_in(routes, &pr)
         .ok_or_else(|| Error::Triage("no route matches this PR's labels".into()))?;
+
+    // 2b. Parse label overrides.
+    let label_overrides = crate::config::LabelOverrides::from_labels(&pr.labels);
+    if !label_overrides.is_empty() {
+        info!(
+            pr = number,
+            model = ?label_overrides.model,
+            skills = ?label_overrides.skills,
+            "label overrides detected"
+        );
+    }
     info!(pr = number, route = route_name, "matched route");
 
     // 3. Acquire lease.
@@ -822,10 +847,13 @@ pub async fn process_pr_with_overrides(
         let stage_model = cli_overrides
             .model
             .as_deref()
+            .or(label_overrides.model.as_deref())
             .or(planned_stage.model.as_deref())
             .or_else(|| config.effective_model(route));
         let stage_skills = if !cli_overrides.skills.is_empty() {
             cli_overrides.skills.as_slice()
+        } else if !label_overrides.skills.is_empty() {
+            label_overrides.skills.as_slice()
         } else {
             config.effective_skills(route, planned_stage.skills.as_deref())
         };
@@ -1013,6 +1041,9 @@ pub async fn process_reactive_pr(
     let pr = gh.fetch_pr(repo, pr_number).await?;
     info!(pr = pr_number, title = pr.title, "fetched PR");
 
+    // 1a. Parse label overrides.
+    let label_overrides = crate::config::LabelOverrides::from_labels(&pr.labels);
+
     // 2. Resolve route and template.
     let route = routes
         .get(route_name)
@@ -1131,11 +1162,16 @@ pub async fn process_reactive_pr(
                 },
             );
         } else {
-            let stage_model = planned
+            let stage_model = label_overrides
                 .model
                 .as_deref()
+                .or(planned.model.as_deref())
                 .or_else(|| config.effective_model(route));
-            let stage_skills = config.effective_skills(route, planned.skills.as_deref());
+            let stage_skills = if !label_overrides.skills.is_empty() {
+                label_overrides.skills.as_slice()
+            } else {
+                config.effective_skills(route, planned.skills.as_deref())
+            };
             let stage_mcp = config.effective_mcp_config(route, planned.mcp_config.as_deref());
             let stage_syspr = config.effective_append_system_prompt();
             let mut stage_adapter = ClaudeAdapter::new();
