@@ -231,6 +231,21 @@ impl RunRecord {
         }
     }
 
+    /// Returns the sum of costs recorded so far across completed stages.
+    pub fn accumulated_cost_usd(&self) -> Option<f64> {
+        let costs: Vec<f64> = self
+            .stages
+            .iter()
+            .filter_map(|s| s.result.as_ref())
+            .filter_map(|r| r.cost_usd)
+            .collect();
+        if costs.is_empty() {
+            None
+        } else {
+            Some(costs.iter().sum())
+        }
+    }
+
     /// Mark the run as finished.
     pub fn finish(&mut self, status: RunStatus) {
         self.status = status;
@@ -476,6 +491,17 @@ pub fn generate_run_id() -> String {
 mod tests {
     use super::*;
 
+    fn make_stage_result(cost: Option<f64>) -> crate::executor::StageResult {
+        crate::executor::StageResult {
+            stage: "implement".into(),
+            success: true,
+            duration_secs: 1.0,
+            cost_usd: cost,
+            output: String::new(),
+            files_modified: None,
+        }
+    }
+
     fn make_record(workflow: &str, status: RunStatus, cost: Option<f64>) -> RunRecord {
         RunRecord {
             run_id: generate_run_id(),
@@ -492,6 +518,74 @@ mod tests {
             subject_kind: SubjectKind::Issue,
             outcome: None,
         }
+    }
+
+    #[test]
+    fn accumulated_cost_usd_no_stages() {
+        let record = make_record("bug", RunStatus::Running, None);
+        assert!(record.accumulated_cost_usd().is_none());
+    }
+
+    #[test]
+    fn accumulated_cost_usd_stages_without_cost() {
+        let mut record = make_record("bug", RunStatus::Running, None);
+        record.record_stage(
+            StageKind::Plan,
+            StageStatus::Succeeded,
+            make_stage_result(None),
+        );
+        assert!(record.accumulated_cost_usd().is_none());
+    }
+
+    #[test]
+    fn accumulated_cost_usd_single_stage() {
+        let mut record = make_record("bug", RunStatus::Running, None);
+        record.record_stage(
+            StageKind::Plan,
+            StageStatus::Succeeded,
+            make_stage_result(Some(0.50)),
+        );
+        let total = record.accumulated_cost_usd().unwrap();
+        assert!((total - 0.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn accumulated_cost_usd_multiple_stages() {
+        let mut record = make_record("bug", RunStatus::Running, None);
+        record.record_stage(
+            StageKind::Plan,
+            StageStatus::Succeeded,
+            make_stage_result(Some(0.30)),
+        );
+        record.record_stage(
+            StageKind::Implement,
+            StageStatus::Succeeded,
+            make_stage_result(Some(0.70)),
+        );
+        let total = record.accumulated_cost_usd().unwrap();
+        assert!((total - 1.00).abs() < 1e-9);
+    }
+
+    #[test]
+    fn accumulated_cost_usd_mixed_cost_presence() {
+        let mut record = make_record("bug", RunStatus::Running, None);
+        record.record_stage(
+            StageKind::Plan,
+            StageStatus::Succeeded,
+            make_stage_result(Some(0.40)),
+        );
+        record.record_stage(
+            StageKind::Implement,
+            StageStatus::Succeeded,
+            make_stage_result(None),
+        );
+        record.record_stage(
+            StageKind::Review,
+            StageStatus::Succeeded,
+            make_stage_result(Some(0.60)),
+        );
+        let total = record.accumulated_cost_usd().unwrap();
+        assert!((total - 1.00).abs() < 1e-9);
     }
 
     #[test]
