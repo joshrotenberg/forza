@@ -10,10 +10,13 @@ use chrono::Utc;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
+use std::sync::Arc;
+
 use crate::config::{CliOverrides, Route, RunnerConfig};
 use crate::error::{Error, Result};
 use crate::executor::{AgentAdapter, ClaudeAdapter, StageResult};
 use crate::github;
+use crate::github::GitHubClient;
 use crate::isolation;
 use crate::notifications;
 use crate::planner;
@@ -34,6 +37,7 @@ pub async fn process_issue_with_config(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+    gh: &dyn GitHubClient,
 ) -> Result<RunRecord> {
     process_issue_with_overrides(
         number,
@@ -43,6 +47,7 @@ pub async fn process_issue_with_config(
         state_dir,
         repo_dir,
         CliOverrides::default(),
+        gh,
     )
     .await
 }
@@ -51,6 +56,7 @@ pub async fn process_issue_with_config(
 ///
 /// CLI overrides take precedence over all config-file settings:
 /// CLI flag > stage config > route config > global config.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_issue_with_overrides(
     number: u64,
     repo: &str,
@@ -59,11 +65,12 @@ pub async fn process_issue_with_overrides(
     state_dir: &Path,
     repo_dir: &Path,
     cli_overrides: CliOverrides,
+    gh: &dyn GitHubClient,
 ) -> Result<RunRecord> {
     info!(repo = repo, issue = number, "processing issue");
 
     // 1. Fetch the issue.
-    let issue = github::fetch_issue(repo, number).await?;
+    let issue = gh.fetch_issue(repo, number).await?;
     info!(
         issue = number,
         title = issue.title,
@@ -104,7 +111,7 @@ pub async fn process_issue_with_overrides(
         }
     } else {
         // Empty allowed_authors: only the authenticated gh user may trigger runs.
-        let authenticated = github::fetch_authenticated_user().await?;
+        let authenticated = gh.fetch_authenticated_user().await?;
         if issue.author != authenticated {
             return Err(Error::Authorization(format!(
                 "issue #{number} author '{}' does not match authenticated user '{authenticated}'",
@@ -114,9 +121,11 @@ pub async fn process_issue_with_overrides(
     }
 
     // 3. Acquire lease.
-    let _ = github::add_label(repo, number, &config.global.in_progress_label).await;
+    let _ = gh
+        .add_label(repo, number, &config.global.in_progress_label)
+        .await;
     if let Some(ref gate) = config.global.gate_label {
-        let _ = github::remove_label(repo, number, gate).await;
+        let _ = gh.remove_label(repo, number, gate).await;
     }
 
     // 4. Resolve workflow template.
@@ -244,55 +253,49 @@ pub async fn process_issue_with_overrides(
         }
 
         if planned_stage.kind == StageKind::OpenPr {
-            let open_pr_success = match handle_open_pr(
-                repo,
-                &branch,
-                &issue,
-                &record,
-                &run_id,
-                &worktree_dir,
-            )
-            .await
-            {
-                Ok(pr) => {
-                    record.pr_number = Some(pr.number);
-                    info!(
-                        issue = number,
-                        pr = pr.number,
-                        url = pr.html_url,
-                        "created PR"
-                    );
-                    record.record_stage(
-                        planned_stage.kind,
-                        StageStatus::Succeeded,
-                        StageResult {
-                            stage: "open_pr".into(),
-                            success: true,
-                            duration_secs: 0.0,
-                            cost_usd: None,
-                            output: pr.html_url,
-                            files_modified: None,
-                        },
-                    );
-                    true
-                }
-                Err(e) => {
-                    error!(issue = number, error = %e, "failed to create PR");
-                    record.record_stage(
-                        planned_stage.kind,
-                        StageStatus::Failed,
-                        StageResult {
-                            stage: "open_pr".into(),
-                            success: false,
-                            duration_secs: 0.0,
-                            cost_usd: None,
-                            output: e.to_string(),
-                            files_modified: None,
-                        },
-                    );
-                    false
-                }
-            };
+            let open_pr_success =
+                match handle_open_pr(repo, &branch, &issue, &record, &run_id, &worktree_dir, gh)
+                    .await
+                {
+                    Ok(pr) => {
+                        record.pr_number = Some(pr.number);
+                        info!(
+                            issue = number,
+                            pr = pr.number,
+                            url = pr.html_url,
+                            "created PR"
+                        );
+                        record.record_stage(
+                            planned_stage.kind,
+                            StageStatus::Succeeded,
+                            StageResult {
+                                stage: "open_pr".into(),
+                                success: true,
+                                duration_secs: 0.0,
+                                cost_usd: None,
+                                output: pr.html_url,
+                                files_modified: None,
+                            },
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        error!(issue = number, error = %e, "failed to create PR");
+                        record.record_stage(
+                            planned_stage.kind,
+                            StageStatus::Failed,
+                            StageResult {
+                                stage: "open_pr".into(),
+                                success: false,
+                                duration_secs: 0.0,
+                                cost_usd: None,
+                                output: e.to_string(),
+                                files_modified: None,
+                            },
+                        );
+                        false
+                    }
+                };
             if open_pr_success
                 && let Some(h) = stage_hooks
                 && !h.post.is_empty()
@@ -551,11 +554,17 @@ pub async fn process_issue_with_overrides(
     }
 
     // 9. Update lease labels.
-    let _ = github::remove_label(repo, number, &config.global.in_progress_label).await;
+    let _ = gh
+        .remove_label(repo, number, &config.global.in_progress_label)
+        .await;
     if all_succeeded {
-        let _ = github::add_label(repo, number, &config.global.complete_label).await;
+        let _ = gh
+            .add_label(repo, number, &config.global.complete_label)
+            .await;
     } else {
-        let _ = github::add_label(repo, number, &config.global.failed_label).await;
+        let _ = gh
+            .add_label(repo, number, &config.global.failed_label)
+            .await;
     }
 
     // 10. Cleanup (always — prevents stale worktrees blocking retries).
@@ -574,6 +583,7 @@ pub async fn process_pr_with_config(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+    gh: &dyn GitHubClient,
 ) -> Result<RunRecord> {
     process_pr_with_overrides(
         number,
@@ -583,6 +593,7 @@ pub async fn process_pr_with_config(
         state_dir,
         repo_dir,
         CliOverrides::default(),
+        gh,
     )
     .await
 }
@@ -591,6 +602,7 @@ pub async fn process_pr_with_config(
 ///
 /// CLI overrides take precedence over all config-file settings:
 /// CLI flag > stage config > route config > global config.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_pr_with_overrides(
     number: u64,
     repo: &str,
@@ -599,11 +611,12 @@ pub async fn process_pr_with_overrides(
     state_dir: &Path,
     repo_dir: &Path,
     cli_overrides: CliOverrides,
+    gh: &dyn GitHubClient,
 ) -> Result<RunRecord> {
     info!(repo = repo, pr = number, "processing PR");
 
     // 1. Fetch the PR.
-    let pr = github::fetch_pr(repo, number).await?;
+    let pr = gh.fetch_pr(repo, number).await?;
     info!(
         pr = number,
         title = pr.title,
@@ -617,9 +630,11 @@ pub async fn process_pr_with_overrides(
     info!(pr = number, route = route_name, "matched route");
 
     // 3. Acquire lease.
-    let _ = github::add_pr_label(repo, number, &config.global.in_progress_label).await;
+    let _ = gh
+        .add_pr_label(repo, number, &config.global.in_progress_label)
+        .await;
     if let Some(ref gate) = config.global.gate_label {
-        let _ = github::remove_pr_label(repo, number, gate).await;
+        let _ = gh.remove_pr_label(repo, number, gate).await;
     }
 
     // 4. Resolve workflow template.
@@ -931,11 +946,17 @@ pub async fn process_pr_with_overrides(
     }
 
     // 9. Update lease labels.
-    let _ = github::remove_pr_label(repo, number, &config.global.in_progress_label).await;
+    let _ = gh
+        .remove_pr_label(repo, number, &config.global.in_progress_label)
+        .await;
     if all_succeeded {
-        let _ = github::add_pr_label(repo, number, &config.global.complete_label).await;
+        let _ = gh
+            .add_pr_label(repo, number, &config.global.complete_label)
+            .await;
     } else {
-        let _ = github::add_pr_label(repo, number, &config.global.failed_label).await;
+        let _ = gh
+            .add_pr_label(repo, number, &config.global.failed_label)
+            .await;
     }
 
     // 10. Cleanup (always — prevents stale worktrees blocking retries).
@@ -953,6 +974,7 @@ pub async fn process_pr_with_overrides(
 /// Evaluates each template stage's condition and runs the first stage whose
 /// condition exits 0. Only one stage executes per cycle (the reactive dispatch
 /// model). Returns the run record regardless of whether a stage ran.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_reactive_pr(
     pr_number: u64,
     repo: &str,
@@ -961,6 +983,7 @@ pub async fn process_reactive_pr(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
+    gh: &dyn GitHubClient,
 ) -> Result<RunRecord> {
     info!(
         repo = repo,
@@ -969,7 +992,7 @@ pub async fn process_reactive_pr(
     );
 
     // 1. Fetch the PR.
-    let pr = github::fetch_pr(repo, pr_number).await?;
+    let pr = gh.fetch_pr(repo, pr_number).await?;
     info!(pr = pr_number, title = pr.title, "fetched PR");
 
     // 2. Resolve route and template.
@@ -1211,41 +1234,41 @@ pub async fn process_batch_for_repo(
     repo_dir: &Path,
     routes: &HashMap<String, Route>,
     cancel: &tokio::sync::watch::Receiver<bool>,
+    gh: Arc<dyn GitHubClient>,
 ) -> Vec<RunRecord> {
     // Recover stale leases before processing new work.
     let stale_timeout = std::time::Duration::from_secs(config.global.stale_lease_timeout);
     let now = Utc::now();
-    let surviving_in_progress: Vec<crate::github::IssueCandidate> =
-        match github::fetch_issues_with_label(repo, &config.global.in_progress_label).await {
-            Ok(in_progress) => {
-                let mut survivors = Vec::new();
-                for issue in in_progress {
-                    let lease_age = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
-                        .ok()
-                        .and_then(|t| (now - t.with_timezone(&Utc)).to_std().ok());
-                    if lease_age.is_some_and(|age| age >= stale_timeout) {
-                        warn!(
-                            issue = issue.number,
-                            age_secs = lease_age.unwrap().as_secs(),
-                            "removing stale in-progress lease"
-                        );
-                        let _ = github::remove_label(
-                            repo,
-                            issue.number,
-                            &config.global.in_progress_label,
-                        )
+    let surviving_in_progress: Vec<crate::github::IssueCandidate> = match gh
+        .fetch_issues_with_label(repo, &config.global.in_progress_label)
+        .await
+    {
+        Ok(in_progress) => {
+            let mut survivors = Vec::new();
+            for issue in in_progress {
+                let lease_age = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
+                    .ok()
+                    .and_then(|t| (now - t.with_timezone(&Utc)).to_std().ok());
+                if lease_age.is_some_and(|age| age >= stale_timeout) {
+                    warn!(
+                        issue = issue.number,
+                        age_secs = lease_age.unwrap().as_secs(),
+                        "removing stale in-progress lease"
+                    );
+                    let _ = gh
+                        .remove_label(repo, issue.number, &config.global.in_progress_label)
                         .await;
-                    } else {
-                        survivors.push(issue);
-                    }
+                } else {
+                    survivors.push(issue);
                 }
-                survivors
             }
-            Err(e) => {
-                warn!(error = %e, "failed to fetch in-progress issues for stale lease check");
-                vec![]
-            }
-        };
+            survivors
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to fetch in-progress issues for stale lease check");
+            vec![]
+        }
+    };
 
     // Fetch issues with the gate label if configured.
     let labels = config
@@ -1255,7 +1278,7 @@ pub async fn process_batch_for_repo(
         .map(|l| vec![l.to_string()])
         .unwrap_or_default();
 
-    let issues = match github::fetch_eligible_issues(repo, &labels, 10).await {
+    let issues = match gh.fetch_eligible_issues(repo, &labels, 10).await {
         Ok(issues) => issues,
         Err(e) => {
             error!(error = %e, "failed to fetch issues");
@@ -1315,7 +1338,7 @@ pub async fn process_batch_for_repo(
             continue;
         }
         let label = pr_route.label.as_deref().unwrap();
-        match github::fetch_prs_with_label(repo, label).await {
+        match gh.fetch_prs_with_label(repo, label).await {
             Ok(prs) => {
                 // Filter out PRs that are already complete, needs-human, or in-progress.
                 let actionable: Vec<_> = prs
@@ -1352,7 +1375,7 @@ pub async fn process_batch_for_repo(
         .collect();
 
     if !condition_routes.is_empty() {
-        let all_prs = match github::fetch_all_open_prs(repo, 100).await {
+        let all_prs = match gh.fetch_all_open_prs(repo, 100).await {
             Ok(prs) => prs,
             Err(e) => {
                 warn!(error = %e, "failed to fetch open PRs for condition routes");
@@ -1403,17 +1426,18 @@ pub async fn process_batch_for_repo(
                             max_retries = max,
                             "retry budget exhausted, applying needs-human label"
                         );
-                        let _ = github::add_pr_label(repo, pr.number, "forza:needs-human").await;
-                        let _ = github::comment_on_pr(
-                            repo,
-                            pr.number,
-                            &format!(
-                                "Retry budget exhausted for route `{route_name}` \
+                        let _ = gh.add_pr_label(repo, pr.number, "forza:needs-human").await;
+                        let _ = gh
+                            .comment_on_pr(
+                                repo,
+                                pr.number,
+                                &format!(
+                                    "Retry budget exhausted for route `{route_name}` \
                                  ({prior_runs}/{max} attempts). Applying `forza:needs-human` \
                                  for manual review."
-                            ),
-                        )
-                        .await;
+                                ),
+                            )
+                            .await;
                         continue;
                     }
                 }
@@ -1470,6 +1494,7 @@ pub async fn process_batch_for_repo(
                 let repo_dir_owned: PathBuf = repo_dir.to_path_buf();
                 let repo_owned = repo.to_string();
                 let routes_clone = routes.clone();
+                let gh_clone = gh.clone();
                 match subject {
                     PendingSubject::Issue(issue) => {
                         let issue_number = issue.number;
@@ -1481,6 +1506,7 @@ pub async fn process_batch_for_repo(
                                 &config_clone,
                                 &state_dir_owned,
                                 &repo_dir_owned,
+                                &*gh_clone,
                             )
                             .await;
                             (route_name, result)
@@ -1504,6 +1530,7 @@ pub async fn process_batch_for_repo(
                                     &config_clone,
                                     &state_dir_owned,
                                     &repo_dir_owned,
+                                    &*gh_clone,
                                 )
                                 .await
                             } else {
@@ -1514,6 +1541,7 @@ pub async fn process_batch_for_repo(
                                     &config_clone,
                                     &state_dir_owned,
                                     &repo_dir_owned,
+                                    &*gh_clone,
                                 )
                                 .await
                             };
@@ -1603,7 +1631,7 @@ pub async fn process_batch_for_repo(
             if *cancel.borrow() {
                 break;
             }
-            let prs = match github::fetch_eligible_prs(repo, &[label], 10).await {
+            let prs = match gh.fetch_eligible_prs(repo, &[label], 10).await {
                 Ok(prs) => prs,
                 Err(e) => {
                     error!(error = %e, route = route_name, "failed to fetch eligible PRs");
@@ -1629,6 +1657,7 @@ pub async fn process_batch_for_repo(
                 let repo_owned = repo.to_string();
                 let route_name_clone = route_name.clone();
                 let routes_clone = routes.clone();
+                let gh_clone = gh.clone();
                 pr_join_set.spawn(async move {
                     let result = process_reactive_pr(
                         pr_number,
@@ -1638,6 +1667,7 @@ pub async fn process_batch_for_repo(
                         &config_clone,
                         &state_dir_owned,
                         &repo_dir_owned,
+                        &*gh_clone,
                     )
                     .await;
                     (route_name_clone, result)
@@ -1669,6 +1699,7 @@ pub async fn process_batch_with_config(
     state_dir: &Path,
     repo_dir: &Path,
     cancel: &tokio::sync::watch::Receiver<bool>,
+    gh: Arc<dyn GitHubClient>,
 ) -> Vec<RunRecord> {
     let mut all_records = Vec::new();
     for (repo, repo_dir_opt, routes) in config.iter_repos() {
@@ -1679,7 +1710,7 @@ pub async fn process_batch_with_config(
             .map(PathBuf::from)
             .unwrap_or_else(|| repo_dir.to_path_buf());
         let mut records =
-            process_batch_for_repo(repo, config, state_dir, &rd, routes, cancel).await;
+            process_batch_for_repo(repo, config, state_dir, &rd, routes, cancel, gh.clone()).await;
         all_records.append(&mut records);
     }
     all_records

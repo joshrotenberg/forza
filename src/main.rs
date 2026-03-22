@@ -220,13 +220,35 @@ async fn main() -> ExitCode {
         None
     };
 
+    // Create gh client early for init (before config is loaded).
+    let gh_init: std::sync::Arc<dyn forza::github::GitHubClient> =
+        std::sync::Arc::new(forza::github::GhCliClient::new());
+
     if let Command::Init(args) = cli.command {
-        return cmd_init(args).await;
+        return cmd_init(args, &*gh_init).await;
     }
 
     let config = match load_config(&cli.config) {
         Ok(c) => c,
         Err(code) => return code,
+    };
+
+    // Construct the GitHub client based on config.
+    let gh: std::sync::Arc<dyn forza::github::GitHubClient> = if config.global.github_backend
+        == "gh-cli"
+    {
+        std::sync::Arc::new(forza::github::GhCliClient::new())
+    } else {
+        match forza::github::OctocrabClient::new().await {
+            Ok(client) => std::sync::Arc::new(client),
+            Err(e) => {
+                eprintln!("error: failed to create octocrab client: {e}");
+                eprintln!(
+                    "hint: set GITHUB_TOKEN or run `gh auth login`, or use github_backend = \"gh-cli\" in forza.toml"
+                );
+                return ExitCode::FAILURE;
+            }
+        }
     };
 
     if !matches!(
@@ -240,19 +262,19 @@ async fn main() -> ExitCode {
 
     match cli.command {
         Command::Init(_) => unreachable!(),
-        Command::Issue(args) => cmd_issue(args, &config).await,
-        Command::Pr(args) => cmd_pr(args, &config).await,
-        Command::Run(args) => cmd_run(args, &config).await,
-        Command::Watch(args) => cmd_watch(args, &config).await,
+        Command::Issue(args) => cmd_issue(args, &config, &gh).await,
+        Command::Pr(args) => cmd_pr(args, &config, &gh).await,
+        Command::Run(args) => cmd_run(args, &config, gh).await,
+        Command::Watch(args) => cmd_watch(args, &config, gh).await,
         Command::Status(args) => cmd_status(args),
-        Command::Fix(args) => cmd_fix(args, &config).await,
+        Command::Fix(args) => cmd_fix(args, &config, &gh).await,
         Command::Clean(args) => cmd_clean(args, &config).await,
-        Command::Serve(args) => cmd_serve(args, config).await,
-        Command::Mcp(_args) => cmd_mcp(&config).await,
+        Command::Serve(args) => cmd_serve(args, config, gh).await,
+        Command::Mcp(_args) => cmd_mcp(&config, gh).await,
     }
 }
 
-async fn cmd_init(args: InitArgs) -> ExitCode {
+async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitCode {
     // Forza lifecycle labels.
     let labels: &[(&str, &str, &str)] = &[
         (
@@ -284,7 +306,7 @@ async fn cmd_init(args: InitArgs) -> ExitCode {
 
     println!("Creating forza labels in {}...", args.repo);
     for (name, color, description) in labels {
-        match forza::github::create_label(&args.repo, name, color, description).await {
+        match gh.create_label(&args.repo, name, color, description).await {
             Ok(()) => println!("  label: {name}"),
             Err(e) => {
                 eprintln!("error creating label {name}: {e}");
@@ -391,7 +413,11 @@ async fn resolve_repo<'a>(
     Ok((repo_str.to_string(), rd, routes))
 }
 
-async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_issue(
+    args: IssueArgs,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     let sd = state_dir();
 
     let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config).await
@@ -401,7 +427,7 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
     };
 
     if args.dry_run {
-        let issue = match forza::github::fetch_issue(&repo, args.number).await {
+        let issue = match gh.fetch_issue(&repo, args.number).await {
             Ok(i) => i,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -472,6 +498,7 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
         &sd,
         &rd,
         cli_overrides,
+        &**gh,
     )
     .await
     {
@@ -483,7 +510,11 @@ async fn cmd_issue(args: IssueArgs, config: &forza::RunnerConfig) -> ExitCode {
     }
 }
 
-async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_pr(
+    args: PrArgs,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     let sd = state_dir();
 
     let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &args.repo_dir, config).await
@@ -493,7 +524,7 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
     };
 
     if args.dry_run {
-        let pr = match forza::github::fetch_pr(&repo, args.number).await {
+        let pr = match gh.fetch_pr(&repo, args.number).await {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -556,6 +587,7 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
         &sd,
         &rd,
         cli_overrides,
+        &**gh,
     )
     .await
     {
@@ -567,7 +599,11 @@ async fn cmd_pr(args: PrArgs, config: &forza::RunnerConfig) -> ExitCode {
     }
 }
 
-async fn cmd_run(args: RunArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_run(
+    args: RunArgs,
+    config: &forza::RunnerConfig,
+    gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     let sd = state_dir();
 
     // Resolve a local directory for every configured repo before doing any work.
@@ -598,9 +634,16 @@ async fn cmd_run(args: RunArgs, config: &forza::RunnerConfig) -> ExitCode {
         if *cancel_rx.borrow() {
             break;
         }
-        let mut records =
-            forza::orchestrator::process_batch_for_repo(repo, config, &sd, rd, routes, &cancel_rx)
-                .await;
+        let mut records = forza::orchestrator::process_batch_for_repo(
+            repo,
+            config,
+            &sd,
+            rd,
+            routes,
+            &cancel_rx,
+            gh.clone(),
+        )
+        .await;
         all_records.append(&mut records);
     }
     let records = all_records;
@@ -629,7 +672,11 @@ async fn cmd_run(args: RunArgs, config: &forza::RunnerConfig) -> ExitCode {
     }
 }
 
-async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_watch(
+    args: WatchArgs,
+    config: &forza::RunnerConfig,
+    gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     let sd = state_dir();
 
     // Use the override interval or the default of 60 seconds.
@@ -689,6 +736,7 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
         let config_clone = config.clone();
         let sd_clone = sd.clone();
         let cancel_rx_clone = cancel_rx.clone();
+        let gh_clone = gh.clone();
         handles.push(tokio::spawn(async move {
             info!(repo = repo, "starting repo watch loop");
             loop {
@@ -699,6 +747,7 @@ async fn cmd_watch(args: WatchArgs, config: &forza::RunnerConfig) -> ExitCode {
                     &rd,
                     &routes,
                     &cancel_rx_clone,
+                    gh_clone.clone(),
                 )
                 .await;
                 if !records.is_empty() {
@@ -830,7 +879,11 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
     }
 }
 
-async fn cmd_fix(args: FixArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_fix(
+    args: FixArgs,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     let sd = state_dir();
 
     // Find the run to fix.
@@ -912,6 +965,7 @@ async fn cmd_fix(args: FixArgs, config: &forza::RunnerConfig) -> ExitCode {
         config,
         &sd,
         &rd,
+        &**gh,
     )
     .await
     {
@@ -1017,13 +1071,18 @@ async fn cmd_clean(args: CleanArgs, config: &forza::RunnerConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-async fn cmd_serve(args: ServeArgs, config: forza::RunnerConfig) -> ExitCode {
+async fn cmd_serve(
+    args: ServeArgs,
+    config: forza::RunnerConfig,
+    gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     use std::sync::Arc;
 
     let sd = state_dir();
     let state = Arc::new(forza::api::AppState {
         config,
         state_dir: sd,
+        gh,
     });
 
     let addr: std::net::SocketAddr = match format!("{}:{}", args.host, args.port).parse() {
@@ -1084,9 +1143,12 @@ async fn cmd_serve(args: ServeArgs, config: forza::RunnerConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-async fn cmd_mcp(config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_mcp(
+    config: &forza::RunnerConfig,
+    gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     let sd = state_dir();
-    let state = forza::mcp::AppState::new(config.clone(), sd);
+    let state = forza::mcp::AppState::new(config.clone(), sd, gh);
     let router = forza::mcp::build_router(state);
     if let Err(e) = tower_mcp::StdioTransport::new(router).run().await {
         eprintln!("mcp server error: {e}");

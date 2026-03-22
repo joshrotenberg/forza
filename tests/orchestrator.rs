@@ -140,6 +140,7 @@ async fn issue_workflow_creates_run_record() {
     }
 
     let routes = &config.routes;
+    let gh = forza::github::GhCliClient::new();
     let result = forza::orchestrator::process_issue_with_config(
         1,
         "test/repo",
@@ -147,6 +148,7 @@ async fn issue_workflow_creates_run_record() {
         &config,
         &state_dir,
         &repo_dir,
+        &gh,
     )
     .await;
 
@@ -192,6 +194,7 @@ async fn worktree_cleaned_up_after_run() {
     }
 
     let routes = &config.routes;
+    let gh = forza::github::GhCliClient::new();
     let _ = forza::orchestrator::process_issue_with_config(
         1,
         "test/repo",
@@ -199,6 +202,7 @@ async fn worktree_cleaned_up_after_run() {
         &config,
         &state_dir,
         &repo_dir,
+        &gh,
     )
     .await;
 
