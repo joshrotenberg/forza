@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use crate::config::{CliOverrides, Route, RunnerConfig};
 use crate::error::{Error, Result};
-use crate::executor::{AgentAdapter, ClaudeAdapter, StageResult};
+use crate::executor::StageResult;
 use crate::git::GitClient;
 use crate::github;
 use crate::github::GitHubClient;
@@ -601,27 +601,12 @@ pub async fn process_reactive_pr(
                     stage.kind.name()
                 )));
             };
-            let start = std::time::Instant::now();
-            let output = tokio::process::Command::new("sh")
-                .args(["-c", command])
-                .current_dir(&worktree_dir)
-                .env("FORZA_PR_NUMBER", pr_number.to_string())
-                .output()
-                .await;
-            let duration = start.elapsed();
-            let (success, output_text) = match output {
-                Ok(o) => {
-                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
-                    let text = if stderr.is_empty() { stdout } else { stderr };
-                    (o.status.success(), text)
-                }
-                Err(e) => (false, e.to_string()),
-            };
+            let (success, output_text, duration) =
+                run_agentless_stage(command, &worktree_dir, Some(pr_number)).await;
             info!(
                 pr = pr_number,
                 stage = planned.kind_name(),
-                success = success,
+                success,
                 duration = format!("{:.1}s", duration.as_secs_f64()),
                 "reactive agentless stage complete"
             );
@@ -642,33 +627,16 @@ pub async fn process_reactive_pr(
                 },
             );
         } else {
-            let stage_model = label_overrides
-                .model
-                .as_deref()
-                .or(planned.model.as_deref())
-                .or_else(|| config.effective_model(route));
-            let stage_skills = if !label_overrides.skills.is_empty() {
-                label_overrides.skills.as_slice()
-            } else {
-                config.effective_skills(route, planned.skills.as_deref())
-            };
-            let stage_mcp = config.effective_mcp_config(route, planned.mcp_config.as_deref());
-            let stage_syspr = config.effective_append_system_prompt();
-            let mut stage_adapter = ClaudeAdapter::new();
-            if let Some(m) = stage_model {
-                stage_adapter = stage_adapter.model(m);
-            }
-            if !stage_skills.is_empty() {
-                stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
-            }
-            if let Some(p) = stage_mcp {
-                stage_adapter = stage_adapter.mcp_config(p);
-            }
-            if let Some(s) = stage_syspr {
-                stage_adapter = stage_adapter.append_system_prompt(s);
-            }
-
-            match stage_adapter.execute_stage(&planned, &worktree_dir).await {
+            match run_agent_stage(
+                &planned,
+                config,
+                route,
+                &worktree_dir,
+                &CliOverrides::default(),
+                &label_overrides,
+            )
+            .await
+            {
                 Ok(result) => {
                     info!(
                         pr = pr_number,
