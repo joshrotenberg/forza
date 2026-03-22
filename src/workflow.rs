@@ -156,7 +156,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
@@ -169,7 +169,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
@@ -180,7 +180,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Test),
                 Stage::new(StageKind::OpenPr),
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
@@ -230,7 +230,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::FixCi),
                 Stage::new(StageKind::Merge)
                     .optional()
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
@@ -240,7 +240,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::RevisePr),
                 Stage::new(StageKind::Merge)
                     .optional()
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
@@ -251,7 +251,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::FixCi),
                 Stage::new(StageKind::Merge)
                     .optional()
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
@@ -259,7 +259,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
             name: "pr-merge".into(),
             stages: vec![
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr checks --watch && gh pr merge --squash --delete-branch"),
+                    .agentless("gh pr merge --auto --squash --delete-branch"),
             ],
             ..Default::default()
         },
