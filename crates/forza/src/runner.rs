@@ -671,10 +671,11 @@ pub async fn process_issue(
     model_override: Option<String>,
     skill_overrides: Vec<String>,
 ) -> forza_core::Result<Run> {
-    let issue = gh
-        .fetch_issue(repo, number)
-        .await
-        .map_err(|e| forza_core::Error::GitHub(e.to_string()))?;
+    tracing::info!(number, repo, "processing issue");
+    let issue = gh.fetch_issue(repo, number).await.map_err(|e| match e {
+        crate::error::Error::GitHub(msg) => forza_core::Error::GitHub(msg),
+        _ => forza_core::Error::GitHub(e.to_string()),
+    })?;
 
     let (route_name, route) = RunnerConfig::match_route_in(routes, &issue).ok_or_else(|| {
         forza_core::Error::NoMatchingRoute(format!(
@@ -733,10 +734,11 @@ pub async fn process_pr(
     skill_overrides: Vec<String>,
     route_override: Option<String>,
 ) -> forza_core::Result<Run> {
-    let pr = gh
-        .fetch_pr(repo, number)
-        .await
-        .map_err(|e| forza_core::Error::GitHub(e.to_string()))?;
+    tracing::info!(number, repo, "processing PR");
+    let pr = gh.fetch_pr(repo, number).await.map_err(|e| match e {
+        crate::error::Error::GitHub(msg) => forza_core::Error::GitHub(msg),
+        _ => forza_core::Error::GitHub(e.to_string()),
+    })?;
 
     // Use route override if provided (from condition routes), otherwise match by labels.
     let (route_name, route) = if let Some(ref rn) = route_override

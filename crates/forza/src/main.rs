@@ -734,6 +734,10 @@ async fn cmd_issue(
     .await
     {
         Ok(run) => print_core_run(&run),
+        Err(forza_core::Error::GitHub(msg)) => {
+            eprintln!("error: {msg}");
+            ExitCode::FAILURE
+        }
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
@@ -823,6 +827,10 @@ async fn cmd_pr(
     .await
     {
         Ok(run) => print_core_run(&run),
+        Err(forza_core::Error::GitHub(msg)) => {
+            eprintln!("error: {msg}");
+            ExitCode::FAILURE
+        }
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
