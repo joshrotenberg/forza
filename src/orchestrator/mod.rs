@@ -1478,7 +1478,14 @@ pub async fn process_batch_for_repo(
 
     if !condition_routes.is_empty() {
         let all_prs = match gh.fetch_all_open_prs(repo, 100).await {
-            Ok(prs) => prs,
+            Ok(prs) => {
+                info!(
+                    repo = repo,
+                    count = prs.len(),
+                    "fetched open PRs for condition route evaluation"
+                );
+                prs
+            }
             Err(e) => {
                 warn!(error = %e, "failed to fetch open PRs for condition routes");
                 vec![]
@@ -1494,6 +1501,7 @@ pub async fn process_batch_for_repo(
 
         for (route_name, route) in &condition_routes {
             let condition = route.condition.as_ref().unwrap();
+            let mut matched: usize = 0;
             for pr in &all_prs {
                 // Skip PRs already in progress or marked needs-human.
                 if pr
@@ -1501,6 +1509,11 @@ pub async fn process_batch_for_repo(
                     .iter()
                     .any(|l| l == &config.global.in_progress_label || l == "forza:needs-human")
                 {
+                    tracing::debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        "skipping PR: in-progress or needs-human label"
+                    );
                     continue;
                 }
 
@@ -1508,10 +1521,21 @@ pub async fn process_batch_for_repo(
                 if route.scope == crate::config::ConditionScope::ForzaOwned
                     && !pr.head_branch.starts_with(branch_prefix)
                 {
+                    tracing::debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        "skipping PR: outside forza_owned scope"
+                    );
                     continue;
                 }
 
                 if !condition.matches(pr) {
+                    tracing::debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        condition = ?condition,
+                        "skipping PR: condition not matched"
+                    );
                     continue;
                 }
 
@@ -1551,7 +1575,14 @@ pub async fn process_batch_for_repo(
                     "condition matched, queuing PR"
                 );
                 pending.push_back((route_name.to_string(), PendingSubject::Pr(pr.clone())));
+                matched += 1;
             }
+            info!(
+                repo = repo,
+                route = route_name,
+                count = matched,
+                "found eligible PRs for condition route"
+            );
         }
     }
 
