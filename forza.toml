@@ -33,11 +33,19 @@ auto_merge = true
 
 [security]
 # "trusted" allows merge and push operations.
+# authorization_level controls what the Claude agent is permitted to do (merge, push,
+# etc.). It does NOT restrict shell commands run by forza itself — see the note on
+# the shell command trust boundary below.
 authorization_level = "trusted"
 
 [validation]
 # These commands run between stages to catch regressions early.
 # If any command fails, the run stops.
+#
+# TRUST BOUNDARY: These strings are passed directly to `sh -c`. Treat this section
+# (and all hook, agentless command, and condition fields) as executable code. Only
+# values from a trusted forza.toml are safe to run; if untrusted sources can modify
+# this file they can execute arbitrary shell commands with forza's privileges.
 commands = [
     "cargo fmt --all -- --check",
     "cargo clippy --all-targets -- -D warnings",
