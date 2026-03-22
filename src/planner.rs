@@ -376,8 +376,9 @@ fn generate_stage_prompt(
                 .replace("{issue_number}", &issue.number.to_string())
                 .replace("{validation_commands}", &validation_commands_str)
         }
-        StageKind::Review => include_str!("prompts/review.md")
-            .replace("{issue_number}", &issue.number.to_string()),
+        StageKind::Review => {
+            include_str!("prompts/review.md").replace("{issue_number}", &issue.number.to_string())
+        }
         StageKind::OpenPr => {
             let test_plan_items = if validation_commands.is_empty() {
                 "- [ ] All validation checks pass".to_string()
@@ -402,8 +403,9 @@ fn generate_stage_prompt(
             .replace("{issue_number}", &issue.number.to_string())
             .replace("{issue_title}", &title_block)
             .replace("{issue_context}", &body),
-        StageKind::Comment => include_str!("prompts/comment.md")
-            .replace("{issue_number}", &issue.number.to_string()),
+        StageKind::Comment => {
+            include_str!("prompts/comment.md").replace("{issue_number}", &issue.number.to_string())
+        }
         StageKind::RevisePr | StageKind::FixCi | StageKind::Merge | StageKind::Triage => {
             format!(
                 "Handle {} stage for issue #{}.",
