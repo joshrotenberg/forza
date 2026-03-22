@@ -15,6 +15,7 @@ use std::sync::Arc;
 use crate::config::{CliOverrides, Route, RunnerConfig};
 use crate::error::{Error, Result};
 use crate::executor::{AgentAdapter, ClaudeAdapter, StageResult};
+use crate::git::GitClient;
 use crate::github;
 use crate::github::GitHubClient;
 use crate::isolation;
@@ -30,6 +31,7 @@ enum PendingSubject {
 }
 
 /// Process a single issue through the full pipeline using the new config model.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_issue_with_config(
     number: u64,
     repo: &str,
@@ -38,6 +40,7 @@ pub async fn process_issue_with_config(
     state_dir: &Path,
     repo_dir: &Path,
     gh: &dyn GitHubClient,
+    git: &dyn GitClient,
 ) -> Result<RunRecord> {
     process_issue_with_overrides(
         number,
@@ -48,6 +51,7 @@ pub async fn process_issue_with_config(
         repo_dir,
         CliOverrides::default(),
         gh,
+        git,
     )
     .await
 }
@@ -66,6 +70,7 @@ pub async fn process_issue_with_overrides(
     repo_dir: &Path,
     cli_overrides: CliOverrides,
     gh: &dyn GitHubClient,
+    git: &dyn GitClient,
 ) -> Result<RunRecord> {
     info!(repo = repo, issue = number, "processing issue");
 
@@ -158,7 +163,7 @@ pub async fn process_issue_with_overrides(
     );
 
     // 6. Set up isolation.
-    let worktree_dir = isolation::create_worktree(repo_dir, &branch, ".worktrees").await?;
+    let worktree_dir = isolation::create_worktree(repo_dir, &branch, ".worktrees", git).await?;
     info!(issue = number, worktree = %worktree_dir.display(), "created worktree");
 
     // 7. Execute stages.
@@ -253,49 +258,57 @@ pub async fn process_issue_with_overrides(
         }
 
         if planned_stage.kind == StageKind::OpenPr {
-            let open_pr_success =
-                match handle_open_pr(repo, &branch, &issue, &record, &run_id, &worktree_dir, gh)
-                    .await
-                {
-                    Ok(pr) => {
-                        record.pr_number = Some(pr.number);
-                        info!(
-                            issue = number,
-                            pr = pr.number,
-                            url = pr.html_url,
-                            "created PR"
-                        );
-                        record.record_stage(
-                            planned_stage.kind,
-                            StageStatus::Succeeded,
-                            StageResult {
-                                stage: "open_pr".into(),
-                                success: true,
-                                duration_secs: 0.0,
-                                cost_usd: None,
-                                output: pr.html_url,
-                                files_modified: None,
-                            },
-                        );
-                        true
-                    }
-                    Err(e) => {
-                        error!(issue = number, error = %e, "failed to create PR");
-                        record.record_stage(
-                            planned_stage.kind,
-                            StageStatus::Failed,
-                            StageResult {
-                                stage: "open_pr".into(),
-                                success: false,
-                                duration_secs: 0.0,
-                                cost_usd: None,
-                                output: e.to_string(),
-                                files_modified: None,
-                            },
-                        );
-                        false
-                    }
-                };
+            let open_pr_success = match handle_open_pr(
+                repo,
+                &branch,
+                &issue,
+                &record,
+                &run_id,
+                &worktree_dir,
+                gh,
+                git,
+            )
+            .await
+            {
+                Ok(pr) => {
+                    record.pr_number = Some(pr.number);
+                    info!(
+                        issue = number,
+                        pr = pr.number,
+                        url = pr.html_url,
+                        "created PR"
+                    );
+                    record.record_stage(
+                        planned_stage.kind,
+                        StageStatus::Succeeded,
+                        StageResult {
+                            stage: "open_pr".into(),
+                            success: true,
+                            duration_secs: 0.0,
+                            cost_usd: None,
+                            output: pr.html_url,
+                            files_modified: None,
+                        },
+                    );
+                    true
+                }
+                Err(e) => {
+                    error!(issue = number, error = %e, "failed to create PR");
+                    record.record_stage(
+                        planned_stage.kind,
+                        StageStatus::Failed,
+                        StageResult {
+                            stage: "open_pr".into(),
+                            success: false,
+                            duration_secs: 0.0,
+                            cost_usd: None,
+                            output: e.to_string(),
+                            files_modified: None,
+                        },
+                    );
+                    false
+                }
+            };
             if open_pr_success
                 && let Some(h) = stage_hooks
                 && !h.post.is_empty()
@@ -568,7 +581,7 @@ pub async fn process_issue_with_overrides(
     }
 
     // 10. Cleanup (always — prevents stale worktrees blocking retries).
-    if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await {
+    if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true, git).await {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
 
@@ -576,6 +589,7 @@ pub async fn process_issue_with_overrides(
 }
 
 /// Process a single PR through the full pipeline using the new config model.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_pr_with_config(
     number: u64,
     repo: &str,
@@ -584,6 +598,7 @@ pub async fn process_pr_with_config(
     state_dir: &Path,
     repo_dir: &Path,
     gh: &dyn GitHubClient,
+    git: &dyn GitClient,
 ) -> Result<RunRecord> {
     process_pr_with_overrides(
         number,
@@ -594,6 +609,7 @@ pub async fn process_pr_with_config(
         repo_dir,
         CliOverrides::default(),
         gh,
+        git,
     )
     .await
 }
@@ -612,6 +628,7 @@ pub async fn process_pr_with_overrides(
     repo_dir: &Path,
     cli_overrides: CliOverrides,
     gh: &dyn GitHubClient,
+    git: &dyn GitClient,
 ) -> Result<RunRecord> {
     info!(repo = repo, pr = number, "processing PR");
 
@@ -669,7 +686,7 @@ pub async fn process_pr_with_overrides(
     // 6. Set up isolation (skip worktree for read-only or agentless-only workflows).
     let needs_worktree = !matches!(template.name.as_str(), "pr-review" | "pr-merge");
     let worktree_dir = if needs_worktree {
-        let dir = isolation::create_worktree(repo_dir, &branch, ".worktrees").await?;
+        let dir = isolation::create_worktree(repo_dir, &branch, ".worktrees", git).await?;
         info!(pr = number, worktree = %dir.display(), "created worktree");
         dir
     } else {
@@ -961,7 +978,7 @@ pub async fn process_pr_with_overrides(
 
     // 10. Cleanup (always — prevents stale worktrees blocking retries).
     if needs_worktree
-        && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
+        && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true, git).await
     {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
@@ -984,6 +1001,7 @@ pub async fn process_reactive_pr(
     state_dir: &Path,
     repo_dir: &Path,
     gh: &dyn GitHubClient,
+    git: &dyn GitClient,
 ) -> Result<RunRecord> {
     info!(
         repo = repo,
@@ -1025,7 +1043,7 @@ pub async fn process_reactive_pr(
     );
 
     // 3. Set up isolation.
-    let worktree_dir = isolation::create_worktree(repo_dir, &branch, ".worktrees").await?;
+    let worktree_dir = isolation::create_worktree(repo_dir, &branch, ".worktrees", git).await?;
     info!(pr = pr_number, worktree = %worktree_dir.display(), "created worktree");
 
     // 4. Create run record.
@@ -1219,7 +1237,7 @@ pub async fn process_reactive_pr(
     }
 
     // 7. Cleanup (always — prevents stale worktrees blocking retries).
-    if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await {
+    if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true, git).await {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
 
@@ -1227,6 +1245,7 @@ pub async fn process_reactive_pr(
 }
 
 /// Process all eligible issues for a single repo using its route table.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_batch_for_repo(
     repo: &str,
     config: &RunnerConfig,
@@ -1235,6 +1254,7 @@ pub async fn process_batch_for_repo(
     routes: &HashMap<String, Route>,
     cancel: &tokio::sync::watch::Receiver<bool>,
     gh: Arc<dyn GitHubClient>,
+    git: Arc<dyn GitClient>,
 ) -> Vec<RunRecord> {
     // Recover stale leases before processing new work.
     let stale_timeout = std::time::Duration::from_secs(config.global.stale_lease_timeout);
@@ -1495,6 +1515,7 @@ pub async fn process_batch_for_repo(
                 let repo_owned = repo.to_string();
                 let routes_clone = routes.clone();
                 let gh_clone = gh.clone();
+                let git_clone = git.clone();
                 match subject {
                     PendingSubject::Issue(issue) => {
                         let issue_number = issue.number;
@@ -1507,6 +1528,7 @@ pub async fn process_batch_for_repo(
                                 &state_dir_owned,
                                 &repo_dir_owned,
                                 &*gh_clone,
+                                &*git_clone,
                             )
                             .await;
                             (route_name, result)
@@ -1531,6 +1553,7 @@ pub async fn process_batch_for_repo(
                                     &state_dir_owned,
                                     &repo_dir_owned,
                                     &*gh_clone,
+                                    &*git_clone,
                                 )
                                 .await
                             } else {
@@ -1542,6 +1565,7 @@ pub async fn process_batch_for_repo(
                                     &state_dir_owned,
                                     &repo_dir_owned,
                                     &*gh_clone,
+                                    &*git_clone,
                                 )
                                 .await
                             };
@@ -1658,6 +1682,7 @@ pub async fn process_batch_for_repo(
                 let route_name_clone = route_name.clone();
                 let routes_clone = routes.clone();
                 let gh_clone = gh.clone();
+                let git_clone = git.clone();
                 pr_join_set.spawn(async move {
                     let result = process_reactive_pr(
                         pr_number,
@@ -1668,6 +1693,7 @@ pub async fn process_batch_for_repo(
                         &state_dir_owned,
                         &repo_dir_owned,
                         &*gh_clone,
+                        &*git_clone,
                     )
                     .await;
                     (route_name_clone, result)
@@ -1700,6 +1726,7 @@ pub async fn process_batch_with_config(
     repo_dir: &Path,
     cancel: &tokio::sync::watch::Receiver<bool>,
     gh: Arc<dyn GitHubClient>,
+    git: Arc<dyn GitClient>,
 ) -> Vec<RunRecord> {
     let mut all_records = Vec::new();
     for (repo, repo_dir_opt, routes) in config.iter_repos() {
@@ -1709,8 +1736,17 @@ pub async fn process_batch_with_config(
         let rd = repo_dir_opt
             .map(PathBuf::from)
             .unwrap_or_else(|| repo_dir.to_path_buf());
-        let mut records =
-            process_batch_for_repo(repo, config, state_dir, &rd, routes, cancel, gh.clone()).await;
+        let mut records = process_batch_for_repo(
+            repo,
+            config,
+            state_dir,
+            &rd,
+            routes,
+            cancel,
+            gh.clone(),
+            git.clone(),
+        )
+        .await;
         all_records.append(&mut records);
     }
     all_records

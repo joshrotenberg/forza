@@ -31,6 +31,7 @@ pub struct AppState {
     config: Arc<RunnerConfig>,
     state_dir: PathBuf,
     gh: Arc<dyn crate::github::GitHubClient>,
+    git: Arc<dyn crate::git::GitClient>,
 }
 
 impl AppState {
@@ -39,11 +40,13 @@ impl AppState {
         config: RunnerConfig,
         state_dir: PathBuf,
         gh: Arc<dyn crate::github::GitHubClient>,
+        git: Arc<dyn crate::git::GitClient>,
     ) -> Self {
         Self {
             config: Arc::new(config),
             state_dir,
             gh,
+            git,
         }
     }
 }
@@ -135,7 +138,9 @@ pub fn build_router(state: AppState) -> McpRouter {
                         Ok(r) => r,
                         Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                     };
-                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir).await {
+                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir, &*app.git)
+                    .await
+                {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
@@ -147,6 +152,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &app.state_dir,
                     &rd,
                     &*app.gh,
+                    &*app.git,
                 )
                 .await
                 {
@@ -170,7 +176,9 @@ pub fn build_router(state: AppState) -> McpRouter {
                         Ok(r) => r,
                         Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                     };
-                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir).await {
+                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir, &*app.git)
+                    .await
+                {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
@@ -182,6 +190,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &app.state_dir,
                     &rd,
                     &*app.gh,
+                    &*app.git,
                 )
                 .await
                 {
@@ -214,7 +223,9 @@ pub fn build_router(state: AppState) -> McpRouter {
             for (repo, explicit_dir, routes) in repos {
                 let explicit_dir =
                     explicit_dir.or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
-                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir).await {
+                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir, &*app.git)
+                    .await
+                {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
@@ -226,6 +237,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &routes,
                     &cancel_rx,
                     app.gh.clone(),
+                    app.git.clone(),
                 )
                 .await;
                 all_records.append(&mut records);
@@ -458,8 +470,9 @@ pub async fn serve(
     config: RunnerConfig,
     state_dir: PathBuf,
     gh: Arc<dyn crate::github::GitHubClient>,
+    git: Arc<dyn crate::git::GitClient>,
 ) -> crate::error::Result<()> {
-    let state = AppState::new(config, state_dir, gh);
+    let state = AppState::new(config, state_dir, gh, git);
     let router = build_router(state);
     StdioTransport::new(router)
         .run()
