@@ -475,6 +475,44 @@ pub struct CliOverrides {
     pub skills: Vec<String>,
 }
 
+/// Overrides parsed from `forza:*` labels on an issue or PR.
+///
+/// Supported label prefixes:
+/// - `forza:model:<name>` → override model (e.g., `forza:model:opus`)
+/// - `forza:skill:<name>` → inject skill (e.g., `forza:skill:rust`)
+///
+/// Override chain: CLI > label > stage > route > global.
+#[derive(Debug, Clone, Default)]
+pub struct LabelOverrides {
+    /// Model override from labels.
+    pub model: Option<String>,
+    /// Skill overrides from labels.
+    pub skills: Vec<String>,
+}
+
+impl LabelOverrides {
+    /// Parse overrides from a set of GitHub labels.
+    pub fn from_labels(labels: &[String]) -> Self {
+        let mut model = None;
+        let mut skills = Vec::new();
+
+        for label in labels {
+            if let Some(m) = label.strip_prefix("forza:model:") {
+                model = Some(m.to_string());
+            } else if let Some(s) = label.strip_prefix("forza:skill:") {
+                skills.push(s.to_string());
+            }
+        }
+
+        Self { model, skills }
+    }
+
+    /// Returns true if no overrides were found.
+    pub fn is_empty(&self) -> bool {
+        self.model.is_none() && self.skills.is_empty()
+    }
+}
+
 // ── Implementation ──────────────────────────────────────────────────
 
 impl RunnerConfig {
@@ -1520,5 +1558,46 @@ repo = "owner/repo"
         assert_eq!(config.security.authorization_level, "contributor");
         assert!(config.security.allows_push());
         assert!(!config.security.allows_merge());
+    }
+
+    #[test]
+    fn label_overrides_parses_model() {
+        let labels = vec![
+            "bug".to_string(),
+            "forza:ready".to_string(),
+            "forza:model:opus".to_string(),
+        ];
+        let overrides = LabelOverrides::from_labels(&labels);
+        assert_eq!(overrides.model.as_deref(), Some("opus"));
+        assert!(overrides.skills.is_empty());
+    }
+
+    #[test]
+    fn label_overrides_parses_skills() {
+        let labels = vec![
+            "forza:skill:rust".to_string(),
+            "forza:skill:testing".to_string(),
+        ];
+        let overrides = LabelOverrides::from_labels(&labels);
+        assert!(overrides.model.is_none());
+        assert_eq!(overrides.skills, vec!["rust", "testing"]);
+    }
+
+    #[test]
+    fn label_overrides_empty_for_no_forza_labels() {
+        let labels = vec!["bug".to_string(), "enhancement".to_string()];
+        let overrides = LabelOverrides::from_labels(&labels);
+        assert!(overrides.is_empty());
+    }
+
+    #[test]
+    fn label_overrides_model_and_skills_together() {
+        let labels = vec![
+            "forza:model:haiku".to_string(),
+            "forza:skill:rust".to_string(),
+        ];
+        let overrides = LabelOverrides::from_labels(&labels);
+        assert_eq!(overrides.model.as_deref(), Some("haiku"));
+        assert_eq!(overrides.skills, vec!["rust"]);
     }
 }
