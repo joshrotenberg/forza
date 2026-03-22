@@ -130,7 +130,10 @@ async fn resolve_repo_for_api(
 ) -> Result<(String, PathBuf, IndexMap<String, Route>), ApiError> {
     let repos = config.iter_repos();
     let (repo_str, entry_repo_dir, routes) = if repos.len() == 1 {
-        repos.into_iter().next().unwrap()
+        repos
+            .into_iter()
+            .next()
+            .ok_or_else(|| ApiError::BadRequest("no repos configured".into()))?
     } else {
         match args_repo {
             Some(r) => match repos.into_iter().find(|(repo, _, _)| *repo == r) {
@@ -419,4 +422,102 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
         }),
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use std::path::Path;
+
+    struct NoopGit;
+
+    #[async_trait]
+    impl crate::git::GitClient for NoopGit {
+        async fn fetch(&self, _: &Path) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn worktree_add(&self, _: &Path, _: &str, _: &str) -> crate::error::Result<PathBuf> {
+            unimplemented!()
+        }
+        async fn worktree_remove(&self, _: &Path, _: &Path, _: bool) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn remote_url(&self, _: &Path) -> crate::error::Result<String> {
+            unimplemented!()
+        }
+        async fn ref_exists(&self, _: &Path, _: &str) -> crate::error::Result<bool> {
+            unimplemented!()
+        }
+        async fn has_changes(&self, _: &Path) -> crate::error::Result<bool> {
+            unimplemented!()
+        }
+        async fn stage_tracked(&self, _: &Path) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn commit(&self, _: &Path, _: &str) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn rebase(&self, _: &Path, _: &str) -> crate::error::Result<bool> {
+            unimplemented!()
+        }
+        async fn rebase_abort(&self, _: &Path) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn diff_stat(&self, _: &Path, _: &str) -> crate::error::Result<String> {
+            unimplemented!()
+        }
+        async fn push(&self, _: &Path, _: &str) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn push_force(&self, _: &Path, _: &str) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn version(&self) -> crate::error::Result<String> {
+            unimplemented!()
+        }
+    }
+
+    fn multi_repo_config() -> RunnerConfig {
+        toml::from_str(
+            r#"
+[global]
+
+[repos."owner/repo-a".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+
+[repos."owner/repo-b".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn resolve_repo_for_api_multi_no_param_errors() {
+        let config = multi_repo_config();
+        let git = NoopGit;
+        let err = resolve_repo_for_api(None, &config, &git).await.unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
+        if let ApiError::BadRequest(msg) = err {
+            assert!(msg.contains("multiple repos configured"));
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_repo_for_api_multi_unknown_repo_errors() {
+        let config = multi_repo_config();
+        let git = NoopGit;
+        let err = resolve_repo_for_api(Some("owner/unknown"), &config, &git)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
+        if let ApiError::BadRequest(msg) = err {
+            assert!(msg.contains("not found in config"));
+        }
+    }
 }

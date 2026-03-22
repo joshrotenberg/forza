@@ -104,7 +104,10 @@ struct ConfigValidateInput {
 fn resolve_repo(config: &RunnerConfig, repo: Option<&str>) -> Result<RepoResolution, String> {
     let repos = config.iter_repos();
     let (repo_str, entry_dir, routes) = if repos.len() == 1 {
-        repos.into_iter().next().unwrap()
+        repos
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no repos configured".to_string())?
     } else {
         match repo {
             Some(r) => match repos.into_iter().find(|(s, _, _)| *s == r) {
@@ -479,4 +482,71 @@ pub async fn serve(
         .run()
         .await
         .map_err(|e| crate::error::Error::State(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn single_repo_config() -> RunnerConfig {
+        toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap()
+    }
+
+    fn multi_repo_config() -> RunnerConfig {
+        toml::from_str(
+            r#"
+[global]
+
+[repos."owner/repo-a".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+
+[repos."owner/repo-b".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn resolve_repo_single_repo_succeeds() {
+        let config = single_repo_config();
+        let (repo, _dir, _routes) = resolve_repo(&config, None).unwrap();
+        assert_eq!(repo, "owner/repo");
+    }
+
+    #[test]
+    fn resolve_repo_multi_no_param_errors() {
+        let config = multi_repo_config();
+        let err = resolve_repo(&config, None).unwrap_err();
+        assert!(err.contains("multiple repos configured"));
+    }
+
+    #[test]
+    fn resolve_repo_multi_with_param_succeeds() {
+        let config = multi_repo_config();
+        let (repo, _dir, _routes) = resolve_repo(&config, Some("owner/repo-a")).unwrap();
+        assert_eq!(repo, "owner/repo-a");
+    }
+
+    #[test]
+    fn resolve_repo_multi_unknown_param_errors() {
+        let config = multi_repo_config();
+        let err = resolve_repo(&config, Some("owner/unknown")).unwrap_err();
+        assert!(err.contains("not found in config"));
+    }
 }
