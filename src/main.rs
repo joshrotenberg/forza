@@ -131,6 +131,15 @@ struct WatchArgs {
     /// Repository directory.
     #[arg(long)]
     repo_dir: Option<PathBuf>,
+    /// Also start the REST API server alongside the watch loop.
+    #[arg(long, default_value = "false")]
+    serve_api: bool,
+    /// Host address for the REST API server (default: 127.0.0.1).
+    #[arg(long)]
+    api_host: Option<String>,
+    /// Port for the REST API server (default: 8080).
+    #[arg(long)]
+    api_port: Option<u16>,
 }
 
 #[derive(Debug, Parser)]
@@ -744,6 +753,51 @@ async fn cmd_watch(
         tokio::signal::ctrl_c().await.ok();
         let _ = cancel_tx.send(true);
     });
+
+    // Optionally spawn the REST API server alongside the poll loops.
+    if args.serve_api {
+        use std::sync::Arc;
+        let host = args.api_host.as_deref().unwrap_or("127.0.0.1").to_string();
+        let port = args.api_port.unwrap_or(8080);
+        let addr: std::net::SocketAddr = match format!("{host}:{port}").parse() {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("error: invalid API address {host}:{port}: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let state = Arc::new(forza::api::AppState {
+            config: config.clone(),
+            state_dir: sd.clone(),
+            gh: gh.clone(),
+            git: git.clone(),
+        });
+        let router = forza::api::router(state);
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                info!(address = %addr, "REST API server listening");
+                let mut api_cancel_rx = cancel_rx.clone();
+                tokio::spawn(async move {
+                    axum::serve(listener, router)
+                        .with_graceful_shutdown(async move {
+                            loop {
+                                if api_cancel_rx.changed().await.is_err() || *api_cancel_rx.borrow()
+                                {
+                                    break;
+                                }
+                            }
+                        })
+                        .await
+                        .ok();
+                    info!("REST API server stopped");
+                });
+            }
+            Err(e) => {
+                eprintln!("error: could not bind API server to {addr}: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
 
     // Spawn one independent poll-loop task per repo.
     let mut handles = Vec::new();
