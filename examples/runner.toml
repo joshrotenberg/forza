@@ -31,6 +31,9 @@ gate_label = "runner:ready"
 # Default branch pattern. {issue} = number, {slug} = slugified title.
 branch_pattern = "automation/{issue}-{slug}"
 
+# Automatically merge PRs once all CI checks pass. Default: false.
+# auto_merge = false
+
 # ── Security ─────────────────────────────────────────────────────────
 
 [security]
