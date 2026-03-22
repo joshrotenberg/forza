@@ -1,0 +1,86 @@
+# forza configuration — typical Rust project
+#
+# Standard setup for a Rust codebase: fmt/clippy/test validation, three issue
+# routes (bugs, features, chores), auto-merge enabled for approved green PRs.
+#
+# When to use: you maintain a Rust library or CLI and want forza to handle the
+# full issue-to-PR lifecycle with Rust-specific quality checks.
+
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+branch_pattern = "automation/{issue}-{slug}"
+auto_merge = false   # set true to merge PRs automatically once CI is green
+
+# Cost guardrails.
+max_cost_per_issue = 5.00
+max_cost_per_hour = 20.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# contributor: processes issues from repo contributors and above.
+authorization_level = "contributor"
+
+# ── Validation ───────────────────────────────────────────────────────
+#
+# These commands run between stages. All must pass before the next stage starts.
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo test --lib --all-features",
+]
+
+# ── Agent config ─────────────────────────────────────────────────────
+
+[agent_config]
+# Inject a Rust-specific skill file into every agent invocation.
+skills = ["./skills/rust.md"]
+
+# ── Routes ───────────────────────────────────────────────────────────
+
+[repos."your-org/your-rust-crate"]
+
+[repos."your-org/your-rust-crate".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1        # one bug at a time to avoid merge conflicts
+poll_interval = 60     # check every minute — bugs are urgent
+model = "claude-opus-4-6"  # use a more capable model for bug investigation
+
+[repos."your-org/your-rust-crate".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 2
+poll_interval = 300    # check every 5 minutes
+
+[repos."your-org/your-rust-crate".routes.chores]
+type = "issue"
+label = "chore"
+workflow = "chore"
+concurrency = 3
+poll_interval = 600    # check every 10 minutes
+
+# Automatically fix CI failures and conflicts on forza-created PRs.
+[repos."your-org/your-rust-crate".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 2
+poll_interval = 60
+max_retries = 3        # apply forza:needs-human after 3 failed attempts
+
+# ── Per-stage hooks ──────────────────────────────────────────────────
+#
+# Format code after every implement stage, run tests before opening a PR.
+
+[stage_hooks.implement]
+post = ["cargo fmt --all"]
+
+[stage_hooks.open_pr]
+pre = ["cargo test --all-features"]

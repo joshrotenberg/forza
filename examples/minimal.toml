@@ -1,0 +1,19 @@
+# forza minimal configuration
+#
+# The simplest possible forza setup. One repo, one bug route, all defaults.
+# Use this as your starting point — copy, change the repo name, and go.
+#
+# When to use: you want to try forza with zero ceremony.
+
+[global]
+model = "claude-sonnet-4-6"
+
+[security]
+authorization_level = "contributor"
+
+[repos."your-org/your-repo"]
+
+[repos."your-org/your-repo".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"

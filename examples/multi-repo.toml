@@ -1,0 +1,131 @@
+# forza configuration — multiple repositories
+#
+# Manage several repos from a single forza instance. Each repo gets its own
+# route table, concurrency limits, and polling frequencies. Global settings
+# (model, security, validation) apply everywhere unless overridden per route.
+#
+# When to use: you own or maintain multiple GitHub repos and want one runner
+# process handling all of them.
+
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+branch_pattern = "automation/{issue}-{slug}"
+max_concurrency = 8   # total across all repos and routes
+
+max_cost_per_issue = 5.00
+max_cost_per_hour = 30.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+authorization_level = "contributor"
+
+# ── Validation ───────────────────────────────────────────────────────
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+]
+
+# ── Repo: primary library ─────────────────────────────────────────────
+#
+# The main library repo — tighter concurrency, more thorough validation.
+
+[repos."your-org/core-library"]
+repo_dir = "/path/to/core-library"   # optional local checkout path
+
+[repos."your-org/core-library".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1
+poll_interval = 60
+model = "claude-opus-4-6"   # bugs in the core library deserve more horsepower
+
+[repos."your-org/core-library".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 1
+poll_interval = 300
+
+[repos."your-org/core-library".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 1
+poll_interval = 60
+max_retries = 2
+
+# ── Repo: CLI tool ────────────────────────────────────────────────────
+#
+# CLI companion — faster iteration, higher concurrency acceptable.
+
+[repos."your-org/cli-tool"]
+repo_dir = "/path/to/cli-tool"
+
+[repos."your-org/cli-tool".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 2
+poll_interval = 120
+
+[repos."your-org/cli-tool".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 3
+poll_interval = 300
+
+[repos."your-org/cli-tool".routes.chores]
+type = "issue"
+label = "chore"
+workflow = "chore"
+concurrency = 3
+poll_interval = 600
+
+# ── Repo: documentation site ──────────────────────────────────────────
+#
+# Docs-only repo — only needs the research and chore workflows.
+
+[repos."your-org/docs-site"]
+repo_dir = "/path/to/docs-site"
+
+[repos."your-org/docs-site".routes.content]
+type = "issue"
+label = "content"
+workflow = "chore"
+concurrency = 4
+poll_interval = 600
+
+[repos."your-org/docs-site".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 2
+poll_interval = 3600   # check hourly — research tasks aren't urgent
+
+# ── Repo: internal tooling ────────────────────────────────────────────
+#
+# Internal repo with trusted authors only and auto-merge enabled.
+
+[repos."your-org/internal-tooling"]
+
+[repos."your-org/internal-tooling".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 2
+poll_interval = 60
+
+[repos."your-org/internal-tooling".routes.auto-merge]
+type = "pr"
+condition = "approved_and_green"   # merge once approved and CI passes
+workflow = "merge"
+scope = "forza_owned"
+concurrency = 1
+poll_interval = 120
