@@ -593,10 +593,12 @@ pub async fn process_reactive_pr(
         let planned = build_pr_planned_stage(stage, &pr, &run_id, &template.stages);
 
         if planned.agentless {
-            let command = planned
-                .command
-                .as_deref()
-                .unwrap_or("echo 'no command specified'");
+            let Some(command) = planned.command.as_deref() else {
+                return Err(Error::Executor(format!(
+                    "agentless stage '{}' has no command",
+                    stage.kind.name()
+                )));
+            };
             let start = std::time::Instant::now();
             let output = tokio::process::Command::new("sh")
                 .args(["-c", command])
