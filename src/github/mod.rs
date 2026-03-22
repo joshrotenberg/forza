@@ -231,7 +231,8 @@ fn checks_passing(rollup: &[GhStatusCheck]) -> Option<bool> {
                 return Some(false);
             }
             Some("SUCCESS") | Some("SKIPPED") | Some("NEUTRAL") => {}
-            _ => all_concluded = false,
+            None => all_concluded = false,
+            Some(_) => return Some(false),
         }
     }
     if all_concluded { Some(true) } else { None }
@@ -964,4 +965,59 @@ pub async fn comment_on_issue(repo: &str, number: u64, body: &str) -> Result<()>
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_check(conclusion: Option<&str>) -> GhStatusCheck {
+        GhStatusCheck {
+            conclusion: conclusion.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn checks_passing_empty_rollup_returns_none() {
+        assert_eq!(checks_passing(&[]), None);
+    }
+
+    #[test]
+    fn checks_passing_all_success() {
+        let rollup = vec![
+            make_check(Some("SUCCESS")),
+            make_check(Some("SKIPPED")),
+            make_check(Some("NEUTRAL")),
+        ];
+        assert_eq!(checks_passing(&rollup), Some(true));
+    }
+
+    #[test]
+    fn checks_passing_failure_returns_false() {
+        let rollup = vec![make_check(Some("SUCCESS")), make_check(Some("FAILURE"))];
+        assert_eq!(checks_passing(&rollup), Some(false));
+    }
+
+    #[test]
+    fn checks_passing_timed_out_returns_false() {
+        let rollup = vec![make_check(Some("TIMED_OUT"))];
+        assert_eq!(checks_passing(&rollup), Some(false));
+    }
+
+    #[test]
+    fn checks_passing_pending_conclusion_returns_none() {
+        let rollup = vec![make_check(Some("SUCCESS")), make_check(None)];
+        assert_eq!(checks_passing(&rollup), None);
+    }
+
+    #[test]
+    fn checks_passing_unknown_conclusion_returns_false() {
+        // Any concluded-but-unknown state (STARTUP_FAILURE, STALE, future values)
+        // is treated as a failure rather than leaving the PR in a dead zone.
+        let rollup = vec![make_check(Some("STARTUP_FAILURE"))];
+        assert_eq!(checks_passing(&rollup), Some(false));
+
+        let rollup = vec![make_check(Some("STALE"))];
+        assert_eq!(checks_passing(&rollup), Some(false));
+    }
 }
