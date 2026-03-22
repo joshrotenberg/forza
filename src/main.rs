@@ -55,7 +55,7 @@ enum Command {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml\n  forza init --repo owner/name --auto\n  forza init --repo owner/name --auto --model claude-opus-4-6"
+    after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml\n  forza init --repo owner/name --auto\n  forza init --repo owner/name --auto --model claude-opus-4-6\n  forza init --repo owner/name --guided"
 )]
 struct InitArgs {
     /// Repository in owner/name format (e.g. acme/myrepo).
@@ -67,6 +67,9 @@ struct InitArgs {
     /// Use an agent to inspect the repo and generate a tailored config.
     #[arg(long)]
     auto: bool,
+    /// Launch an interactive Claude session to collaboratively generate a config.
+    #[arg(long)]
+    guided: bool,
     /// Model to use for agent-assisted config generation (e.g. claude-opus-4-6).
     #[arg(long)]
     model: Option<String>,
@@ -397,6 +400,75 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
                 return ExitCode::FAILURE;
             }
         }
+    }
+
+    if args.guided {
+        use claude_wrapper::Claude;
+
+        let prompt_template = include_str!("prompts/init_guided.md");
+        let system_prompt = prompt_template
+            .replace("{repo}", &args.repo)
+            .replace("{output}", &args.output.display().to_string());
+
+        let claude = match Claude::builder().working_dir(".").build() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("error creating claude client: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let mut cmd = tokio::process::Command::new(claude.binary());
+        cmd.arg("--append-system-prompt")
+            .arg(&system_prompt)
+            .arg("--allowedTools")
+            .arg("Read,Glob,Grep,Write,Bash(gh *)")
+            .current_dir(".")
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit());
+
+        if let Some(ref model) = args.model {
+            cmd.arg("--model").arg(model);
+        }
+
+        println!("Starting guided config session for {}...", args.repo);
+        let status = match cmd.status().await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("failed to launch claude: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        if !status.success() {
+            eprintln!("guided session exited with status: {status}");
+            return ExitCode::FAILURE;
+        }
+
+        // Validate the generated config.
+        match std::fs::read_to_string(&args.output) {
+            Ok(contents) => match toml::from_str::<forza::RunnerConfig>(&contents) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!(
+                        "generated config at {} is invalid: {e}",
+                        args.output.display()
+                    );
+                    return ExitCode::FAILURE;
+                }
+            },
+            Err(e) => {
+                eprintln!(
+                    "agent did not write config to {}: {e}",
+                    args.output.display()
+                );
+                return ExitCode::FAILURE;
+            }
+        }
+
+        println!("Created {}", args.output.display());
+        return ExitCode::SUCCESS;
     }
 
     if args.auto {
