@@ -118,6 +118,9 @@ struct RunArgs {
     /// Repository directory.
     #[arg(long)]
     repo_dir: Option<PathBuf>,
+    /// Bypass the gate_label requirement and process all matching issues immediately.
+    #[arg(long, default_value = "false")]
+    no_gate: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -140,6 +143,9 @@ struct WatchArgs {
     /// Port for the REST API server (default: 8080).
     #[arg(long)]
     api_port: Option<u16>,
+    /// Bypass the gate_label requirement and process all matching issues immediately.
+    #[arg(long, default_value = "false")]
+    no_gate: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -626,6 +632,11 @@ async fn cmd_run(
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
     git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
+    let mut config = config.clone();
+    if args.no_gate {
+        config.global.gate_label = None;
+    }
+    let config = &config;
     let sd = state_dir();
 
     // Resolve a local directory for every configured repo before doing any work.
@@ -701,6 +712,11 @@ async fn cmd_watch(
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
     git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
+    let mut config = config.clone();
+    if args.no_gate {
+        config.global.gate_label = None;
+    }
+    let config = &config;
     let sd = state_dir();
 
     // Use the override interval or the default of 60 seconds.
