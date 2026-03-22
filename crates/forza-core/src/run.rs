@@ -80,6 +80,16 @@ pub enum StageStatus {
     Skipped,
 }
 
+impl std::fmt::Display for StageStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StageStatus::Succeeded => f.write_str("succeeded"),
+            StageStatus::Failed => f.write_str("failed"),
+            StageStatus::Skipped => f.write_str("skipped"),
+        }
+    }
+}
+
 /// The result of executing a single stage.
 ///
 /// Captures everything about what happened during the stage for later
@@ -486,5 +496,12 @@ mod tests {
         assert_eq!(RunStatus::Succeeded.to_string(), "succeeded");
         assert_eq!(RunStatus::Failed.to_string(), "failed");
         assert_eq!(RunStatus::Running.to_string(), "running");
+    }
+
+    #[test]
+    fn stage_status_display() {
+        assert_eq!(StageStatus::Succeeded.to_string(), "succeeded");
+        assert_eq!(StageStatus::Failed.to_string(), "failed");
+        assert_eq!(StageStatus::Skipped.to_string(), "skipped");
     }
 }
