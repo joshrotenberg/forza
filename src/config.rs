@@ -9,6 +9,8 @@ use std::path::Path;
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 
+use tracing::debug;
+
 use crate::error::{Error, Result};
 use crate::github::{IssueCandidate, PrCandidate};
 
@@ -279,6 +281,22 @@ impl RouteCondition {
     /// Evaluate whether this condition holds for the given PR.
     pub fn matches(&self, pr: &crate::github::PrCandidate) -> bool {
         let ci_failing = pr.checks_passing == Some(false);
+        if let Some(m) = pr.mergeable.as_deref()
+            && m != "MERGEABLE"
+            && m != "CONFLICTING"
+        {
+            debug!(
+                pr = pr.number,
+                mergeable = m,
+                "mergeability not yet resolved, skipping cycle"
+            );
+        } else if pr.mergeable.is_none() {
+            debug!(
+                pr = pr.number,
+                mergeable = "None",
+                "mergeability not yet resolved, skipping cycle"
+            );
+        }
         let has_conflicts = pr.mergeable.as_deref() == Some("CONFLICTING");
         let approved = pr.review_decision.as_deref() == Some("APPROVED");
         let ci_green = pr.checks_passing == Some(true);
@@ -1580,6 +1598,17 @@ max_retries = 3
         pr.mergeable = Some("MERGEABLE".into());
         pr.review_decision = Some("APPROVED".into());
         assert!(RouteCondition::ApprovedAndGreen.matches(&pr));
+
+        // UNKNOWN mergeability: transient GitHub state — treated as not-conflicting
+        pr.mergeable = Some("UNKNOWN".into());
+        pr.checks_passing = Some(true);
+        assert!(!RouteCondition::HasConflicts.matches(&pr));
+        assert!(!RouteCondition::CiFailingOrConflicts.matches(&pr));
+
+        // None mergeability: also treated as not-conflicting
+        pr.mergeable = None;
+        assert!(!RouteCondition::HasConflicts.matches(&pr));
+        assert!(!RouteCondition::CiFailingOrConflicts.matches(&pr));
     }
 
     #[test]
