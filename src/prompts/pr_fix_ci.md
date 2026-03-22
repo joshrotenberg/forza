@@ -1,3 +1,5 @@
+{preamble}
+
 Fix CI failures on PR #{pr_number} in {repo}.
 
 PR title: {pr_title}

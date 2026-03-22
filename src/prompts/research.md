@@ -6,4 +6,6 @@ Research issue #{issue_number}.
 
 {issue_context}
 
-Gather relevant information, read related code and documentation, and write a summary of findings. Save the summary to `.research_breadcrumb.md`.
+Investigate this issue by reading source files, tests, configuration, and documentation within this repository. Do not perform general internet research, write code unrelated to this investigation, or take actions outside the scope of understanding this issue.
+
+Write a summary of findings to `.research_breadcrumb.md`.

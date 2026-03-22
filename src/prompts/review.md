@@ -1,3 +1,5 @@
+{preamble}
+
 Review the changes for issue #{issue_number}. This is a read-only verification stage.
 
 ## What to check

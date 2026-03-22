@@ -1,3 +1,5 @@
+{preamble}
+
 Merge PR #{pr_number} in {repo} after CI passes.
 
 Wait for checks to complete, then merge:
