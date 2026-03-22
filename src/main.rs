@@ -55,7 +55,7 @@ enum Command {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml"
+    after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml\n  forza init --repo owner/name --auto\n  forza init --repo owner/name --auto --model claude-opus-4-6"
 )]
 struct InitArgs {
     /// Repository in owner/name format (e.g. acme/myrepo).
@@ -64,6 +64,12 @@ struct InitArgs {
     /// Output path for the generated config file.
     #[arg(long, default_value = "forza.toml")]
     output: std::path::PathBuf,
+    /// Use an agent to inspect the repo and generate a tailored config.
+    #[arg(long)]
+    auto: bool,
+    /// Model to use for agent-assisted config generation (e.g. claude-opus-4-6).
+    #[arg(long)]
+    model: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -391,6 +397,78 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
                 return ExitCode::FAILURE;
             }
         }
+    }
+
+    if args.auto {
+        use claude_wrapper::streaming::{StreamEvent, stream_query};
+        use claude_wrapper::{Claude, OutputFormat, PermissionMode, QueryCommand};
+
+        let prompt_template = include_str!("prompts/init_auto.md");
+        let prompt = prompt_template
+            .replace("{repo}", &args.repo)
+            .replace("{output}", &args.output.display().to_string());
+
+        let claude = match Claude::builder().working_dir(".").build() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("error creating claude client: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let mut cmd = QueryCommand::new(&prompt)
+            .output_format(OutputFormat::StreamJson)
+            .permission_mode(PermissionMode::BypassPermissions)
+            .no_session_persistence()
+            .allowed_tools(["Read", "Glob", "Grep", "Write", "Bash(gh *)"]);
+
+        if let Some(ref model) = args.model {
+            cmd = cmd.model(model);
+        }
+
+        println!("Generating config with agent assistance...");
+        let output = match stream_query(&claude, &cmd, |event: StreamEvent| {
+            if let Some(t) = event.event_type() {
+                info!(event_type = t, "init auto event");
+            }
+        })
+        .await
+        {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("agent execution failed: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        if !output.success {
+            eprintln!("agent did not complete successfully:\n{}", output.stderr);
+            return ExitCode::FAILURE;
+        }
+
+        // Validate the generated config.
+        match std::fs::read_to_string(&args.output) {
+            Ok(contents) => match toml::from_str::<forza::RunnerConfig>(&contents) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!(
+                        "generated config at {} is invalid: {e}",
+                        args.output.display()
+                    );
+                    return ExitCode::FAILURE;
+                }
+            },
+            Err(e) => {
+                eprintln!(
+                    "agent did not write config to {}: {e}",
+                    args.output.display()
+                );
+                return ExitCode::FAILURE;
+            }
+        }
+
+        println!("Created {}", args.output.display());
+        return ExitCode::SUCCESS;
     }
 
     // Detect language for validation commands.
