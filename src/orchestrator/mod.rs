@@ -1488,16 +1488,35 @@ pub async fn process_batch_for_repo(
                     }
                     PendingSubject::Pr(pr) => {
                         let pr_number = pr.number;
+                        let route_name_for_reactive = route_name.clone();
+                        let is_reactive = routes
+                            .get(&route_name)
+                            .and_then(|r| r.workflow.as_deref())
+                            .and_then(|wf| config.resolve_workflow(wf))
+                            .is_some_and(|t| t.mode == crate::workflow::WorkflowMode::Reactive);
                         join_set.spawn(async move {
-                            let result = process_pr_with_config(
-                                pr_number,
-                                &repo_owned,
-                                &routes_clone,
-                                &config_clone,
-                                &state_dir_owned,
-                                &repo_dir_owned,
-                            )
-                            .await;
+                            let result = if is_reactive {
+                                process_reactive_pr(
+                                    pr_number,
+                                    &repo_owned,
+                                    &route_name_for_reactive,
+                                    &routes_clone,
+                                    &config_clone,
+                                    &state_dir_owned,
+                                    &repo_dir_owned,
+                                )
+                                .await
+                            } else {
+                                process_pr_with_config(
+                                    pr_number,
+                                    &repo_owned,
+                                    &routes_clone,
+                                    &config_clone,
+                                    &state_dir_owned,
+                                    &repo_dir_owned,
+                                )
+                                .await
+                            };
                             (route_name, result)
                         });
                     }
