@@ -122,25 +122,18 @@ concurrency = 2
 # ── Condition routes (monitors) ──────────────────────────────────────
 # These routes watch forza-owned PRs and automatically trigger fixes
 # when problems are detected. No manual labeling needed.
+#
+# A single any_actionable route replaces separate auto-fix and auto-merge
+# routes. Using one route prevents ping-pong: previously two routes could
+# both match the same PR in consecutive poll cycles, causing repeated
+# forza:in-progress label add/remove cycles. The reactive pr-maintenance
+# workflow handles priority ordering internally (conflicts → CI → merge).
+# Exponential backoff (poll_interval * 2^prior_fails, capped at 64x) is
+# applied automatically when prior failures are detected.
 
-# Auto-maintain forza-owned PRs. Uses the reactive pr-maintenance workflow:
-# each poll cycle evaluates conditions and runs ONE action:
-#   - CI failing → fix CI
-#   - Review changes requested → address feedback
-#   - CI green + no objections → merge
-# After 3 failed attempts, applies forza:needs-human instead.
-[repos."joshrotenberg/forza".routes.auto-fix]
+[repos."joshrotenberg/forza".routes.auto-maintain]
 type = "pr"
-condition = "ci_failing_or_conflicts"
-workflow = "pr-maintenance"
-scope = "forza_owned"
-max_retries = 3
-concurrency = 2
-poll_interval = 60
-
-[repos."joshrotenberg/forza".routes.auto-merge]
-type = "pr"
-condition = "ci_green_no_objections"
+condition = "any_actionable"
 workflow = "pr-maintenance"
 scope = "forza_owned"
 max_retries = 3
