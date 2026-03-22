@@ -146,12 +146,12 @@ impl StageKind {
 
 /// Built-in workflow templates.
 pub fn builtin_templates() -> Vec<WorkflowTemplate> {
-    // Merge stages use `gh pr merge --auto --squash --delete-branch` by default.
-    // `--auto` queues the merge; GitHub completes it once all required status checks pass.
-    // For repos without branch protection or required checks, `--auto` is not supported and
-    // the command will fail. In that case, override the merge stage in your workflow template
-    // with a fallback command:
-    //   command = "gh pr merge --auto --squash --delete-branch || gh pr merge --squash --delete-branch"
+    // Merge stages attempt `gh pr merge --auto --squash` and then verify that auto-merge
+    // was actually activated by querying the `autoMergeRequest` field via `gh pr view --json`.
+    // When a repo has no branch protection with required status checks, `--auto` exits 0 but
+    // does NOT enable auto-merge on GitHub. The verification step detects this and falls back
+    // to a direct `gh pr merge --squash`. Repos with branch protection get auto-merge queued
+    // as normal.
     vec![
         WorkflowTemplate {
             name: "bug".into(),
@@ -162,7 +162,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -175,7 +175,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -186,7 +186,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Test),
                 Stage::new(StageKind::OpenPr),
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -231,7 +231,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                             .into(),
                     ),
                     ..Stage::new(StageKind::Merge).agentless(
-                        "gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)",
+                        "gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash",
                     )
                 },
             ],
@@ -247,7 +247,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::FixCi),
                 Stage::new(StageKind::Merge)
                     .optional()
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -257,7 +257,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::RevisePr),
                 Stage::new(StageKind::Merge)
                     .optional()
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -268,7 +268,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::FixCi),
                 Stage::new(StageKind::Merge)
                     .optional()
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -276,7 +276,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
             name: "pr-merge".into(),
             stages: vec![
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null || (gh pr checks --watch && gh pr merge --squash)"),
+                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -450,6 +450,24 @@ mod tests {
                 "pr-maintenance stage {:?} must have a condition",
                 stage.kind
             );
+        }
+    }
+
+    #[test]
+    fn all_merge_stages_verify_auto_merge_activation() {
+        let templates = builtin_templates();
+        for tmpl in &templates {
+            for stage in &tmpl.stages {
+                if stage.kind == StageKind::Merge && stage.agentless {
+                    let cmd = stage.command.as_deref().unwrap_or("");
+                    assert!(
+                        cmd.contains("autoMergeRequest"),
+                        "template '{}' Merge stage command must verify autoMergeRequest, got: {}",
+                        tmpl.name,
+                        cmd
+                    );
+                }
+            }
         }
     }
 }
