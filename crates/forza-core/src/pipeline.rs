@@ -15,7 +15,7 @@ use crate::lifecycle::{self, LifecycleLabels};
 use crate::route::MatchedWork;
 use crate::run::{self, Outcome, Run, RunStatus, StageResult, StageStatus};
 use crate::shell;
-use crate::stage::{Execution, Workflow};
+use crate::stage::{Execution, StageKind, Workflow};
 use crate::subject::Subject;
 use crate::traits::{AgentExecutor, GitClient, GitHubClient};
 
@@ -407,9 +407,9 @@ pub async fn execute(
     run.finish(final_status);
 
     if run.outcome.is_none() {
-        run.outcome = Some(if !all_succeeded {
+        if !all_succeeded {
             let failed = run.failed_stage();
-            Outcome::Failed {
+            run.outcome = Some(Outcome::Failed {
                 stage: failed
                     .map(|s| s.kind_name().to_string())
                     .unwrap_or_default(),
@@ -417,11 +417,47 @@ pub async fn execute(
                     .and_then(|s| s.result.as_ref())
                     .map(|r| r.output.chars().take(200).collect())
                     .unwrap_or_default(),
-            }
+            });
         } else {
-            // Default success outcome — callers can override (e.g., PrCreated)
-            Outcome::NothingToDo
-        });
+            let open_pr_succeeded = run
+                .stages
+                .iter()
+                .any(|s| s.kind == StageKind::OpenPr && s.status == StageStatus::Succeeded);
+            let merge_succeeded = run
+                .stages
+                .iter()
+                .any(|s| s.kind == StageKind::Merge && s.status == StageStatus::Succeeded);
+            let comment_succeeded = run
+                .stages
+                .iter()
+                .any(|s| s.kind == StageKind::Comment && s.status == StageStatus::Succeeded);
+
+            if open_pr_succeeded {
+                if let Ok(Some(pr)) = gh
+                    .fetch_pr_by_branch(&work.subject.repo, &work.subject.branch)
+                    .await
+                {
+                    run.pr_number = Some(pr.number);
+                    run.outcome = Some(Outcome::PrCreated { number: pr.number });
+                } else {
+                    run.outcome = Some(Outcome::NothingToDo);
+                }
+            } else if merge_succeeded {
+                if let Ok(Some(pr)) = gh
+                    .fetch_pr_by_branch(&work.subject.repo, &work.subject.branch)
+                    .await
+                {
+                    run.pr_number = Some(pr.number);
+                    run.outcome = Some(Outcome::PrMerged { number: pr.number });
+                } else {
+                    run.outcome = Some(Outcome::NothingToDo);
+                }
+            } else if comment_succeeded {
+                run.outcome = Some(Outcome::CommentPosted);
+            } else {
+                run.outcome = Some(Outcome::NothingToDo);
+            }
+        }
     }
 
     // 5. Release lease.
@@ -502,6 +538,346 @@ fn save_run(run: &Run, state_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Result;
+    use crate::route::{MatchedWork, Route, Scope, Trigger};
+    use crate::run::{Outcome, StageResult};
+    use crate::stage::Stage;
+    use crate::subject::{Subject, SubjectKind};
+    use crate::traits::{AgentExecutor, GitClient, GitHubClient};
+    use async_trait::async_trait;
+
+    struct MockGitHub {
+        pr_for_branch: Option<u64>,
+    }
+
+    #[async_trait]
+    impl GitHubClient for MockGitHub {
+        async fn fetch_issue(&self, _repo: &str, _number: u64) -> Result<Subject> {
+            unimplemented!()
+        }
+        async fn fetch_issues_with_labels(
+            &self,
+            _repo: &str,
+            _labels: &[String],
+            _limit: usize,
+        ) -> Result<Vec<Subject>> {
+            Ok(vec![])
+        }
+        async fn fetch_pr(&self, _repo: &str, _number: u64) -> Result<Subject> {
+            unimplemented!()
+        }
+        async fn fetch_all_open_prs(&self, _repo: &str, _limit: usize) -> Result<Vec<Subject>> {
+            Ok(vec![])
+        }
+        async fn fetch_prs_with_labels(
+            &self,
+            _repo: &str,
+            _labels: &[String],
+            _limit: usize,
+        ) -> Result<Vec<Subject>> {
+            Ok(vec![])
+        }
+        async fn fetch_pr_by_branch(&self, _repo: &str, branch: &str) -> Result<Option<Subject>> {
+            Ok(self.pr_for_branch.map(|number| Subject {
+                kind: SubjectKind::Pr,
+                number,
+                repo: "owner/repo".into(),
+                title: "Test PR".into(),
+                body: String::new(),
+                labels: vec![],
+                html_url: String::new(),
+                author: "bot".into(),
+                branch: branch.to_string(),
+                mergeable: None,
+                checks_passing: None,
+                review_decision: None,
+                is_draft: None,
+                base_branch: None,
+            }))
+        }
+        async fn add_label(&self, _repo: &str, _number: u64, _label: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn remove_label(&self, _repo: &str, _number: u64, _label: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn create_label(
+            &self,
+            _repo: &str,
+            _name: &str,
+            _color: &str,
+            _description: &str,
+        ) -> Result<()> {
+            Ok(())
+        }
+        async fn post_comment(&self, _repo: &str, _number: u64, _body: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn create_pr(
+            &self,
+            _repo: &str,
+            _branch: &str,
+            _title: &str,
+            _body: &str,
+            _draft: bool,
+            _work_dir: &std::path::Path,
+        ) -> Result<u64> {
+            Ok(0)
+        }
+        async fn update_pr_body(&self, _repo: &str, _number: u64, _body: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn mark_pr_ready(&self, _repo: &str, _number: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn authenticated_user(&self) -> Result<String> {
+            Ok("bot".into())
+        }
+    }
+
+    struct NoopGit;
+
+    #[async_trait]
+    impl GitClient for NoopGit {
+        async fn clone_repo(&self, _url: &str, _dest: &std::path::Path) -> Result<()> {
+            Ok(())
+        }
+        async fn fetch(&self, _repo_dir: &std::path::Path) -> Result<()> {
+            Ok(())
+        }
+        async fn create_branch(&self, _repo_dir: &std::path::Path, _branch: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn checkout(&self, _repo_dir: &std::path::Path, _branch: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn push(
+            &self,
+            _repo_dir: &std::path::Path,
+            _branch: &str,
+            _force: bool,
+        ) -> Result<()> {
+            Ok(())
+        }
+        async fn create_worktree(
+            &self,
+            _repo_dir: &std::path::Path,
+            _branch: &str,
+            _worktree_dir: &std::path::Path,
+        ) -> Result<()> {
+            Ok(())
+        }
+        async fn remove_worktree(
+            &self,
+            _repo_dir: &std::path::Path,
+            _worktree_dir: &std::path::Path,
+        ) -> Result<()> {
+            Ok(())
+        }
+        async fn list_worktrees(&self, _repo_dir: &std::path::Path) -> Result<Vec<String>> {
+            Ok(vec![])
+        }
+    }
+
+    struct SuccessAgent;
+
+    #[async_trait]
+    impl AgentExecutor for SuccessAgent {
+        async fn execute(
+            &self,
+            _prompt: &str,
+            _work_dir: &std::path::Path,
+            _model: Option<&str>,
+            _skills: &[String],
+            _mcp_config: Option<&str>,
+            _append_system_prompt: Option<&str>,
+        ) -> Result<StageResult> {
+            Ok(StageResult {
+                stage: "test".into(),
+                success: true,
+                duration_secs: 0.0,
+                cost_usd: None,
+                output: "done".into(),
+                files_modified: None,
+            })
+        }
+    }
+
+    fn make_work(branch: &str) -> MatchedWork {
+        MatchedWork {
+            subject: Subject {
+                kind: SubjectKind::Issue,
+                number: 42,
+                repo: "owner/repo".into(),
+                title: "Test issue".into(),
+                body: String::new(),
+                labels: vec![],
+                html_url: String::new(),
+                author: "user".into(),
+                branch: branch.into(),
+                mergeable: None,
+                checks_passing: None,
+                review_decision: None,
+                is_draft: None,
+                base_branch: None,
+            },
+            route_name: "test-route".into(),
+            route: Route {
+                subject_type: SubjectKind::Issue,
+                trigger: Trigger::Label("bug".into()),
+                workflow: "bug".into(),
+                scope: Scope::default(),
+                concurrency: 1,
+                poll_interval: 60,
+                max_retries: None,
+                model: None,
+                skills: None,
+                mcp_config: None,
+                validation_commands: None,
+            },
+            workflow_name: "bug".into(),
+        }
+    }
+
+    fn make_config() -> PipelineConfig {
+        PipelineConfig {
+            labels: crate::lifecycle::LifecycleLabels::default(),
+            model: None,
+            skills: vec![],
+            mcp_config: None,
+            validation: vec![],
+            append_system_prompt: None,
+            stage_hooks: std::collections::HashMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn outcome_pr_created_when_open_pr_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = make_work("automation/42-test");
+        let workflow =
+            Workflow::new("bug", vec![Stage::agent(StageKind::OpenPr)]).without_worktree();
+        let config = make_config();
+        let gh = MockGitHub {
+            pr_for_branch: Some(99),
+        };
+        let run = execute(
+            &work,
+            &workflow,
+            &config,
+            dir.path(),
+            dir.path(),
+            &gh,
+            &NoopGit,
+            &SuccessAgent,
+            &["do the open_pr thing".to_string()],
+        )
+        .await;
+        assert_eq!(run.outcome, Some(Outcome::PrCreated { number: 99 }));
+        assert_eq!(run.pr_number, Some(99));
+    }
+
+    #[tokio::test]
+    async fn outcome_nothing_to_do_when_open_pr_succeeds_but_pr_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = make_work("automation/42-test");
+        let workflow =
+            Workflow::new("bug", vec![Stage::agent(StageKind::OpenPr)]).without_worktree();
+        let config = make_config();
+        let gh = MockGitHub {
+            pr_for_branch: None,
+        };
+        let run = execute(
+            &work,
+            &workflow,
+            &config,
+            dir.path(),
+            dir.path(),
+            &gh,
+            &NoopGit,
+            &SuccessAgent,
+            &["do the open_pr thing".to_string()],
+        )
+        .await;
+        assert_eq!(run.outcome, Some(Outcome::NothingToDo));
+        assert!(run.pr_number.is_none());
+    }
+
+    #[tokio::test]
+    async fn outcome_pr_merged_when_merge_succeeds_without_open_pr() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = make_work("automation/42-test");
+        let workflow =
+            Workflow::new("merge-only", vec![Stage::agent(StageKind::Merge)]).without_worktree();
+        let config = make_config();
+        let gh = MockGitHub {
+            pr_for_branch: Some(77),
+        };
+        let run = execute(
+            &work,
+            &workflow,
+            &config,
+            dir.path(),
+            dir.path(),
+            &gh,
+            &NoopGit,
+            &SuccessAgent,
+            &["merge the PR".to_string()],
+        )
+        .await;
+        assert_eq!(run.outcome, Some(Outcome::PrMerged { number: 77 }));
+        assert_eq!(run.pr_number, Some(77));
+    }
+
+    #[tokio::test]
+    async fn outcome_comment_posted_when_comment_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = make_work("automation/42-test");
+        let workflow =
+            Workflow::new("research", vec![Stage::agent(StageKind::Comment)]).without_worktree();
+        let config = make_config();
+        let gh = MockGitHub {
+            pr_for_branch: None,
+        };
+        let run = execute(
+            &work,
+            &workflow,
+            &config,
+            dir.path(),
+            dir.path(),
+            &gh,
+            &NoopGit,
+            &SuccessAgent,
+            &["post the comment".to_string()],
+        )
+        .await;
+        assert_eq!(run.outcome, Some(Outcome::CommentPosted));
+    }
+
+    #[tokio::test]
+    async fn outcome_nothing_to_do_for_non_special_stages() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = make_work("automation/42-test");
+        let workflow =
+            Workflow::new("plan-only", vec![Stage::agent(StageKind::Plan)]).without_worktree();
+        let config = make_config();
+        let gh = MockGitHub {
+            pr_for_branch: None,
+        };
+        let run = execute(
+            &work,
+            &workflow,
+            &config,
+            dir.path(),
+            dir.path(),
+            &gh,
+            &NoopGit,
+            &SuccessAgent,
+            &["make a plan".to_string()],
+        )
+        .await;
+        assert_eq!(run.outcome, Some(Outcome::NothingToDo));
+    }
 
     #[test]
     fn save_run_creates_file() {
