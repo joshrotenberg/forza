@@ -151,6 +151,29 @@ Each run records its final outcome in `RunRecord::outcome`. The `RouteOutcome` e
 `format_outcome` in `src/main.rs` renders these for the status display (e.g.,
 `pr_created (#42)`, `failed (stage: implement)`, `exhausted (3 retries)`).
 
+## Testing
+
+All tests are inline unit tests in `#[cfg(test)]` modules within the source files. There
+are no integration tests. Run the full suite with:
+
+```bash
+cargo test
+```
+
+Key test coverage by module:
+
+| Module | Focus |
+|--------|-------|
+| `src/config.rs` | Config parsing, validation, route resolution, effective skills |
+| `src/workflow.rs` | Stage/workflow construction, StageKind parsing |
+| `src/state.rs` | RunRecord serialization, RouteOutcome formatting |
+| `src/planner.rs` | Prompt assembly, breadcrumb instruction injection |
+| `src/orchestrator/mod.rs` | Stage execution logic, hook ordering |
+| `src/notifications.rs` | Notification formatting |
+
+Tests that require live GitHub API access or a running Claude process are not present;
+all tests are self-contained and use `tempfile` for filesystem fixtures where needed.
+
 ## Skill injection
 
 Skills are markdown files injected into the agent's context. Three levels of override
