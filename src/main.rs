@@ -52,6 +52,7 @@ enum Command {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml")]
 struct InitArgs {
     /// Repository in owner/name format (e.g. acme/myrepo).
     #[arg(long)]
@@ -62,6 +63,7 @@ struct InitArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza fix\n  forza fix --issue 42\n  forza fix --run <run-id>")]
 struct FixArgs {
     /// Run ID to fix (default: latest run).
     #[arg(long)]
@@ -72,6 +74,7 @@ struct FixArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza issue 42\n  forza issue 42 --dry-run --model claude-opus-4-6\n  forza issue 42 --skill ./skills/extra.md")]
 struct IssueArgs {
     /// Issue number to process.
     number: u64,
@@ -93,6 +96,7 @@ struct IssueArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --route fix-pr\n  forza pr 123 --dry-run")]
 struct PrArgs {
     /// PR number to process.
     number: u64,
@@ -114,6 +118,7 @@ struct PrArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate")]
 struct RunArgs {
     /// Repository directory.
     #[arg(long)]
@@ -124,6 +129,7 @@ struct RunArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza watch\n  forza watch --repo-dir . --interval 30 --serve-api\n  forza watch --route bugfix")]
 struct WatchArgs {
     /// Override poll interval in seconds (uses per-route intervals by default).
     #[arg(long)]
@@ -149,6 +155,7 @@ struct WatchArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza status\n  forza status --all\n  forza status --run-id <id>\n  forza status --summary")]
 struct StatusArgs {
     /// Show a specific run by ID.
     #[arg(long)]
@@ -162,6 +169,7 @@ struct StatusArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza mcp\n  forza mcp --http --port 9090")]
 struct McpArgs {
     /// Use HTTP/SSE transport instead of stdio.
     #[arg(long)]
@@ -175,6 +183,7 @@ struct McpArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza clean\n  forza clean --stale --days 7\n  forza clean --runs --dry-run")]
 struct CleanArgs {
     /// Repository directory (default: current directory).
     #[arg(long)]
@@ -194,6 +203,7 @@ struct CleanArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza serve\n  forza serve --port 9090\n  forza serve --host 0.0.0.0 --port 9090")]
 struct ServeArgs {
     /// Host address to bind to.
     #[arg(long, default_value = "127.0.0.1")]
