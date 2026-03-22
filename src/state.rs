@@ -269,13 +269,18 @@ impl RunRecord {
 /// Save a run record to disk.
 pub fn save_run(record: &RunRecord, state_dir: &std::path::Path) -> crate::error::Result<()> {
     std::fs::create_dir_all(state_dir)?;
-    let path = state_dir.join(format!("{}.json", record.run_id));
-    let json = serde_json::to_string_pretty(record)?;
-    std::fs::write(&path, json)?;
 
-    // Update latest pointer.
-    let latest = state_dir.join("latest");
-    std::fs::write(latest, &record.run_id)?;
+    // Write run record atomically.
+    let final_path = state_dir.join(format!("{}.json", record.run_id));
+    let tmp_path = state_dir.join(format!("{}.json.tmp", record.run_id));
+    let json = serde_json::to_string_pretty(record)?;
+    std::fs::write(&tmp_path, &json)?;
+    std::fs::rename(&tmp_path, &final_path)?;
+
+    // Update latest pointer atomically.
+    let latest_tmp = state_dir.join("latest.tmp");
+    std::fs::write(&latest_tmp, &record.run_id)?;
+    std::fs::rename(&latest_tmp, state_dir.join("latest"))?;
 
     Ok(())
 }
