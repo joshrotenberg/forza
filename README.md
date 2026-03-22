@@ -13,9 +13,26 @@ Autonomous GitHub issue runner. Turns issues into pull requests through configur
 GitHub Issue  ->  Route Match  ->  Workflow  ->  Stages  ->  Pull Request  ->  Auto-Merge
 ```
 
-Point it at a repo, it picks up labeled issues, matches them to routes, executes staged workflows (plan, implement, test, review), opens PRs, and optionally auto-merges them. Each stage runs a bounded agent session in an isolated git worktree.
+When an issue is labeled (or a PR enters a matching state), forza:
+
+1. **Picks it up** — the watch loop finds issues with `forza:ready` or PRs matching a condition route
+2. **Matches a route** — compares the label or PR state against your configured routes to select a workflow
+3. **Executes stages** — runs each stage in order (e.g., plan → implement → test → review → open_pr), with validation commands between stages and breadcrumbs carrying context forward
+4. **Opens a PR** — commits the work to an isolated git worktree and opens a PR against your branch
+5. **Merges (optional)** — if `auto_merge = true` and CI passes, the merge stage completes the lifecycle
 
 For PRs, condition routes automatically detect CI failures and merge conflicts, fix them reactively, and merge when green.
+
+### forza vs. running Claude directly
+
+| | forza | Claude directly |
+|---|---|---|
+| Stage sequencing | Deterministic, configured per workflow | Ad-hoc, single session |
+| Context hand-off | Breadcrumbs carry forward between stages | Manual copy-paste |
+| Validation | Commands run between every stage | None by default |
+| Retry / escalation | `max_retries` + `forza:needs-human` label | Manual |
+| Worktree isolation | Each run gets a clean git worktree | Working directory |
+| PR lifecycle | Automated open, update, merge | Manual |
 
 ## Quick start
 
@@ -41,6 +58,155 @@ forza run
 # Watch mode (continuous polling + auto-fix)
 forza watch --interval 60
 ```
+
+## When to use forza
+
+**Solo developer** — label a backlog issue `forza:ready` and let forza open a PR while you work on something else. Good for bug fixes, dependency updates, documentation PRs, and chores that follow a clear pattern.
+
+**Team with an issue backlog** — apply `forza:ready` to issues you're comfortable automating. Forza triages, plans, and implements while the team focuses on review. Pair with `gate_label` so nothing runs until you've explicitly opted it in.
+
+**CI maintenance** — configure condition routes (`ci_failing_or_conflicts`, `approved_and_green`) so forza watches your forza-owned PRs and fixes failures, rebases stale branches, and merges when green — without anyone having to manually re-trigger CI or click merge.
+
+**Research and exploration** — use a `research` route with the `research -> comment` workflow. Forza investigates a question (API compatibility, migration path, alternative approaches) and posts findings directly on the issue as a comment. No code changes, no PR.
+
+## Progressive complexity
+
+### Minimal
+
+Get started with a single repo and one label route. No validation, default workflow, no auto-merge.
+
+```toml
+[global]
+model = "claude-sonnet-4-6"
+
+[repos."owner/name"]
+
+[repos."owner/name".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+```
+
+### Standard
+
+Add validation, multiple routes, and auto-merge. This is the recommended starting point for most projects.
+
+```toml
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+branch_pattern = "automation/{issue}-{slug}"
+auto_merge = true
+
+[security]
+authorization_level = "trusted"
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test --lib",
+]
+
+[repos."owner/name"]
+
+[repos."owner/name".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1
+
+[repos."owner/name".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 2
+
+[repos."owner/name".routes.fix-pr]
+type = "pr"
+label = "forza:fix-pr"
+workflow = "pr-fix"
+
+[repos."owner/name".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-maintenance"
+scope = "forza_owned"
+max_retries = 3
+```
+
+### Advanced
+
+Multiple repos, custom workflow templates, per-stage hooks, skill injection, and reactive PR maintenance.
+
+```toml
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+auto_merge = true
+max_concurrency = 5
+
+[security]
+authorization_level = "trusted"
+
+[validation]
+commands = ["cargo test --all-features"]
+
+[agent_config]
+skills = ["./skills/rust.md"]
+mcp_config = ".mcp.json"
+
+[stage_hooks.implement]
+post    = ["cargo fmt --all"]
+finally = ["echo 'implement done'"]
+
+# First repo — standard issue routes
+[repos."org/backend"]
+
+[repos."org/backend".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1
+skills = ["./skills/backend.md"]
+
+[repos."org/backend".routes.auto-merge]
+type = "pr"
+condition = "ci_green_no_objections"
+workflow = "pr-maintenance"
+scope = "forza_owned"
+max_retries = 2
+
+# Second repo — docs and research only
+[repos."org/docs"]
+
+[repos."org/docs".routes.docs]
+type = "issue"
+label = "documentation"
+workflow = "chore"
+concurrency = 3
+
+[repos."org/docs".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 5
+
+# Custom workflow template
+[[workflow_templates]]
+name = "safe-feature"
+stages = [
+  { kind = "plan" },
+  { kind = "implement" },
+  { kind = "test", optional = true, condition = "git diff --quiet HEAD~1 -- tests/" },
+  { kind = "review" },
+  { kind = "open_pr" },
+]
+```
+
+### Self-hosting
+
+For a complete real-world example, see [`forza.toml`](forza.toml) in this repository. It is the config forza uses to process its own issues and PRs, with bug, feature, chore, and research routes plus condition-based PR maintenance.
 
 ## Configuration
 
