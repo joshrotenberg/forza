@@ -49,6 +49,8 @@ enum Command {
     Serve(ServeArgs),
     /// Start the MCP server (stdio or HTTP/SSE transport).
     Mcp(McpArgs),
+    /// Show a structured breakdown of the loaded config and route paths.
+    Explain(ExplainArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -232,6 +234,19 @@ struct ServeArgs {
     repo_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+#[command(
+    after_long_help = "Examples:\n  forza explain\n  forza explain --repo owner/name\n  forza explain --json"
+)]
+struct ExplainArgs {
+    /// Filter output to a single repository (owner/name).
+    #[arg(long)]
+    repo: Option<String>,
+    /// Output as JSON instead of human-readable text.
+    #[arg(long)]
+    json: bool,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -311,7 +326,11 @@ async fn main() -> ExitCode {
 
     if !matches!(
         cli.command,
-        Command::Status(_) | Command::Clean(_) | Command::Serve(_) | Command::Mcp(_)
+        Command::Status(_)
+            | Command::Clean(_)
+            | Command::Serve(_)
+            | Command::Mcp(_)
+            | Command::Explain(_)
     ) && let Err(e) = forza::deps::validate_dependencies(&config.global.agent, &*git).await
     {
         eprintln!("error: {e}");
@@ -329,6 +348,7 @@ async fn main() -> ExitCode {
         Command::Clean(args) => cmd_clean(args, &config, &git).await,
         Command::Serve(args) => cmd_serve(args, config, gh, git).await,
         Command::Mcp(args) => cmd_mcp(args, &config, gh, git).await,
+        Command::Explain(args) => cmd_explain(args, &config),
     }
 }
 
@@ -916,6 +936,160 @@ async fn cmd_watch(
     }
 
     info!("watch mode stopped, exiting cleanly");
+    ExitCode::SUCCESS
+}
+
+fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
+    if args.json {
+        match serde_json::to_string_pretty(config) {
+            Ok(json) => {
+                println!("{json}");
+                return ExitCode::SUCCESS;
+            }
+            Err(e) => {
+                eprintln!("error serializing config: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    let repos = config.iter_repos();
+    for (repo_slug, _repo_dir, routes) in &repos {
+        if let Some(ref filter) = args.repo
+            && repo_slug != filter
+        {
+            continue;
+        }
+
+        println!("Repository: {repo_slug}");
+        println!("{}", "-".repeat(60));
+
+        if routes.is_empty() {
+            println!("  (no routes configured)");
+        }
+
+        for (route_name, route) in routes.iter() {
+            println!();
+            println!("  Route: {route_name}");
+
+            // Trigger
+            if let Some(ref label) = route.label {
+                let gate = config
+                    .global
+                    .gate_label
+                    .as_deref()
+                    .map(|g| format!(" + gate label \"{g}\""))
+                    .unwrap_or_default();
+                println!("    Trigger:    label \"{label}\"{gate}");
+            } else if let Some(ref cond) = route.condition {
+                let cond_name = match cond {
+                    forza::config::RouteCondition::CiFailing => "ci_failing",
+                    forza::config::RouteCondition::HasConflicts => "has_conflicts",
+                    forza::config::RouteCondition::CiFailingOrConflicts => {
+                        "ci_failing_or_conflicts"
+                    }
+                    forza::config::RouteCondition::ApprovedAndGreen => "approved_and_green",
+                    forza::config::RouteCondition::CiGreenNoObjections => {
+                        "ci_green_no_objections"
+                    }
+                };
+                println!("    Trigger:    condition {cond_name}");
+                println!("    Poll:       {}s", route.poll_interval);
+            }
+
+            // Type
+            let route_type = match route.route_type {
+                forza::config::SubjectType::Issue => "issue",
+                forza::config::SubjectType::Pr => "pr",
+            };
+            println!("    Type:       {route_type}");
+
+            // Workflow + stages
+            let wf_name = route.workflow.as_deref().unwrap_or("(none)");
+            if let Some(template) = config.resolve_workflow(wf_name) {
+                let mode = match template.mode {
+                    forza::workflow::WorkflowMode::Linear => "linear",
+                    forza::workflow::WorkflowMode::Reactive => "reactive",
+                };
+                println!("    Workflow:   {wf_name} ({mode})");
+
+                let stage_parts: Vec<String> = template
+                    .stages
+                    .iter()
+                    .map(|s| {
+                        let mut label = s.kind.name().to_string();
+                        if s.agentless {
+                            label.push_str(" (agentless)");
+                        }
+                        if s.condition.is_some() {
+                            label.push_str(" (conditional)");
+                        }
+                        if s.optional {
+                            format!("[{label}]")
+                        } else {
+                            label
+                        }
+                    })
+                    .collect();
+                println!("    Stages:     {}", stage_parts.join(" -> "));
+            } else {
+                println!("    Workflow:   {wf_name} (unresolved)");
+            }
+
+            // Retries
+            let retries = route
+                .max_retries
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "default (2 per stage)".into());
+            println!("    Retries:    {retries}");
+
+            // Model
+            let model = config
+                .effective_model(route)
+                .unwrap_or("(none)")
+                .to_string();
+            println!("    Model:      {model}");
+
+            // Skills
+            let skills = config.effective_skills(route, None);
+            if skills.is_empty() {
+                println!("    Skills:     (none)");
+            } else {
+                println!("    Skills:     {}", skills.join(", "));
+            }
+
+            // Validation
+            let validation = config.effective_validation(route);
+            if validation.is_empty() {
+                println!("    Validation: (none)");
+            } else {
+                for (i, cmd) in validation.iter().enumerate() {
+                    if i == 0 {
+                        println!("    Validation: {cmd}");
+                    } else {
+                        println!("                {cmd}");
+                    }
+                }
+            }
+
+            // On failure label
+            println!("    On failure: {} label applied", config.global.failed_label);
+        }
+
+        println!();
+    }
+
+    // Global section
+    println!("Global");
+    println!("{}", "-".repeat(60));
+    println!("  Max concurrency: {}", config.global.max_concurrency);
+    println!("  Auto-merge:      {}", config.global.auto_merge);
+    println!("  Draft PR:        {}", config.global.draft_pr);
+    println!(
+        "  Security level:  {}",
+        config.security.authorization_level
+    );
+
     ExitCode::SUCCESS
 }
 
