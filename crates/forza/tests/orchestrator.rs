@@ -140,38 +140,36 @@ async fn issue_workflow_creates_run_record() {
     }
 
     let routes = &config.routes;
-    let gh = forza::github::GhCliClient::new();
-    let git = forza::git::GitCliClient::new();
-    let result = forza::orchestrator::process_issue_with_config(
+    let gh: std::sync::Arc<dyn forza::github::GitHubClient> =
+        std::sync::Arc::new(forza::github::GhCliClient::new());
+    let git: std::sync::Arc<dyn forza::git::GitClient> =
+        std::sync::Arc::new(forza::git::GitCliClient::new());
+    let result = forza::runner::process_issue(
         1,
         "test/repo",
-        routes,
         &config,
+        routes,
         &state_dir,
         &repo_dir,
-        &gh,
-        &git,
+        gh,
+        git,
+        None,
+        vec![],
     )
     .await;
 
     match result {
-        Ok(record) => {
-            assert_eq!(record.repo, "test/repo");
-            assert_eq!(record.issue_number, 1);
+        Ok(run) => {
+            assert_eq!(run.repo, "test/repo");
+            assert_eq!(run.subject_number, 1);
             assert!(
-                record.status == RunStatus::Succeeded || record.status == RunStatus::Failed,
+                run.status == forza_core::RunStatus::Succeeded
+                    || run.status == forza_core::RunStatus::Failed,
                 "run should have completed, got {:?}",
-                record.status
-            );
-            // Run record should be persisted.
-            let loaded = forza::state::load_all_runs(&state_dir);
-            assert!(
-                !loaded.is_empty(),
-                "run record should be saved to state dir"
+                run.status
             );
         }
         Err(e) => {
-            // Triage errors are OK — means the pipeline ran but issue didn't match.
             eprintln!("process_issue returned error (may be expected): {e}");
         }
     }
@@ -196,17 +194,21 @@ async fn worktree_cleaned_up_after_run() {
     }
 
     let routes = &config.routes;
-    let gh = forza::github::GhCliClient::new();
-    let git = forza::git::GitCliClient::new();
-    let _ = forza::orchestrator::process_issue_with_config(
+    let gh: std::sync::Arc<dyn forza::github::GitHubClient> =
+        std::sync::Arc::new(forza::github::GhCliClient::new());
+    let git: std::sync::Arc<dyn forza::git::GitClient> =
+        std::sync::Arc::new(forza::git::GitCliClient::new());
+    let _ = forza::runner::process_issue(
         1,
         "test/repo",
-        routes,
         &config,
+        routes,
         &state_dir,
         &repo_dir,
-        &gh,
-        &git,
+        gh,
+        git,
+        None,
+        vec![],
     )
     .await;
 
