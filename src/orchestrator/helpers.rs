@@ -349,29 +349,29 @@ pub(super) async fn execute_stages(
                     && let Some(issue) = ctx.issue
                 {
                     match create_early_draft_pr(
-                            ctx.repo,
-                            ctx.branch,
-                            issue,
-                            ctx.run_id,
-                            worktree_dir,
-                            gh,
-                            git,
-                        )
-                        .await
-                        {
-                            Ok(pr) => {
-                                record.pr_number = Some(pr.number);
-                                info!(
-                                    subject,
-                                    number,
-                                    pr = pr.number,
-                                    "created early draft PR after plan stage"
-                                );
-                            }
-                            Err(e) => {
-                                warn!(subject, number, error = %e, "failed to create early draft PR (non-fatal)");
-                            }
+                        ctx.repo,
+                        ctx.branch,
+                        issue,
+                        ctx.run_id,
+                        worktree_dir,
+                        gh,
+                        git,
+                    )
+                    .await
+                    {
+                        Ok(pr) => {
+                            record.pr_number = Some(pr.number);
+                            info!(
+                                subject,
+                                number,
+                                pr = pr.number,
+                                "created early draft PR after plan stage"
+                            );
                         }
+                        Err(e) => {
+                            warn!(subject, number, error = %e, "failed to create early draft PR (non-fatal)");
+                        }
+                    }
                 }
                 if !failed
                     && let Some(h) = stage_hooks
