@@ -99,7 +99,13 @@ impl GitHubClient for OctocrabClient {
             .issues(owner, name)
             .get(number)
             .await
-            .map_err(|e| Error::GitHub(format!("fetch issue #{number}: {e}")))?;
+            .map_err(|e| {
+                if matches!(&e, octocrab::Error::GitHub { source, .. } if source.status_code == StatusCode::NOT_FOUND) {
+                    Error::GitHub(format!("issue #{number} not found in {repo}"))
+                } else {
+                    Error::GitHub(format!("fetch issue #{number} in {repo}: {e}"))
+                }
+            })?;
 
         let comments = self
             .client
@@ -266,7 +272,13 @@ impl GitHubClient for OctocrabClient {
             .pulls(owner, name)
             .get(number)
             .await
-            .map_err(|e| Error::GitHub(format!("fetch PR #{number}: {e}")))?;
+            .map_err(|e| {
+                if matches!(&e, octocrab::Error::GitHub { source, .. } if source.status_code == StatusCode::NOT_FOUND) {
+                    Error::GitHub(format!("PR #{number} not found in {repo}"))
+                } else {
+                    Error::GitHub(format!("fetch PR #{number} in {repo}: {e}"))
+                }
+            })?;
 
         let checks_passing = fetch_checks_passing(&self.client, owner, name, &pr.head.sha).await;
 

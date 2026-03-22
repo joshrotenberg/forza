@@ -258,7 +258,15 @@ pub async fn fetch_issue(repo: &str, number: u64) -> Result<IssueCandidate> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::GitHub(format!("gh issue view failed: {stderr}")));
+        let lower = stderr.to_lowercase();
+        if lower.contains("not found") || lower.contains("could not resolve") {
+            return Err(Error::GitHub(format!(
+                "issue #{number} not found in {repo}"
+            )));
+        }
+        return Err(Error::GitHub(format!(
+            "fetch issue #{number} in {repo}: {stderr}"
+        )));
     }
 
     let raw: GhIssue = serde_json::from_slice(&output.stdout)
@@ -659,7 +667,13 @@ pub async fn fetch_pr(repo: &str, number: u64) -> Result<PrCandidate> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::GitHub(format!("gh pr view failed: {stderr}")));
+        let lower = stderr.to_lowercase();
+        if lower.contains("not found") || lower.contains("could not resolve") {
+            return Err(Error::GitHub(format!("PR #{number} not found in {repo}")));
+        }
+        return Err(Error::GitHub(format!(
+            "fetch PR #{number} in {repo}: {stderr}"
+        )));
     }
 
     let raw: GhPrFull = serde_json::from_slice(&output.stdout)
