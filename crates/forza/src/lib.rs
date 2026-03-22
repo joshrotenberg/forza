@@ -21,6 +21,7 @@
 //! - [`RouteOutcome`]: the final outcome recorded for a completed run
 //! - [`process_pr_with_config`]: entry point for reactive PR processing
 
+pub mod adapters;
 pub mod api;
 pub mod config;
 pub mod deps;
