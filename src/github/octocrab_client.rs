@@ -58,7 +58,9 @@ impl OctocrabClient {
 
         let client = OctocrabBuilder::new_empty()
             .with_service(http_client)
-            .with_layer(&BaseUriLayer::new(Uri::from_static("https://api.github.com")))
+            .with_layer(&BaseUriLayer::new(Uri::from_static(
+                "https://api.github.com",
+            )))
             .with_layer(&ExtraHeadersLayer::new(Arc::new(vec![
                 (USER_AGENT, "octocrab".parse().unwrap()),
                 (AUTHORIZATION, auth_header),
