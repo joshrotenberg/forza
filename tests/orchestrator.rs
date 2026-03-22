@@ -203,18 +203,15 @@ async fn worktree_cleaned_up_after_run() {
     .await;
 
     // Worktree directory should be cleaned up.
-    let worktrees = std::fs::read_dir(repo_dir.join(".worktrees"));
-    match worktrees {
-        Ok(entries) => {
-            let remaining: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-            assert!(
-                remaining.is_empty(),
-                "worktree should be cleaned up, found: {:?}",
-                remaining.iter().map(|e| e.path()).collect::<Vec<_>>()
-            );
-        }
-        Err(_) => {} // .worktrees dir doesn't exist = clean
+    if let Ok(entries) = std::fs::read_dir(repo_dir.join(".worktrees")) {
+        let remaining: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+        assert!(
+            remaining.is_empty(),
+            "worktree should be cleaned up, found: {:?}",
+            remaining.iter().map(|e| e.path()).collect::<Vec<_>>()
+        );
     }
+    // .worktrees dir doesn't exist = clean
 }
 
 #[test]
