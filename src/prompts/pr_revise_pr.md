@@ -1,3 +1,5 @@
+{preamble}
+
 Update PR #{pr_number} in {repo} to incorporate review feedback or resolve conflicts.
 
 PR title: {pr_title}

@@ -1,3 +1,5 @@
+{preamble}
+
 Review PR #{pr_number} in {repo}.
 
 PR title: {pr_title}

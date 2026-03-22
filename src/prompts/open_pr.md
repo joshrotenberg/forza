@@ -1,3 +1,5 @@
+{preamble}
+
 Create a pull request for issue #{issue_number}.
 
 ## Steps
