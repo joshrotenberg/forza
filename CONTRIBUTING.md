@@ -70,6 +70,8 @@ Use the GitHub issue templates:
 - **Bug report** — unexpected behavior with steps to reproduce
 - **Feature request** — describe the use case and desired outcome
 
+If you are filing an issue with the intent of having forza implement it automatically, see [Writing issues for forza](README.md#writing-issues-for-forza) in the README for guidance on acceptance criteria, affected files, and other fields that improve implementation quality.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same terms as the project: MIT OR Apache-2.0.
