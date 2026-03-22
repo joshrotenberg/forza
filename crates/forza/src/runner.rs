@@ -599,7 +599,20 @@ fn to_core_stage_kind(kind: crate::workflow::StageKind) -> forza_core::StageKind
     }
 }
 
-/// Generate a branch name from the pattern.
+/// Generate a branch name from a pattern by substituting issue metadata.
+///
+/// The pattern supports two placeholders:
+/// - `{issue}` — replaced with the issue or PR number.
+/// - `{slug}` — replaced with a URL-safe slug derived from `title`: lowercased,
+///   non-alphanumeric characters converted to hyphens, consecutive hyphens collapsed,
+///   and truncated to 40 characters (trimming any trailing hyphen).
+///
+/// # Examples
+///
+/// ```
+/// // "automation/{issue}-{slug}" with number=42, title="Fix the bug"
+/// // → "automation/42-fix-the-bug"
+/// ```
 fn generate_branch(pattern: &str, number: u64, title: &str) -> String {
     let slug: String = title
         .to_lowercase()
