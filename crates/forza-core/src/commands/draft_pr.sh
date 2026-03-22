@@ -4,8 +4,10 @@
 # If draft creation fails (e.g., no diff from main), exits 0 so the
 # optional stage doesn't block the workflow.
 
-# Stage breadcrumb files if they exist.
-git add -A .forza/ .plan_breadcrumb.md 2>/dev/null
+# Stage breadcrumb files if they exist (add separately so one missing path
+# doesn't prevent the other from being staged).
+git add .plan_breadcrumb.md 2>/dev/null
+git add -A .forza/ 2>/dev/null
 
 # Commit only if there are staged changes.
 git diff --cached --quiet || git commit -m "plan: issue #$FORZA_SUBJECT_NUMBER"
