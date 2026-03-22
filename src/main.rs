@@ -47,7 +47,7 @@ enum Command {
     Clean(CleanArgs),
     /// Serve the REST API.
     Serve(ServeArgs),
-    /// Start the MCP server (stdio transport).
+    /// Start the MCP server (stdio or HTTP/SSE transport).
     Mcp(McpArgs),
 }
 
@@ -162,7 +162,17 @@ struct StatusArgs {
 }
 
 #[derive(Debug, Parser)]
-struct McpArgs {}
+struct McpArgs {
+    /// Use HTTP/SSE transport instead of stdio.
+    #[arg(long)]
+    http: bool,
+    /// Host address to bind to (HTTP mode only).
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+    /// Port to listen on (HTTP mode only).
+    #[arg(long, default_value_t = 8080)]
+    port: u16,
+}
 
 #[derive(Debug, Parser)]
 struct CleanArgs {
@@ -292,7 +302,7 @@ async fn main() -> ExitCode {
         Command::Fix(args) => cmd_fix(args, &config, &gh, &git).await,
         Command::Clean(args) => cmd_clean(args, &config, &git).await,
         Command::Serve(args) => cmd_serve(args, config, gh, git).await,
-        Command::Mcp(_args) => cmd_mcp(&config, gh, git).await,
+        Command::Mcp(args) => cmd_mcp(args, &config, gh, git).await,
     }
 }
 
@@ -1245,16 +1255,25 @@ async fn cmd_serve(
 }
 
 async fn cmd_mcp(
+    args: McpArgs,
     config: &forza::RunnerConfig,
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
     git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
     let sd = state_dir();
-    let state = forza::mcp::AppState::new(config.clone(), sd, gh, git);
-    let router = forza::mcp::build_router(state);
-    if let Err(e) = tower_mcp::StdioTransport::new(router).run().await {
-        eprintln!("mcp server error: {e}");
-        return ExitCode::FAILURE;
+    if args.http {
+        info!(host = %args.host, port = args.port, "MCP HTTP/SSE server listening");
+        if let Err(e) = forza::mcp::serve_http(config.clone(), sd, gh, git, &args.host, args.port).await {
+            eprintln!("mcp server error: {e}");
+            return ExitCode::FAILURE;
+        }
+    } else {
+        let state = forza::mcp::AppState::new(config.clone(), sd, gh, git);
+        let router = forza::mcp::build_router(state);
+        if let Err(e) = tower_mcp::StdioTransport::new(router).run().await {
+            eprintln!("mcp server error: {e}");
+            return ExitCode::FAILURE;
+        }
     }
     ExitCode::SUCCESS
 }

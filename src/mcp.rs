@@ -18,7 +18,7 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tower_mcp::extract::{Json, State};
-use tower_mcp::{CallToolResult, McpRouter, StdioTransport, ToolBuilder};
+use tower_mcp::{CallToolResult, HttpTransport, McpRouter, StdioTransport, ToolBuilder};
 
 use crate::config::{Route, RunnerConfig};
 
@@ -480,6 +480,32 @@ pub async fn serve(
     let router = build_router(state);
     StdioTransport::new(router)
         .run()
+        .await
+        .map_err(|e| crate::error::Error::State(e.to_string()))
+}
+
+/// Start the MCP server on HTTP/SSE transport.
+pub async fn serve_http(
+    config: RunnerConfig,
+    state_dir: PathBuf,
+    gh: Arc<dyn crate::github::GitHubClient>,
+    git: Arc<dyn crate::git::GitClient>,
+    host: &str,
+    port: u16,
+) -> crate::error::Result<()> {
+    let state = AppState::new(config, state_dir, gh, git);
+    let mcp_router = build_router(state);
+    let app = HttpTransport::new(mcp_router).into_router();
+
+    let addr: std::net::SocketAddr = format!("{host}:{port}")
+        .parse()
+        .map_err(|e| crate::error::Error::State(format!("invalid address {host}:{port}: {e}")))?;
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| crate::error::Error::State(format!("could not bind to {addr}: {e}")))?;
+
+    axum::serve(listener, app)
         .await
         .map_err(|e| crate::error::Error::State(e.to_string()))
 }
