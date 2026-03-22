@@ -946,31 +946,60 @@ pub async fn process_batch_for_repo(
                     continue;
                 }
 
-                // Check retry budget.
-                if let Some(max) = route.max_retries {
-                    let workflow_name = route.workflow.as_deref().unwrap_or("");
-                    let prior_runs =
-                        state::count_failed_runs_for_subject(pr.number, workflow_name, state_dir);
-                    if prior_runs >= max {
-                        warn!(
+                // Check retry budget and exponential backoff.
+                let workflow_name = route.workflow.as_deref().unwrap_or("");
+                let prior_fails =
+                    state::count_failed_runs_for_subject(pr.number, workflow_name, state_dir);
+                if let Some(max) = route.max_retries
+                    && prior_fails >= max
+                {
+                    warn!(
+                        pr = pr.number,
+                        route = route_name,
+                        prior_fails = prior_fails,
+                        max_retries = max,
+                        "retry budget exhausted, applying needs-human label"
+                    );
+                    let _ = gh.add_pr_label(repo, pr.number, "forza:needs-human").await;
+                    let _ = gh
+                        .comment_on_pr(
+                            repo,
+                            pr.number,
+                            &format!(
+                                "Retry budget exhausted for route `{route_name}` \
+                             ({prior_fails}/{max} attempts). Applying `forza:needs-human` \
+                             for manual review."
+                            ),
+                        )
+                        .await;
+                    continue;
+                }
+
+                // Exponential backoff: if there are prior failures, wait before retrying.
+                // backoff_secs = poll_interval * 2^(prior_fails - 1), capped at 2^6 = 64x.
+                if prior_fails > 0
+                    && let Some(last) = state::find_last_completed_run_for_subject(
+                        pr.number,
+                        workflow_name,
+                        state_dir,
+                    )
+                    && let Some(completed_at) = last.completed_at
+                {
+                    let exponent = (prior_fails - 1).min(6) as u32;
+                    let backoff_secs = route.poll_interval * 2u64.pow(exponent);
+                    let elapsed = chrono::Utc::now()
+                        .signed_duration_since(completed_at)
+                        .num_seconds()
+                        .max(0) as u64;
+                    if elapsed < backoff_secs {
+                        tracing::debug!(
                             pr = pr.number,
                             route = route_name,
-                            prior_runs = prior_runs,
-                            max_retries = max,
-                            "retry budget exhausted, applying needs-human label"
+                            prior_fails = prior_fails,
+                            elapsed_secs = elapsed,
+                            backoff_secs = backoff_secs,
+                            "skipping PR: within exponential backoff window"
                         );
-                        let _ = gh.add_pr_label(repo, pr.number, "forza:needs-human").await;
-                        let _ = gh
-                            .comment_on_pr(
-                                repo,
-                                pr.number,
-                                &format!(
-                                    "Retry budget exhausted for route `{route_name}` \
-                                 ({prior_runs}/{max} attempts). Applying `forza:needs-human` \
-                                 for manual review."
-                                ),
-                            )
-                            .await;
                         continue;
                     }
                 }

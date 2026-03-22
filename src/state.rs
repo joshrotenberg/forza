@@ -327,6 +327,20 @@ pub fn find_latest_run_for_issue(
         .find(|r| r.issue_number == issue_number)
 }
 
+/// Find the most recent completed run for a given PR number and workflow.
+///
+/// Returns the first (most recent, since `load_all_runs` sorts descending by `started_at`)
+/// record that has a `completed_at` timestamp, matching both `issue_number` and `workflow`.
+pub fn find_last_completed_run_for_subject(
+    pr_number: u64,
+    workflow: &str,
+    state_dir: &std::path::Path,
+) -> Option<RunRecord> {
+    load_all_runs(state_dir)
+        .into_iter()
+        .find(|r| r.issue_number == pr_number && r.workflow == workflow && r.completed_at.is_some())
+}
+
 /// Count completed runs for a given issue/PR number with a specific workflow.
 pub fn count_runs_for_subject(
     issue_number: u64,

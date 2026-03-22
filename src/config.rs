@@ -284,6 +284,10 @@ pub enum RouteCondition {
     /// CI is green, no conflicts, and no CHANGES_REQUESTED review decision.
     /// Does not require an explicit APPROVED decision — branch protection is the real gate.
     CiGreenNoObjections,
+    /// Matches any PR that needs attention: CI failing, has conflicts, or CI green with no
+    /// objections (ready to merge). Combines `CiFailingOrConflicts` and `CiGreenNoObjections`
+    /// into a single route to prevent ping-pong between two condition routes.
+    AnyActionable,
 }
 
 impl RouteCondition {
@@ -317,6 +321,9 @@ impl RouteCondition {
             RouteCondition::CiFailingOrConflicts => ci_failing || has_conflicts,
             RouteCondition::ApprovedAndGreen => approved && ci_green && !has_conflicts,
             RouteCondition::CiGreenNoObjections => ci_green && !has_conflicts && !changes_requested,
+            RouteCondition::AnyActionable => {
+                ci_failing || has_conflicts || ci_green && !changes_requested
+            }
         }
     }
 }
@@ -1660,6 +1667,47 @@ max_retries = 3
         pr.review_decision = None;
         pr.checks_passing = Some(false);
         assert!(!RouteCondition::CiGreenNoObjections.matches(&pr));
+    }
+
+    #[test]
+    fn condition_matches_any_actionable() {
+        let mut pr = crate::github::PrCandidate {
+            number: 1,
+            repo: "owner/repo".into(),
+            title: "test".into(),
+            body: String::new(),
+            labels: vec![],
+            state: "open".into(),
+            html_url: String::new(),
+            head_branch: "automation/1-test".into(),
+            base_branch: "main".into(),
+            is_draft: false,
+            mergeable: Some("MERGEABLE".into()),
+            review_decision: None,
+            checks_passing: Some(false),
+        };
+        // CI failing → matches
+        assert!(RouteCondition::AnyActionable.matches(&pr));
+
+        // Has conflicts → matches
+        pr.checks_passing = Some(true);
+        pr.mergeable = Some("CONFLICTING".into());
+        assert!(RouteCondition::AnyActionable.matches(&pr));
+
+        // CI green, no conflicts, no objections → matches (ready to merge)
+        pr.mergeable = Some("MERGEABLE".into());
+        pr.checks_passing = Some(true);
+        pr.review_decision = None;
+        assert!(RouteCondition::AnyActionable.matches(&pr));
+
+        // CI green, no conflicts, but CHANGES_REQUESTED → does not match
+        pr.review_decision = Some("CHANGES_REQUESTED".into());
+        assert!(!RouteCondition::AnyActionable.matches(&pr));
+
+        // CI not yet resolved (None), no conflicts → does not match
+        pr.review_decision = None;
+        pr.checks_passing = None;
+        assert!(!RouteCondition::AnyActionable.matches(&pr));
     }
 
     #[test]

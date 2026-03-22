@@ -990,6 +990,7 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
                     }
                     forza::config::RouteCondition::ApprovedAndGreen => "approved_and_green",
                     forza::config::RouteCondition::CiGreenNoObjections => "ci_green_no_objections",
+                    forza::config::RouteCondition::AnyActionable => "any_actionable",
                 };
                 println!("    Trigger:    condition {cond_name}");
                 println!("    Poll:       {}s", route.poll_interval);
