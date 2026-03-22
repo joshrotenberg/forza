@@ -878,7 +878,7 @@ async fn cmd_run(
         if *cancel_rx.borrow() {
             break;
         }
-        let mut records = forza::orchestrator::process_batch_for_repo(
+        let mut runs = forza::runner::process_batch(
             repo,
             config,
             &sd,
@@ -889,18 +889,18 @@ async fn cmd_run(
             git.clone(),
         )
         .await;
-        all_records.append(&mut records);
+        all_records.append(&mut runs);
     }
     let records = all_records;
 
     println!();
     let succeeded = records
         .iter()
-        .filter(|r| r.status == forza::state::RunStatus::Succeeded)
+        .filter(|r| r.status == forza_core::RunStatus::Succeeded)
         .count();
     let failed = records
         .iter()
-        .filter(|r| r.status == forza::state::RunStatus::Failed)
+        .filter(|r| r.status == forza_core::RunStatus::Failed)
         .count();
     println!(
         "Processed {} issues: {succeeded} succeeded, {failed} failed",
@@ -909,7 +909,7 @@ async fn cmd_run(
 
     if records
         .iter()
-        .all(|r| r.status == forza::state::RunStatus::Succeeded)
+        .all(|r| r.status == forza_core::RunStatus::Succeeded)
     {
         ExitCode::SUCCESS
     } else {
@@ -1037,7 +1037,7 @@ async fn cmd_watch(
         handles.push(tokio::spawn(async move {
             info!(repo = repo, "starting repo watch loop");
             loop {
-                let records = forza::orchestrator::process_batch_for_repo(
+                let records = forza::runner::process_batch(
                     &repo,
                     &config_clone,
                     &sd_clone,
@@ -1051,7 +1051,7 @@ async fn cmd_watch(
                 if !records.is_empty() {
                     let succeeded = records
                         .iter()
-                        .filter(|r| r.status == forza::state::RunStatus::Succeeded)
+                        .filter(|r| r.status == forza_core::RunStatus::Succeeded)
                         .count();
                     info!(
                         repo = repo,
