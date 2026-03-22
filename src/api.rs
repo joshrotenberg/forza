@@ -455,6 +455,9 @@ mod tests {
         async fn stage_tracked(&self, _: &Path) -> crate::error::Result<()> {
             unimplemented!()
         }
+        async fn stage_path(&self, _: &Path, _: &str) -> crate::error::Result<()> {
+            unimplemented!()
+        }
         async fn commit(&self, _: &Path, _: &str) -> crate::error::Result<()> {
             unimplemented!()
         }

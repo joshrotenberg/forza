@@ -138,6 +138,12 @@ impl GitClient for GixClient {
         Ok(())
     }
 
+    async fn stage_path(&self, work_dir: &Path, path: &str) -> Result<()> {
+        // gix index manipulation is complex — use CLI.
+        let _ = git_cli(&["add", path], work_dir).await?;
+        Ok(())
+    }
+
     async fn commit(&self, work_dir: &Path, message: &str) -> Result<()> {
         // gix commit creation requires tree building — use CLI.
         let _ = git_cli(&["commit", "-m", message], work_dir).await?;

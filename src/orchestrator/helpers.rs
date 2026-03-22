@@ -623,6 +623,20 @@ pub(super) async fn create_early_draft_pr(
     gh: &dyn GitHubClient,
     git: &dyn GitClient,
 ) -> Result<github::PullRequest> {
+    // Stage and commit the plan breadcrumb so the branch has at least one commit
+    // diverging from main — GitHub requires a diff to create a PR.
+    let breadcrumbs_dir = work_dir.join(".forza").join("breadcrumbs");
+    if breadcrumbs_dir.exists() {
+        if let Err(e) = git.stage_path(work_dir, ".forza/breadcrumbs/").await {
+            warn!(error = %e, "failed to stage breadcrumbs (non-fatal)");
+        } else if let Err(e) = git
+            .commit(work_dir, &format!("plan: {}", issue.title))
+            .await
+        {
+            warn!(error = %e, "failed to commit plan breadcrumb (non-fatal)");
+        }
+    }
+
     // Push the branch so a PR can be created.
     git.push(work_dir, branch).await?;
 

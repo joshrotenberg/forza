@@ -57,6 +57,9 @@ pub trait GitClient: Send + Sync {
     /// Stage all tracked file changes.
     async fn stage_tracked(&self, work_dir: &Path) -> Result<()>;
 
+    /// Stage a specific path (tracked or untracked).
+    async fn stage_path(&self, work_dir: &Path, path: &str) -> Result<()>;
+
     /// Create a commit with the given message.
     async fn commit(&self, work_dir: &Path, message: &str) -> Result<()>;
 
