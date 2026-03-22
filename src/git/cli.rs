@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use tracing::warn;
 
 use super::GitClient;
 use crate::error::{Error, Result};
@@ -58,7 +59,9 @@ impl GitClient for GitCliClient {
         let worktree_dir = repo_dir.join(worktree_base).join(&dir_name);
 
         // Fetch to ensure we have latest refs.
-        let _ = git(&["fetch", "origin"], repo_dir).await;
+        if let Err(e) = git(&["fetch", "origin"], repo_dir).await {
+            warn!(error = %e, "fetch origin failed (non-fatal)");
+        }
 
         // Check if branch already exists on remote or locally.
         let remote_ref = format!("origin/{branch}");
