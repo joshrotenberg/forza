@@ -145,6 +145,11 @@ impl GitClient for GitCliClient {
         Ok(())
     }
 
+    async fn stage_path(&self, work_dir: &Path, path: &str) -> Result<()> {
+        let _ = git(&["add", path], work_dir).await?;
+        Ok(())
+    }
+
     async fn commit(&self, work_dir: &Path, message: &str) -> Result<()> {
         let _ = git(&["commit", "-m", message], work_dir).await?;
         Ok(())
