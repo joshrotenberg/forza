@@ -174,7 +174,7 @@ struct WatchArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza status\n  forza status --all\n  forza status --run-id <id>\n  forza status --summary"
+    after_long_help = "Examples:\n  forza status\n  forza status --all\n  forza status --run-id <id>\n  forza status --detailed"
 )]
 struct StatusArgs {
     /// Show a specific run by ID.
