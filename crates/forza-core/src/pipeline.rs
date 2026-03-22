@@ -201,7 +201,16 @@ pub async fn execute(
                 },
             );
             all_succeeded = false;
-            run_finally_hooks(config, stage_name, work_dir, &work.subject, &run_id, &work.route_name, &work.workflow_name).await;
+            run_finally_hooks(
+                config,
+                stage_name,
+                work_dir,
+                &work.subject,
+                &run_id,
+                &work.route_name,
+                &work.workflow_name,
+            )
+            .await;
             break;
         }
 
@@ -234,18 +243,9 @@ pub async fn execute(
                 }
             }
             Execution::Agent => {
-                let model = stage
-                    .model
-                    .as_deref()
-                    .or(config.model.as_deref());
-                let skills = stage
-                    .skills
-                    .as_ref()
-                    .unwrap_or(&config.skills);
-                let mcp = stage
-                    .mcp_config
-                    .as_deref()
-                    .or(config.mcp_config.as_deref());
+                let model = stage.model.as_deref().or(config.model.as_deref());
+                let skills = stage.skills.as_ref().unwrap_or(&config.skills);
+                let mcp = stage.mcp_config.as_deref().or(config.mcp_config.as_deref());
 
                 match agent
                     .execute(
@@ -320,12 +320,30 @@ pub async fn execute(
                 last.status = StageStatus::Failed;
             }
             all_succeeded = false;
-            run_finally_hooks(config, stage_name, work_dir, &work.subject, &run_id, &work.route_name, &work.workflow_name).await;
+            run_finally_hooks(
+                config,
+                stage_name,
+                work_dir,
+                &work.subject,
+                &run_id,
+                &work.route_name,
+                &work.workflow_name,
+            )
+            .await;
             break;
         }
 
         // Finally hooks (always).
-        run_finally_hooks(config, stage_name, work_dir, &work.subject, &run_id, &work.route_name, &work.workflow_name).await;
+        run_finally_hooks(
+            config,
+            stage_name,
+            work_dir,
+            &work.subject,
+            &run_id,
+            &work.route_name,
+            &work.workflow_name,
+        )
+        .await;
 
         // Load breadcrumb for next stage.
         pending_breadcrumb = load_breadcrumb(&run_id, stage_name, work_dir).await;
@@ -392,7 +410,9 @@ pub async fn execute(
         run.outcome = Some(if !all_succeeded {
             let failed = run.failed_stage();
             Outcome::Failed {
-                stage: failed.map(|s| s.kind_name().to_string()).unwrap_or_default(),
+                stage: failed
+                    .map(|s| s.kind_name().to_string())
+                    .unwrap_or_default(),
                 error: failed
                     .and_then(|s| s.result.as_ref())
                     .map(|r| r.output.chars().take(200).collect())
@@ -458,14 +478,8 @@ async fn load_breadcrumb(run_id: &str, stage_name: &str, work_dir: &Path) -> Opt
 }
 
 /// Create a worktree for isolated execution.
-async fn create_worktree(
-    repo_dir: &Path,
-    branch: &str,
-    git: &dyn GitClient,
-) -> Result<PathBuf> {
-    let worktree_dir = repo_dir
-        .join(".worktrees")
-        .join(branch.replace('/', "-"));
+async fn create_worktree(repo_dir: &Path, branch: &str, git: &dyn GitClient) -> Result<PathBuf> {
+    let worktree_dir = repo_dir.join(".worktrees").join(branch.replace('/', "-"));
     git.create_worktree(repo_dir, branch, &worktree_dir).await?;
     Ok(worktree_dir)
 }
@@ -541,11 +555,7 @@ mod tests {
     #[tokio::test]
     async fn load_breadcrumb_reads_file() {
         let dir = tempfile::tempdir().unwrap();
-        let bc_dir = dir
-            .path()
-            .join(".forza")
-            .join("breadcrumbs")
-            .join("run-1");
+        let bc_dir = dir.path().join(".forza").join("breadcrumbs").join("run-1");
         std::fs::create_dir_all(&bc_dir).unwrap();
         std::fs::write(bc_dir.join("plan.md"), "# Plan\nDo the thing.").unwrap();
 

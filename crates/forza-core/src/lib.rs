@@ -46,7 +46,7 @@ pub mod traits;
 pub use condition::RouteCondition;
 pub use error::{Error, Result};
 pub use route::{MatchedWork, Route, Scope, Trigger};
-pub use run::{generate_run_id, Outcome, Run, RunStatus, StageRecord, StageResult, StageStatus};
+pub use run::{Outcome, Run, RunStatus, StageRecord, StageResult, StageStatus, generate_run_id};
 pub use stage::{Execution, Stage, StageKind, Workflow};
 pub use subject::{Subject, SubjectKind};
 pub use traits::{AgentExecutor, GitClient, GitHubClient};

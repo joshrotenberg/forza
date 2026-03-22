@@ -276,7 +276,16 @@ async fn trigger_issue(
     let git = state.git.clone();
     tokio::spawn(async move {
         match crate::runner::process_issue(
-            number, &repo, &config, &routes, &state_dir, &rd, gh, git, None, vec![],
+            number,
+            &repo,
+            &config,
+            &routes,
+            &state_dir,
+            &rd,
+            gh,
+            git,
+            None,
+            vec![],
         )
         .await
         {
@@ -351,7 +360,17 @@ async fn trigger_pr(
     let git = state.git.clone();
     tokio::spawn(async move {
         match crate::runner::process_pr(
-            number, &repo, &config, &routes, &state_dir, &rd, gh, git, None, vec![], None,
+            number,
+            &repo,
+            &config,
+            &routes,
+            &state_dir,
+            &rd,
+            gh,
+            git,
+            None,
+            vec![],
+            None,
         )
         .await
         {

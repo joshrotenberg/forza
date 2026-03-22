@@ -1742,7 +1742,11 @@ fn print_core_run(run: &forza_core::Run) -> ExitCode {
             .as_ref()
             .map(|r| format!("  {:.0}s", r.duration_secs))
             .unwrap_or_default();
-        println!("  {:<15} {:?}{duration}{cost}", stage.kind_name(), stage.status);
+        println!(
+            "  {:<15} {:?}{duration}{cost}",
+            stage.kind_name(),
+            stage.status
+        );
     }
     if let Some(pr) = run.pr_number {
         println!("PR: #{pr}");

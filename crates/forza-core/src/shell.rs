@@ -140,7 +140,15 @@ mod tests {
     #[tokio::test]
     async fn run_simple_command() {
         let subject = make_subject();
-        let result = run("echo hello", Path::new("/tmp"), &subject, "run-1", "test", "bug").await;
+        let result = run(
+            "echo hello",
+            Path::new("/tmp"),
+            &subject,
+            "run-1",
+            "test",
+            "bug",
+        )
+        .await;
         assert!(result.success);
         assert!(result.output.contains("hello"));
     }
@@ -148,7 +156,15 @@ mod tests {
     #[tokio::test]
     async fn run_failing_command() {
         let subject = make_subject();
-        let result = run("exit 1", Path::new("/tmp"), &subject, "run-1", "test", "bug").await;
+        let result = run(
+            "exit 1",
+            Path::new("/tmp"),
+            &subject,
+            "run-1",
+            "test",
+            "bug",
+        )
+        .await;
         assert!(!result.success);
         assert_eq!(result.exit_code, Some(1));
     }
@@ -259,8 +275,15 @@ mod tests {
     #[tokio::test]
     async fn duration_is_measured() {
         let subject = make_subject();
-        let result =
-            run("sleep 0.01", Path::new("/tmp"), &subject, "run-1", "test", "bug").await;
+        let result = run(
+            "sleep 0.01",
+            Path::new("/tmp"),
+            &subject,
+            "run-1",
+            "test",
+            "bug",
+        )
+        .await;
         assert!(result.duration.as_millis() >= 10);
     }
 }

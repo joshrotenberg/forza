@@ -44,11 +44,7 @@ impl Default for LifecycleLabels {
 }
 
 /// Acquire the processing lease: add in-progress, remove gate label.
-pub async fn acquire(
-    subject: &Subject,
-    labels: &LifecycleLabels,
-    gh: &dyn GitHubClient,
-) {
+pub async fn acquire(subject: &Subject, labels: &LifecycleLabels, gh: &dyn GitHubClient) {
     let repo = &subject.repo;
     let number = subject.number;
 

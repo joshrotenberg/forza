@@ -58,7 +58,6 @@ pub struct Subject {
     pub branch: String,
 
     // ── PR-specific fields (None for issues) ──────────────────────────
-
     /// GitHub mergeability state: `"MERGEABLE"`, `"CONFLICTING"`, `"UNKNOWN"`.
     pub mergeable: Option<String>,
     /// Whether CI checks are passing. `None` if checks are still running.
@@ -87,7 +86,12 @@ impl Subject {
     /// These are set on every shell invocation (agentless stages, conditions,
     /// hooks, validation commands) so that commands can reference the subject
     /// without hardcoding.
-    pub fn env_vars(&self, run_id: &str, route: &str, workflow: &str) -> Vec<(&'static str, String)> {
+    pub fn env_vars(
+        &self,
+        run_id: &str,
+        route: &str,
+        workflow: &str,
+    ) -> Vec<(&'static str, String)> {
         let mut vars = vec![
             ("FORZA_REPO", self.repo.clone()),
             ("FORZA_SUBJECT_TYPE", self.kind.as_str().to_string()),

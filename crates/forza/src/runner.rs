@@ -17,6 +17,7 @@ use indexmap::IndexMap;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
 
+use forza_core::RouteCondition;
 use forza_core::lifecycle::LifecycleLabels;
 use forza_core::pipeline::{self, PipelineConfig, StageHooks};
 use forza_core::planner;
@@ -24,7 +25,6 @@ use forza_core::route::MatchedWork;
 use forza_core::run::Run;
 use forza_core::stage::Workflow;
 use forza_core::subject::SubjectKind;
-use forza_core::RouteCondition;
 
 use crate::adapters::{self, AgentAdapter, GitAdapter, GitHubAdapter};
 use crate::config::{self, Route, RunnerConfig};
@@ -63,7 +63,11 @@ async fn discover(
                 if let Some((route_name, route)) = RunnerConfig::match_route_in(routes, issue) {
                     let wf_name = route.workflow.as_deref().unwrap_or("");
                     if config.resolve_workflow(wf_name).is_some() {
-                        let branch = generate_branch(&config.global.branch_pattern, issue.number, &issue.title);
+                        let branch = generate_branch(
+                            &config.global.branch_pattern,
+                            issue.number,
+                            &issue.title,
+                        );
                         let subject = adapters::issue_to_subject(issue, &branch);
                         work.push(MatchedWork {
                             subject,
@@ -88,9 +92,7 @@ async fn discover(
     let label_pr_routes: Vec<(&str, &Route)> = routes
         .iter()
         .filter(|(_, r)| {
-            r.route_type == config::SubjectType::Pr
-                && r.label.is_some()
-                && r.condition.is_none()
+            r.route_type == config::SubjectType::Pr && r.label.is_some() && r.condition.is_none()
         })
         .map(|(name, route)| (name.as_str(), route))
         .collect();
@@ -109,7 +111,12 @@ async fn discover(
                         })
                     })
                     .collect();
-                info!(repo, route = route_name, count = actionable.len(), "found eligible PRs");
+                info!(
+                    repo,
+                    route = route_name,
+                    count = actionable.len(),
+                    "found eligible PRs"
+                );
                 for pr in &actionable {
                     let wf_name = route.workflow.as_deref().unwrap_or("");
                     if config.resolve_workflow(wf_name).is_some() {
@@ -137,7 +144,11 @@ async fn discover(
     if !condition_routes.is_empty() {
         let all_prs = match gh.fetch_all_open_prs(repo, 100).await {
             Ok(prs) => {
-                info!(repo, count = prs.len(), "fetched open PRs for condition route evaluation");
+                info!(
+                    repo,
+                    count = prs.len(),
+                    "fetched open PRs for condition route evaluation"
+                );
                 prs
             }
             Err(e) => {
@@ -151,10 +162,16 @@ async fn discover(
             let mut matched = 0usize;
             for pr in &all_prs {
                 // Skip blocked PRs.
-                if pr.labels.iter().any(|l| {
-                    l == &config.global.in_progress_label || l == "forza:needs-human"
-                }) {
-                    debug!(pr = pr.number, route = route_name, "skipping: in-progress or needs-human");
+                if pr
+                    .labels
+                    .iter()
+                    .any(|l| l == &config.global.in_progress_label || l == "forza:needs-human")
+                {
+                    debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        "skipping: in-progress or needs-human"
+                    );
                     continue;
                 }
 
@@ -162,7 +179,11 @@ async fn discover(
                 if route.scope == config::ConditionScope::ForzaOwned
                     && !pr.head_branch.starts_with(branch_prefix)
                 {
-                    debug!(pr = pr.number, route = route_name, "skipping: outside forza_owned scope");
+                    debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        "skipping: outside forza_owned scope"
+                    );
                     continue;
                 }
 
@@ -170,17 +191,28 @@ async fn discover(
                 let subject = adapters::pr_to_subject(pr);
                 let core_condition = to_core_condition(condition);
                 if !core_condition.matches(&subject) {
-                    debug!(pr = pr.number, route = route_name, "skipping: condition not matched");
+                    debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        "skipping: condition not matched"
+                    );
                     continue;
                 }
 
                 // Retry budget + exponential backoff.
                 let wf_name = route.workflow.as_deref().unwrap_or("");
-                let prior_fails = state::count_failed_runs_for_subject(pr.number, wf_name, state_dir);
+                let prior_fails =
+                    state::count_failed_runs_for_subject(pr.number, wf_name, state_dir);
                 if let Some(max) = route.max_retries
                     && prior_fails >= max
                 {
-                    warn!(pr = pr.number, route = route_name, prior_fails, max, "retry budget exhausted");
+                    warn!(
+                        pr = pr.number,
+                        route = route_name,
+                        prior_fails,
+                        max,
+                        "retry budget exhausted"
+                    );
                     let _ = gh.add_pr_label(repo, pr.number, "forza:needs-human").await;
                     let _ = gh.comment_on_pr(repo, pr.number, &format!(
                         "Retry budget exhausted for route `{route_name}` ({prior_fails}/{max} attempts). \
@@ -190,14 +222,25 @@ async fn discover(
                 }
 
                 if prior_fails > 0
-                    && let Some(last) = state::find_last_completed_run_for_subject(pr.number, wf_name, state_dir)
+                    && let Some(last) =
+                        state::find_last_completed_run_for_subject(pr.number, wf_name, state_dir)
                     && let Some(completed_at) = last.completed_at
                 {
                     let exponent = (prior_fails - 1).min(6) as u32;
                     let backoff_secs = route.poll_interval * 2u64.pow(exponent);
-                    let elapsed = Utc::now().signed_duration_since(completed_at).num_seconds().max(0) as u64;
+                    let elapsed = Utc::now()
+                        .signed_duration_since(completed_at)
+                        .num_seconds()
+                        .max(0) as u64;
                     if elapsed < backoff_secs {
-                        debug!(pr = pr.number, route = route_name, prior_fails, elapsed, backoff_secs, "within backoff window");
+                        debug!(
+                            pr = pr.number,
+                            route = route_name,
+                            prior_fails,
+                            elapsed,
+                            backoff_secs,
+                            "within backoff window"
+                        );
                         continue;
                     }
                 }
@@ -211,7 +254,12 @@ async fn discover(
                 });
                 matched += 1;
             }
-            info!(repo, route = route_name, count = matched, "found eligible PRs for condition route");
+            info!(
+                repo,
+                route = route_name,
+                count = matched,
+                "found eligible PRs for condition route"
+            );
         }
     }
 
@@ -432,10 +480,7 @@ fn resolve_workflow(config: &RunnerConfig, name: &str) -> Option<Workflow> {
 
 /// Build a PipelineConfig from the runner config + route overrides.
 fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineConfig {
-    let validation = config
-        .validation
-        .commands
-        .clone();
+    let validation = config.validation.commands.clone();
 
     let labels = LifecycleLabels {
         in_progress: config.global.in_progress_label.clone(),
@@ -446,14 +491,23 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
     };
 
     // Resolve model: route > global.
-    let model = work.route.model.clone()
+    let model = work
+        .route
+        .model
+        .clone()
         .or_else(|| config.global.model.clone());
 
     // Resolve skills: route > global.
-    let skills = work.route.skills.clone()
+    let skills = work
+        .route
+        .skills
+        .clone()
         .unwrap_or_else(|| config.agent_config.skills.clone());
 
-    let mcp_config = work.route.mcp_config.clone()
+    let mcp_config = work
+        .route
+        .mcp_config
+        .clone()
         .or_else(|| config.agent_config.mcp_config.clone());
 
     let append_system_prompt = config.agent_config.append_system_prompt.clone();
@@ -622,10 +676,12 @@ pub async fn process_issue(
         .await
         .map_err(|e| forza_core::Error::GitHub(e.to_string()))?;
 
-    let (route_name, route) = RunnerConfig::match_route_in(routes, &issue)
-        .ok_or_else(|| forza_core::Error::NoMatchingRoute(format!(
-            "no route matches issue #{number} (labels: {:?})", issue.labels
-        )))?;
+    let (route_name, route) = RunnerConfig::match_route_in(routes, &issue).ok_or_else(|| {
+        forza_core::Error::NoMatchingRoute(format!(
+            "no route matches issue #{number} (labels: {:?})",
+            issue.labels
+        ))
+    })?;
 
     let wf_name = route.workflow.as_deref().unwrap_or("");
     let branch = generate_branch(&config.global.branch_pattern, number, &issue.title);
@@ -651,8 +707,15 @@ pub async fn process_issue(
     let agent = AgentAdapter;
 
     Ok(execute_work(
-        matched, config, state_dir, repo_dir, &*gh_adapter, &*git_adapter, &agent,
-    ).await)
+        matched,
+        config,
+        state_dir,
+        repo_dir,
+        &*gh_adapter,
+        &*git_adapter,
+        &agent,
+    )
+    .await)
 }
 
 /// Process a single PR by number. Used by `forza pr`.
@@ -681,10 +744,12 @@ pub async fn process_pr(
     {
         (rn.as_str(), r)
     } else {
-        RunnerConfig::match_pr_route_in(routes, &pr)
-            .ok_or_else(|| forza_core::Error::NoMatchingRoute(format!(
-                "no route matches PR #{number} (labels: {:?})", pr.labels
-            )))?
+        RunnerConfig::match_pr_route_in(routes, &pr).ok_or_else(|| {
+            forza_core::Error::NoMatchingRoute(format!(
+                "no route matches PR #{number} (labels: {:?})",
+                pr.labels
+            ))
+        })?
     };
 
     let wf_name = route.workflow.as_deref().unwrap_or("");
@@ -709,8 +774,15 @@ pub async fn process_pr(
     let agent = AgentAdapter;
 
     Ok(execute_work(
-        matched, config, state_dir, repo_dir, &*gh_adapter, &*git_adapter, &agent,
-    ).await)
+        matched,
+        config,
+        state_dir,
+        repo_dir,
+        &*gh_adapter,
+        &*git_adapter,
+        &agent,
+    )
+    .await)
 }
 
 #[cfg(test)]

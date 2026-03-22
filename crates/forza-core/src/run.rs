@@ -432,7 +432,10 @@ mod tests {
 
     #[test]
     fn outcome_display() {
-        assert_eq!(Outcome::PrCreated { number: 42 }.to_string(), "pr_created (#42)");
+        assert_eq!(
+            Outcome::PrCreated { number: 42 }.to_string(),
+            "pr_created (#42)"
+        );
         assert_eq!(Outcome::NothingToDo.to_string(), "nothing_to_do");
         assert_eq!(
             Outcome::Failed {
@@ -442,7 +445,10 @@ mod tests {
             .to_string(),
             "failed (stage: implement)"
         );
-        assert_eq!(Outcome::Exhausted { retries: 3 }.to_string(), "exhausted (3 retries)");
+        assert_eq!(
+            Outcome::Exhausted { retries: 3 }.to_string(),
+            "exhausted (3 retries)"
+        );
     }
 
     #[test]

@@ -69,9 +69,7 @@ impl RouteCondition {
             RouteCondition::HasConflicts => has_conflicts,
             RouteCondition::CiFailingOrConflicts => ci_failing || has_conflicts,
             RouteCondition::ApprovedAndGreen => approved && ci_green && !has_conflicts,
-            RouteCondition::CiGreenNoObjections => {
-                ci_green && !has_conflicts && !changes_requested
-            }
+            RouteCondition::CiGreenNoObjections => ci_green && !has_conflicts && !changes_requested,
         }
     }
 }

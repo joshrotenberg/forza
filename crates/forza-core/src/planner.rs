@@ -59,7 +59,14 @@ pub fn generate_prompts(
 
             let has_successor = i < stage_count - 1;
             let template = select_template(stage.kind, subject.kind);
-            substitute(template, subject, run_id, validation_commands, preamble, has_successor)
+            substitute(
+                template,
+                subject,
+                run_id,
+                validation_commands,
+                preamble,
+                has_successor,
+            )
         })
         .collect()
 }
@@ -133,10 +140,7 @@ fn substitute(
         subject.body
     );
 
-    let issue_context = format!(
-        "Title: {}\n\n{}",
-        subject.title, issue_body_wrapped
-    );
+    let issue_context = format!("Title: {}\n\n{}", subject.title, issue_body_wrapped);
 
     let commit_num = if validation_commands.is_empty() {
         "\n4"
@@ -155,7 +159,10 @@ fn substitute(
         .replace("{issue_context}", &issue_context)
         .replace("{branch}", &subject.branch)
         .replace("{head_branch}", &subject.branch)
-        .replace("{base_branch}", subject.base_branch.as_deref().unwrap_or("main"))
+        .replace(
+            "{base_branch}",
+            subject.base_branch.as_deref().unwrap_or("main"),
+        )
         .replace("{repo}", &subject.repo)
         .replace("{run_id}", run_id)
         .replace("{validation_step}", &validation_step)
@@ -336,7 +343,11 @@ mod tests {
         let issue = make_issue();
         let pr = make_pr();
         for wf in Workflow::builtins() {
-            let subject = if wf.name.starts_with("pr-") { &pr } else { &issue };
+            let subject = if wf.name.starts_with("pr-") {
+                &pr
+            } else {
+                &issue
+            };
             let prompts = generate_prompts(subject, &wf, "run-1", &[], "");
             assert_eq!(
                 prompts.len(),
