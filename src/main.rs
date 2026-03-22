@@ -177,7 +177,7 @@ struct WatchArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza status\n  forza status --all\n  forza status --run-id <id>\n  forza status --summary"
+    after_long_help = "Examples:\n  forza status\n  forza status --all\n  forza status --run-id <id>\n  forza status --detailed"
 )]
 struct StatusArgs {
     /// Show a specific run by ID.
@@ -186,9 +186,12 @@ struct StatusArgs {
     /// Show all runs as a history table (sorted newest first).
     #[arg(long)]
     all: bool,
-    /// Show per-workflow aggregate summary.
+    /// Show latest run detail (old default behavior).
     #[arg(long)]
-    summary: bool,
+    detailed: bool,
+    /// Filter dashboard to a single workflow.
+    #[arg(long)]
+    workflow: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -1242,8 +1245,118 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn format_time_ago(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let secs = (chrono::Utc::now() - dt).num_seconds().max(0);
+    if secs < 3600 {
+        format!("{}m ago", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h ago", secs / 3600)
+    } else {
+        format!("{}d ago", secs / 86400)
+    }
+}
+
+fn print_status_dashboard(sd: &std::path::Path, workflow_filter: Option<&str>) -> ExitCode {
+    let mut summaries = forza::state::summarize_by_workflow(sd);
+    if let Some(filter) = workflow_filter {
+        summaries.retain(|s| s.workflow == filter);
+    }
+    if summaries.is_empty() {
+        eprintln!("no runs found");
+        return ExitCode::FAILURE;
+    }
+
+    println!("forza {}", env!("CARGO_PKG_VERSION"));
+    let sep = "─".repeat(53);
+    println!(
+        "{:<20}  {:>6}  {:>6}  {:>6}  {:>9}",
+        "Workflows", "Runs", "Pass", "Fail", "Avg Cost"
+    );
+    println!("{sep}");
+
+    let (mut total_runs, mut total_pass, mut total_fail) = (0usize, 0usize, 0usize);
+    let mut total_cost_sum = 0f64;
+    let mut total_cost_count = 0usize;
+
+    for s in &summaries {
+        let avg = s
+            .avg_cost
+            .map(|c| format!("${c:.2}"))
+            .unwrap_or_else(|| "-".into());
+        println!(
+            "{:<20}  {:>6}  {:>6}  {:>6}  {:>9}",
+            s.workflow, s.total_runs, s.succeeded, s.failed, avg
+        );
+        total_runs += s.total_runs;
+        total_pass += s.succeeded;
+        total_fail += s.failed;
+        if let Some(avg_cost) = s.avg_cost {
+            total_cost_sum += avg_cost * s.total_runs as f64;
+            total_cost_count += s.total_runs;
+        }
+    }
+
+    println!("{sep}");
+    let total_avg = if total_cost_count > 0 {
+        format!("${:.2}", total_cost_sum / total_cost_count as f64)
+    } else {
+        "-".into()
+    };
+    println!(
+        "{:<20}  {:>6}  {:>6}  {:>6}  {:>9}",
+        "Total", total_runs, total_pass, total_fail, total_avg
+    );
+
+    // Recent activity (last 24h)
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+    let all_runs = forza::state::load_all_runs(sd);
+    let recent: Vec<_> = all_runs
+        .iter()
+        .filter(|r| r.started_at >= cutoff && workflow_filter.is_none_or(|f| r.workflow == f))
+        .take(10)
+        .collect();
+
+    if !recent.is_empty() {
+        println!();
+        println!("Recent activity (last 24h):");
+        for r in recent {
+            use forza::state::RouteOutcome;
+            let prefix = match r.outcome.as_ref() {
+                Some(RouteOutcome::Failed { .. }) | Some(RouteOutcome::Exhausted { .. }) => "✗",
+                Some(RouteOutcome::PrCreated { .. })
+                | Some(RouteOutcome::PrUpdated { .. })
+                | Some(RouteOutcome::PrMerged { .. })
+                | Some(RouteOutcome::CommentPosted)
+                | Some(RouteOutcome::NothingToDo) => "✓",
+                None => "·",
+            };
+            let outcome = format_outcome(r.outcome.as_ref());
+            let ago = format_time_ago(r.started_at);
+            println!(
+                "  {prefix} #{} {} → {}     {ago}",
+                r.issue_number, r.workflow, outcome
+            );
+        }
+    }
+
+    ExitCode::SUCCESS
+}
+
 fn cmd_status(args: StatusArgs) -> ExitCode {
     let sd = state_dir();
+
+    if let Some(ref run_id) = args.run_id {
+        return match forza::state::load_run(run_id, &sd) {
+            Some(record) => {
+                println!("{}", serde_json::to_string_pretty(&record).unwrap());
+                ExitCode::SUCCESS
+            }
+            None => {
+                eprintln!("run not found: {run_id}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if args.all {
         let records = forza::state::load_all_runs(&sd);
@@ -1276,54 +1389,17 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if args.summary {
-        let summaries = forza::state::summarize_by_workflow(&sd);
-        if summaries.is_empty() {
-            eprintln!("no runs found");
-            return ExitCode::FAILURE;
-        }
-        println!("forza {}", env!("CARGO_PKG_VERSION"));
-        println!(
-            "{:<20}  {:>6}  {:>9}  {:>6}  {:>8}  {:>8}  {:>8}",
-            "workflow", "total", "succeeded", "failed", "min $", "max $", "avg $"
-        );
-        println!("{}", "-".repeat(80));
-        for s in &summaries {
-            let fmt = |v: Option<f64>| v.map(|x| format!("${x:.2}")).unwrap_or_else(|| "-".into());
-            println!(
-                "{:<20}  {:>6}  {:>9}  {:>6}  {:>8}  {:>8}  {:>8}",
-                s.workflow,
-                s.total_runs,
-                s.succeeded,
-                s.failed,
-                fmt(s.min_cost),
-                fmt(s.max_cost),
-                fmt(s.avg_cost),
-            );
-        }
-        return ExitCode::SUCCESS;
-    }
-
-    if let Some(ref run_id) = args.run_id {
-        match forza::state::load_run(run_id, &sd) {
-            Some(record) => {
-                println!("{}", serde_json::to_string_pretty(&record).unwrap());
-                ExitCode::SUCCESS
-            }
-            None => {
-                eprintln!("run not found: {run_id}");
-                ExitCode::FAILURE
-            }
-        }
-    } else {
-        match forza::state::load_latest(&sd) {
+    if args.detailed {
+        return match forza::state::load_latest(&sd) {
             Some(record) => print_run_result(&record),
             None => {
                 eprintln!("no runs found");
                 ExitCode::FAILURE
             }
-        }
+        };
     }
+
+    print_status_dashboard(&sd, args.workflow.as_deref())
 }
 
 async fn cmd_fix(

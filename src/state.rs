@@ -871,4 +871,124 @@ mod tests {
         assert_eq!(count_failed_runs_for_subject(1, "pr-fix", dir.path()), 1);
         assert_eq!(count_failed_runs_for_subject(2, "pr-fix", dir.path()), 1);
     }
+
+    #[test]
+    fn summarize_by_workflow_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let summaries = summarize_by_workflow(dir.path());
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn summarize_by_workflow_single_workflow_multiple_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r1 = make_record("bug", RunStatus::Succeeded, Some(0.50));
+        save_run(&r1, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = make_record("bug", RunStatus::Failed, Some(0.20));
+        save_run(&r2, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r3 = make_record("bug", RunStatus::Succeeded, Some(0.80));
+        save_run(&r3, dir.path()).unwrap();
+
+        let summaries = summarize_by_workflow(dir.path());
+        assert_eq!(summaries.len(), 1);
+        let s = &summaries[0];
+        assert_eq!(s.workflow, "bug");
+        assert_eq!(s.total_runs, 3);
+        assert_eq!(s.succeeded, 2);
+        assert_eq!(s.failed, 1);
+        assert!((s.min_cost.unwrap() - 0.20).abs() < 1e-9);
+        assert!((s.max_cost.unwrap() - 0.80).abs() < 1e-9);
+        assert!((s.avg_cost.unwrap() - 0.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn summarize_by_workflow_multiple_workflows_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r1 = make_record("zebra", RunStatus::Succeeded, Some(1.00));
+        save_run(&r1, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = make_record("alpha", RunStatus::Failed, Some(0.30));
+        save_run(&r2, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r3 = make_record("middle", RunStatus::Succeeded, Some(0.60));
+        save_run(&r3, dir.path()).unwrap();
+
+        let summaries = summarize_by_workflow(dir.path());
+        assert_eq!(summaries.len(), 3);
+        assert_eq!(summaries[0].workflow, "alpha");
+        assert_eq!(summaries[1].workflow, "middle");
+        assert_eq!(summaries[2].workflow, "zebra");
+
+        assert_eq!(summaries[0].total_runs, 1);
+        assert_eq!(summaries[0].failed, 1);
+        assert_eq!(summaries[0].succeeded, 0);
+    }
+
+    #[test]
+    fn summarize_by_workflow_no_cost_data() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r1 = make_record("bug", RunStatus::Succeeded, None);
+        save_run(&r1, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = make_record("bug", RunStatus::Failed, None);
+        save_run(&r2, dir.path()).unwrap();
+
+        let summaries = summarize_by_workflow(dir.path());
+        assert_eq!(summaries.len(), 1);
+        let s = &summaries[0];
+        assert_eq!(s.total_runs, 2);
+        assert!(s.min_cost.is_none());
+        assert!(s.max_cost.is_none());
+        assert!(s.avg_cost.is_none());
+    }
+
+    #[test]
+    fn summarize_by_workflow_mixed_cost_presence() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r1 = make_record("bug", RunStatus::Succeeded, Some(1.00));
+        save_run(&r1, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = make_record("bug", RunStatus::Succeeded, None);
+        save_run(&r2, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r3 = make_record("bug", RunStatus::Succeeded, Some(3.00));
+        save_run(&r3, dir.path()).unwrap();
+
+        let summaries = summarize_by_workflow(dir.path());
+        assert_eq!(summaries.len(), 1);
+        let s = &summaries[0];
+        assert_eq!(s.total_runs, 3);
+        assert_eq!(s.succeeded, 3);
+        // avg_cost computed only from costed runs: (1.00 + 3.00) / 2 = 2.00
+        assert!((s.min_cost.unwrap() - 1.00).abs() < 1e-9);
+        assert!((s.max_cost.unwrap() - 3.00).abs() < 1e-9);
+        assert!((s.avg_cost.unwrap() - 2.00).abs() < 1e-9);
+    }
+
+    #[test]
+    fn summarize_by_workflow_non_terminal_runs_count_but_not_succeeded_or_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r1 = make_record("bug", RunStatus::Running, None);
+        save_run(&r1, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r2 = make_record("bug", RunStatus::Queued, None);
+        save_run(&r2, dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let r3 = make_record("bug", RunStatus::Succeeded, Some(0.40));
+        save_run(&r3, dir.path()).unwrap();
+
+        let summaries = summarize_by_workflow(dir.path());
+        assert_eq!(summaries.len(), 1);
+        let s = &summaries[0];
+        assert_eq!(s.total_runs, 3);
+        assert_eq!(s.succeeded, 1);
+        assert_eq!(s.failed, 0);
+    }
 }
