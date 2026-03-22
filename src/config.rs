@@ -9,7 +9,7 @@ use std::path::Path;
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::error::{Error, Result};
 use crate::github::{IssueCandidate, PrCandidate};
@@ -235,19 +235,23 @@ impl ScheduleWindow {
         // Check day constraint.
         if !self.days.is_empty() {
             let today = now.weekday();
-            let day_match = self
-                .days
-                .iter()
-                .any(|d| d.parse::<Weekday>().map(|wd| wd == today).unwrap_or(false));
+            let day_match = self.days.iter().any(|d| {
+                d.parse::<Weekday>()
+                    .inspect_err(|_| warn!(value = %d, "failed to parse schedule window weekday"))
+                    .map(|wd| wd == today)
+                    .unwrap_or(false)
+            });
             if !day_match {
                 return false;
             }
         }
 
         let Ok(start) = NaiveTime::parse_from_str(&self.start, "%H:%M") else {
+            warn!(value = %self.start, "failed to parse schedule window start time");
             return false;
         };
         let Ok(end) = NaiveTime::parse_from_str(&self.end, "%H:%M") else {
+            warn!(value = %self.end, "failed to parse schedule window end time");
             return false;
         };
 
