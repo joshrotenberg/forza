@@ -66,6 +66,23 @@ The plan stage is special: it writes to `.plan_breadcrumb.md` in the repo root (
 `.forza/breadcrumbs/`). The implement stage reads it for the file list and exact commit
 message. Similarly `.review_breadcrumb.md` is written by review and read by open_pr.
 
+## Shell command trust boundary
+
+All shell commands that forza executes — `[validation].commands`, `[stage_hooks.*]`
+hook lists, agentless stage `command` fields, and stage `condition` fields — are run
+via `sh -c` with the string taken verbatim from the TOML config. There is no
+sandboxing or allowlisting.
+
+`forza.toml` is the trust boundary. These fields are equivalent to executable code:
+treat config changes that touch them the same as code changes.
+
+`authorization_level` in `[security]` controls what the Claude agent may do (merge,
+push, etc.), not what forza's own shell invocations may do. It does not restrict hooks,
+validation commands, agentless stages, or conditions.
+
+If forza is ever extended to accept config from untrusted sources (e.g., auto-applying
+PR-submitted `forza.toml` changes), these fields become a command injection vector.
+
 ## Agentless stages
 
 Set `agentless = true` and `command = "..."` on a stage to run a shell command directly
