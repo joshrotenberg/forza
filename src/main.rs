@@ -514,7 +514,20 @@ workflow = "feature"
         return ExitCode::FAILURE;
     }
 
-    println!("Created {}", args.output.display());
+    println!("Config written to {}", args.output.display());
+    println!();
+    println!("Next steps:");
+    println!(
+        "  1. Review and customize {} for your project",
+        args.output.display()
+    );
+    println!("  2. Add validation commands (e.g., cargo fmt, cargo test) to catch regressions");
+    println!("  3. Label a GitHub issue with \"bug\" and \"forza:ready\"");
+    println!("  4. Run: forza issue <number> --dry-run    (preview what forza would do)");
+    println!("  5. Run: forza issue <number>              (let forza work the issue)");
+    println!("  6. Run: forza watch --repo-dir .          (continuous mode)");
+    println!();
+    println!("Docs: https://github.com/joshrotenberg/forza");
     ExitCode::SUCCESS
 }
 
