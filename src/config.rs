@@ -405,6 +405,11 @@ pub struct Route {
 impl Route {
     /// Validate that a route has at least one trigger and one action.
     pub fn validate(&self, name: &str) -> Result<()> {
+        if self.label.is_some() && self.condition.is_some() {
+            return Err(Error::Policy(format!(
+                "route '{name}' cannot have both a label and a condition"
+            )));
+        }
         if self.label.is_none() && self.condition.is_none() {
             return Err(Error::Policy(format!(
                 "route '{name}' must have a label or a condition"
@@ -1561,9 +1566,17 @@ repo = "owner/repo"
         let route4 = Route {
             condition: Some(RouteCondition::CiFailing),
             workflow: Some("pr-fix".to_string()),
-            ..route
+            ..route.clone()
         };
         assert!(route4.validate("test").is_ok()); // condition + workflow
+
+        let route5 = Route {
+            label: Some("bug".to_string()),
+            condition: Some(RouteCondition::CiFailing),
+            workflow: Some("bug".to_string()),
+            ..route
+        };
+        assert!(route5.validate("test").is_err()); // both label and condition
     }
 
     #[test]
