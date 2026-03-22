@@ -396,7 +396,7 @@ async fn resolve_repo<'a>(
     (
         String,
         PathBuf,
-        &'a std::collections::HashMap<String, forza::config::Route>,
+        &'a indexmap::IndexMap<String, forza::config::Route>,
     ),
     ExitCode,
 > {
@@ -643,7 +643,7 @@ async fn cmd_run(
     let mut repos_resolved: Vec<(
         String,
         PathBuf,
-        std::collections::HashMap<String, forza::config::Route>,
+        indexmap::IndexMap<String, forza::config::Route>,
     )> = Vec::new();
     for (repo, entry_repo_dir, routes) in config.iter_repos() {
         let explicit_dir = entry_repo_dir
@@ -726,7 +726,7 @@ async fn cmd_watch(
     let mut repos_data: Vec<(
         String,
         PathBuf,
-        std::collections::HashMap<String, forza::config::Route>,
+        indexmap::IndexMap<String, forza::config::Route>,
     )> = Vec::new();
     for (repo, entry_repo_dir, routes) in config.iter_repos() {
         let explicit_dir = entry_repo_dir

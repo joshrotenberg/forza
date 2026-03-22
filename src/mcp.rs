@@ -10,8 +10,9 @@
 //! - **Config** (`config_show`, `config_validate`): inspect or validate
 //!   configuration.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
+
+use indexmap::IndexMap;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
@@ -21,7 +22,7 @@ use tower_mcp::{CallToolResult, McpRouter, StdioTransport, ToolBuilder};
 
 use crate::config::{Route, RunnerConfig};
 
-type RepoResolution = (String, Option<PathBuf>, HashMap<String, Route>);
+type RepoResolution = (String, Option<PathBuf>, IndexMap<String, Route>);
 
 // ── Shared state ─────────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ pub fn build_router(state: AppState) -> McpRouter {
         .extractor_handler(s.clone(), |State(app): State<Arc<AppState>>| async move {
             let config = &app.config;
             // Collect repo info upfront to avoid holding references across awaits.
-            let repos: Vec<(String, Option<PathBuf>, HashMap<String, Route>)> = config
+            let repos: Vec<(String, Option<PathBuf>, IndexMap<String, Route>)> = config
                 .iter_repos()
                 .into_iter()
                 .map(|(repo, dir, routes)| {

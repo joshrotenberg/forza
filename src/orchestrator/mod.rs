@@ -4,6 +4,8 @@ mod helpers;
 use helpers::*;
 
 use std::collections::{HashMap, VecDeque};
+
+use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -35,7 +37,7 @@ enum PendingSubject {
 pub async fn process_issue_with_config(
     number: u64,
     repo: &str,
-    routes: &HashMap<String, Route>,
+    routes: &IndexMap<String, Route>,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
@@ -64,7 +66,7 @@ pub async fn process_issue_with_config(
 pub async fn process_issue_with_overrides(
     number: u64,
     repo: &str,
-    routes: &HashMap<String, Route>,
+    routes: &IndexMap<String, Route>,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
@@ -290,7 +292,7 @@ pub async fn process_issue_with_overrides(
 pub async fn process_pr_with_config(
     number: u64,
     repo: &str,
-    routes: &HashMap<String, Route>,
+    routes: &IndexMap<String, Route>,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
@@ -319,7 +321,7 @@ pub async fn process_pr_with_config(
 pub async fn process_pr_with_overrides(
     number: u64,
     repo: &str,
-    routes: &HashMap<String, Route>,
+    routes: &IndexMap<String, Route>,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
@@ -495,7 +497,7 @@ pub async fn process_reactive_pr(
     pr_number: u64,
     repo: &str,
     route_name: &str,
-    routes: &HashMap<String, Route>,
+    routes: &IndexMap<String, Route>,
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
@@ -770,7 +772,7 @@ pub async fn process_batch_for_repo(
     config: &RunnerConfig,
     state_dir: &Path,
     repo_dir: &Path,
-    routes: &HashMap<String, Route>,
+    routes: &IndexMap<String, Route>,
     cancel: &tokio::sync::watch::Receiver<bool>,
     gh: Arc<dyn GitHubClient>,
     git: Arc<dyn GitClient>,
