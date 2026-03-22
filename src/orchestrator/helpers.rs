@@ -208,10 +208,12 @@ pub(super) async fn execute_stages(
 
         // Agentless stages run a shell command directly — no agent invocation.
         if planned_stage.agentless {
-            let command = planned_stage
-                .command
-                .as_deref()
-                .unwrap_or("echo 'no command specified'");
+            let Some(command) = planned_stage.command.as_deref() else {
+                return Err(Error::Executor(format!(
+                    "agentless stage '{}' has no command",
+                    planned_stage.kind_name()
+                )));
+            };
             let start = std::time::Instant::now();
             let output = tokio::process::Command::new("sh")
                 .args(["-c", command])
