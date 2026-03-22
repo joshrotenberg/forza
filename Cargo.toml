@@ -11,6 +11,7 @@ keywords = ["github", "automation", "issues", "pull-requests", "ci"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
+indexmap = { version = "2", features = ["serde"] }
 tower-mcp = "0.9"
 schemars = "1"
 claude-wrapper = "0.4"

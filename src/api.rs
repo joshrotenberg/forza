@@ -5,8 +5,9 @@
 //! - **Status**: `GET /runs`, `GET /runs/latest`, `GET /runs/{run_id}`, `GET /status`
 //! - **Config**: `GET /config`
 
-use std::collections::HashMap;
 use std::path::PathBuf;
+
+use indexmap::IndexMap;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -126,7 +127,7 @@ async fn resolve_repo_for_api(
     args_repo: Option<&str>,
     config: &RunnerConfig,
     git: &dyn crate::git::GitClient,
-) -> Result<(String, PathBuf, HashMap<String, Route>), ApiError> {
+) -> Result<(String, PathBuf, IndexMap<String, Route>), ApiError> {
     let repos = config.iter_repos();
     let (repo_str, entry_repo_dir, routes) = if repos.len() == 1 {
         repos.into_iter().next().unwrap()
@@ -368,7 +369,7 @@ async fn trigger_pr(
 }
 
 async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, ApiError> {
-    let mut repos_resolved: Vec<(String, PathBuf, HashMap<String, Route>)> = Vec::new();
+    let mut repos_resolved: Vec<(String, PathBuf, IndexMap<String, Route>)> = Vec::new();
     for (repo, entry_repo_dir, routes) in state.config.iter_repos() {
         let explicit_dir = entry_repo_dir
             .map(PathBuf::from)

@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use indexmap::IndexMap;
+
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +24,7 @@ pub struct RepoEntry {
 
     /// Routes specific to this repo.
     #[serde(default)]
-    pub routes: HashMap<String, Route>,
+    pub routes: IndexMap<String, Route>,
 }
 
 /// Top-level runner configuration.
@@ -35,7 +37,7 @@ pub struct RunnerConfig {
     /// When present, each key is a repo slug (`owner/name`) and each value
     /// holds that repo's optional local path and routes.
     #[serde(default)]
-    pub repos: HashMap<String, RepoEntry>,
+    pub repos: IndexMap<String, RepoEntry>,
 
     /// Security settings.
     #[serde(default)]
@@ -47,7 +49,7 @@ pub struct RunnerConfig {
 
     /// Named routes — the core routing table (legacy single-repo mode).
     #[serde(default)]
-    pub routes: HashMap<String, Route>,
+    pub routes: IndexMap<String, Route>,
 
     /// Custom workflow templates (override or extend built-ins).
     #[serde(default)]
@@ -583,7 +585,7 @@ impl RunnerConfig {
     /// In legacy single-repo mode (`repos` table absent), yields one entry from
     /// `global.repo` + top-level `routes`. In multi-repo mode, yields one entry
     /// per `[repos]` key.
-    pub fn iter_repos(&self) -> Vec<(&str, Option<&str>, &HashMap<String, Route>)> {
+    pub fn iter_repos(&self) -> Vec<(&str, Option<&str>, &IndexMap<String, Route>)> {
         if self.repos.is_empty() {
             let repo = self.global.repo.as_deref().unwrap_or("");
             let repo_dir = self.global.repo_dir.as_deref();
@@ -598,7 +600,7 @@ impl RunnerConfig {
 
     /// Find the route matching an issue within the given route map.
     pub fn match_route_in<'a>(
-        routes: &'a HashMap<String, Route>,
+        routes: &'a IndexMap<String, Route>,
         issue: &IssueCandidate,
     ) -> Option<(&'a str, &'a Route)> {
         for (name, route) in routes {
@@ -616,7 +618,7 @@ impl RunnerConfig {
 
     /// Find the route matching a PR within the given route map.
     pub fn match_pr_route_in<'a>(
-        routes: &'a HashMap<String, Route>,
+        routes: &'a IndexMap<String, Route>,
         pr: &PrCandidate,
     ) -> Option<(&'a str, &'a Route)> {
         for (name, route) in routes {
@@ -1366,7 +1368,7 @@ workflow = "bug"
 
     #[test]
     fn match_route_in_finds_matching_route() {
-        let mut routes = HashMap::new();
+        let mut routes = IndexMap::new();
         routes.insert(
             "bugfix".to_string(),
             Route {
