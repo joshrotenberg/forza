@@ -446,6 +446,20 @@ async fn execute_work(
 
 /// Resolve a workflow name to a forza-core Workflow.
 fn resolve_workflow(config: &RunnerConfig, name: &str) -> Option<Workflow> {
+    // Prefer forza-core builtins (which include DraftPr stages).
+    if let Some(builtin) = Workflow::builtins().into_iter().find(|w| w.name == name) {
+        // Check if user has a custom override for this workflow name.
+        if config
+            .workflow_templates
+            .iter()
+            .any(|t| t.name == name)
+        {
+            // User has a custom template — fall through to convert it.
+        } else {
+            return Some(builtin);
+        }
+    }
+
     let old_template = config.resolve_workflow(name)?;
     Some(Workflow {
         name: old_template.name.clone(),
