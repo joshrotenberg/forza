@@ -240,71 +240,27 @@ fn load_pr_prompt_template(
 
 fn generate_pr_stage_prompt(kind: StageKind, pr: &PrCandidate) -> String {
     match kind {
-        StageKind::Review => format!(
-            "Review PR #{number} in {repo}.\n\n\
-             PR title: {title}\n\n\
-             PR description:\n{body}\n\n\
-             Branch: `{head_branch}` -> `{base_branch}`\n\n\
-             ## What to check\n\n\
-             - Correctness: does the implementation look correct?\n\
-             - Tests: are there tests for new behavior?\n\
-             - Code quality: any obvious bugs, panics, or unsafe patterns?\n\
-             - Consistency: does the style match the surrounding code?\n\n\
-             ## Output format\n\n\
-             Post a review comment on the PR summarizing your findings:\n\n\
-             ```\n\
-             gh pr review {number} --repo {repo} --comment --body \"...\"\n\
-             ```\n\n\
-             Do NOT modify any source files in this stage.",
-            number = pr.number,
-            repo = pr.repo,
-            title = pr.title,
-            body = pr.body,
-            head_branch = pr.head_branch,
-            base_branch = pr.base_branch,
-        ),
-        StageKind::FixCi => format!(
-            "Fix CI failures on PR #{number} in {repo}.\n\n\
-             PR title: {title}\n\n\
-             Branch: `{head_branch}`\n\n\
-             ## Steps\n\n\
-             1. Check the current CI status: `gh pr checks {number} --repo {repo}`\n\
-             2. Read the failure logs to understand what is failing.\n\
-             3. Fix the failing checks in the source files.\n\
-             4. Run the relevant validation commands locally to confirm the fix.\n\
-             5. Commit the fix and push: `git push --force-with-lease origin {head_branch}`\n\n\
-             Focus only on fixing CI failures — do not add unrelated changes.",
-            number = pr.number,
-            repo = pr.repo,
-            title = pr.title,
-            head_branch = pr.head_branch,
-        ),
-        StageKind::RevisePr => format!(
-            "Update PR #{number} in {repo} to incorporate review feedback or resolve conflicts.\n\n\
-             PR title: {title}\n\n\
-             Branch: `{head_branch}` -> `{base_branch}`\n\n\
-             ## Steps\n\n\
-             1. Check for unresolved review comments: \
-                `gh pr view {number} --repo {repo} --comments`\n\
-             2. If there are conflicts, rebase onto the base branch: \
-                `git fetch origin && git rebase origin/{base_branch}`\n\
-             3. Address any outstanding review feedback.\n\
-             4. Push the updated branch: `git push --force-with-lease origin {head_branch}`\n\n\
-             Do not add unrelated changes.",
-            number = pr.number,
-            repo = pr.repo,
-            title = pr.title,
-            head_branch = pr.head_branch,
-            base_branch = pr.base_branch,
-        ),
-        StageKind::Merge => format!(
-            "Merge PR #{number} in {repo} after CI passes.\n\n\
-             Wait for checks to complete, then merge:\n\
-             `gh pr checks {number} --repo {repo} --watch && \
-              gh pr merge {number} --repo {repo} --squash --delete-branch`",
-            number = pr.number,
-            repo = pr.repo,
-        ),
+        StageKind::Review => include_str!("prompts/pr_review.md")
+            .replace("{pr_number}", &pr.number.to_string())
+            .replace("{repo}", &pr.repo)
+            .replace("{pr_title}", &pr.title)
+            .replace("{pr_body}", &pr.body)
+            .replace("{head_branch}", &pr.head_branch)
+            .replace("{base_branch}", &pr.base_branch),
+        StageKind::FixCi => include_str!("prompts/pr_fix_ci.md")
+            .replace("{pr_number}", &pr.number.to_string())
+            .replace("{repo}", &pr.repo)
+            .replace("{pr_title}", &pr.title)
+            .replace("{head_branch}", &pr.head_branch),
+        StageKind::RevisePr => include_str!("prompts/pr_revise_pr.md")
+            .replace("{pr_number}", &pr.number.to_string())
+            .replace("{repo}", &pr.repo)
+            .replace("{pr_title}", &pr.title)
+            .replace("{head_branch}", &pr.head_branch)
+            .replace("{base_branch}", &pr.base_branch),
+        StageKind::Merge => include_str!("prompts/pr_merge.md")
+            .replace("{pr_number}", &pr.number.to_string())
+            .replace("{repo}", &pr.repo),
         _ => format!("Handle {} stage for PR #{}.", kind_name(kind), pr.number),
     }
 }
@@ -383,26 +339,13 @@ fn generate_stage_prompt(
         issue.title
     );
     match kind {
-        StageKind::Plan => format!(
-            "{preamble}\n\n\
-             Read issue #{number} and analyze the codebase to create an implementation plan.\n\n\
-             {title_block}\n\n\
-             Issue body:\n{body}\n\n\
-             ## Steps\n\n\
-             1. Search for and read the relevant files — do not guess at file locations.\n\
-             2. Understand the current architecture and patterns used.\n\
-             3. Identify exactly which files need to change and why.\n\n\
-             ## Breadcrumb\n\n\
-             Write the plan to `.plan_breadcrumb.md` in the repo root with these sections:\n\
-             - **Files to modify**: list each file path, one per line\n\
-             - **Approach**: 2-5 sentence summary of what will change and why\n\
-             - **Commit message**: the exact conventional-commit message for the implement stage \
-               (e.g., `feat(module): short description closes #{number}`)\n\n\
-             Do NOT modify any source files. This is a planning-only stage.",
-            number = issue.number,
-        ),
+        StageKind::Plan => include_str!("prompts/plan.md")
+            .replace("{preamble}", preamble)
+            .replace("{issue_number}", &issue.number.to_string())
+            .replace("{issue_title}", &title_block)
+            .replace("{issue_context}", &body),
         StageKind::Implement => {
-            let (run_step, commit_num) = if validation_commands.is_empty() {
+            let (validation_step, commit_num) = if validation_commands.is_empty() {
                 (String::new(), 4)
             } else {
                 let cmds = validation_commands
@@ -412,28 +355,15 @@ fn generate_stage_prompt(
                     .join(", ");
                 (format!("4. After making changes, run {cmds}.\n"), 5)
             };
-            format!(
-                "{preamble}\n\n\
-                 Implement the changes for issue #{number}.\n\n\
-                 {title_block}\n\n\
-                 ## Context\n\n\
-                 Read the plan breadcrumb at `.plan_breadcrumb.md` for the list of files to modify \
-                 and the approach decided in the plan stage.\n\n\
-                 ## Instructions\n\n\
-                 1. Only modify the files listed in the breadcrumb. Do NOT touch any other files.\n\
-                 2. Follow the existing code patterns and style.\n\
-                 3. For Rust code: use Rust 2024 if-let chains — write \
-                   `if let Some(x) = y && condition {{` instead of nested if-let/if blocks.\n\
-                 {run_step}\
-                 {commit_num}. Commit using the exact commit message from the breadcrumb.\n\n\
-                 Do NOT create a PR in this stage.",
-                number = issue.number,
-                run_step = run_step,
-                commit_num = commit_num,
-            )
+            include_str!("prompts/implement.md")
+                .replace("{preamble}", preamble)
+                .replace("{issue_number}", &issue.number.to_string())
+                .replace("{issue_title}", &title_block)
+                .replace("{validation_step}", &validation_step)
+                .replace("{commit_num}", &commit_num.to_string())
         }
         StageKind::Test => {
-            let cmds = if validation_commands.is_empty() {
+            let validation_commands_str = if validation_commands.is_empty() {
                 "Run your project's validation commands".to_string()
             } else {
                 validation_commands
@@ -442,41 +372,14 @@ fn generate_stage_prompt(
                     .collect::<Vec<_>>()
                     .join("\n")
             };
-            format!(
-                "Verify the implementation from issue #{number} passes all checks.\n\n\
-                 ## Validation commands\n\n\
-                 Run each of the following and confirm they pass:\n\
-                 {cmds}\n\n\
-                 If any command fails, fix the issue and re-run until all pass.\n\
-                 Do NOT modify implementation logic — only fix formatting, clippy warnings, \
-                 or test failures caused by missing test coverage.",
-                number = issue.number,
-                cmds = cmds,
-            )
+            include_str!("prompts/test.md")
+                .replace("{issue_number}", &issue.number.to_string())
+                .replace("{validation_commands}", &validation_commands_str)
         }
-        StageKind::Review => format!(
-            "Review the changes for issue #{number}. This is a read-only verification stage.\n\n\
-             ## What to check\n\n\
-             - Correctness: does the implementation match the plan?\n\
-             - Tests: are there tests for new behavior?\n\
-             - Code quality: any obvious bugs, panics, or unsafe patterns?\n\
-             - Consistency: does the style match the surrounding code?\n\n\
-             ## Output format\n\n\
-             Write a structured review to `.review_breadcrumb.md`:\n\n\
-             ```\n\
-             ## Review: issue #{number}\n\n\
-             ### Issues found\n\n\
-             | Severity | File | Line | Description |\n\
-             |----------|------|------|-------------|\n\
-             | high | src/foo.rs | 42 | description |\n\n\
-             ### Verdict: PASS / FAIL\n\
-             ```\n\n\
-             PASS if no high-severity issues found; FAIL otherwise.\n\
-             Do NOT modify any source files in this stage.",
-            number = issue.number,
-        ),
+        StageKind::Review => include_str!("prompts/review.md")
+            .replace("{issue_number}", &issue.number.to_string()),
         StageKind::OpenPr => {
-            let test_plan = if validation_commands.is_empty() {
+            let test_plan_items = if validation_commands.is_empty() {
                 "- [ ] All validation checks pass".to_string()
             } else {
                 validation_commands
@@ -485,58 +388,22 @@ fn generate_stage_prompt(
                     .collect::<Vec<_>>()
                     .join("\n")
             };
-            format!(
-                "Create a pull request for issue #{number}.\n\n\
-                 ## Steps\n\n\
-                 1. Push the branch to origin if not already pushed.\n\
-                 2. Read `.plan_breadcrumb.md` for the commit message and files changed.\n\
-                 3. Read `.review_breadcrumb.md` if it exists for the review verdict.\n\
-                 4. Create the PR using the template below.\n\n\
-                 ## PR template\n\n\
-                 ```\n\
-                 gh pr create \\\n\
-                   --title \"<commit message from plan breadcrumb>\" \\\n\
-                   --body \"$(cat <<'EOF'\n\
-                 ## Summary\n\
-                 <2-4 bullet points describing what changed and why>\n\n\
-                 ## Files changed\n\
-                 <list each modified file with a one-line description>\n\n\
-                 ## Test plan\n\
-                 {test_plan}\n\n\
-                 Closes #{number}\n\
-                 EOF\n\
-                 )\"\n\
-                 ```\n\n\
-                 Do NOT merge the PR.",
-                number = issue.number,
-                test_plan = test_plan,
-            )
+            include_str!("prompts/open_pr.md")
+                .replace("{issue_number}", &issue.number.to_string())
+                .replace("{test_plan_items}", &test_plan_items)
         }
-        StageKind::Clarify => format!(
-            "{preamble}\n\n\
-             Issue #{number} may need clarification before implementation can begin.\n\n\
-             Read the issue and identify any ambiguities or missing information that would \
-             block a clean implementation. Post clarifying questions as a comment on the issue.\n\n\
-             {title_block}\n\n\
-             Issue body:\n{body}",
-            number = issue.number,
-        ),
-        StageKind::Research => format!(
-            "{preamble}\n\n\
-             Research issue #{number}.\n\n\
-             {title_block}\n\n\
-             {body}\n\n\
-             Gather relevant information, read related code and documentation, \
-             and write a summary of findings. Save the summary to `.research_breadcrumb.md`.",
-            number = issue.number,
-        ),
-        StageKind::Comment => format!(
-            "Post a summary comment on issue #{number} with your findings.\n\n\
-             Read `.research_breadcrumb.md` if it exists for prior research output. \
-             Write a clear, structured comment that summarizes the findings and \
-             any recommendations.",
-            number = issue.number,
-        ),
+        StageKind::Clarify => include_str!("prompts/clarify.md")
+            .replace("{preamble}", preamble)
+            .replace("{issue_number}", &issue.number.to_string())
+            .replace("{issue_title}", &title_block)
+            .replace("{issue_context}", &body),
+        StageKind::Research => include_str!("prompts/research.md")
+            .replace("{preamble}", preamble)
+            .replace("{issue_number}", &issue.number.to_string())
+            .replace("{issue_title}", &title_block)
+            .replace("{issue_context}", &body),
+        StageKind::Comment => include_str!("prompts/comment.md")
+            .replace("{issue_number}", &issue.number.to_string()),
         StageKind::RevisePr | StageKind::FixCi | StageKind::Merge | StageKind::Triage => {
             format!(
                 "Handle {} stage for issue #{}.",
