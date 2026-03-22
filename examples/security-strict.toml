@@ -1,0 +1,88 @@
+# forza configuration — security-strict setup
+#
+# A locked-down configuration for high-stakes or public-facing repos.
+# Sandbox authorization, no auto-merge, explicit author allowlist, and a
+# required approval label before any work begins. Every PR requires a human
+# review before it can be merged.
+#
+# When to use: production repos, security-sensitive codebases, or any project
+# where you want maximum human oversight of automated changes.
+
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"    # explicit opt-in required on every issue/PR
+branch_pattern = "automation/{issue}-{slug}"
+auto_merge = false            # never merge automatically — human must merge
+
+max_cost_per_issue = 2.00    # tighter cost cap per issue
+max_cost_per_hour = 10.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# sandbox: the most restrictive level. The agent may only read files and
+# suggest changes; it cannot execute arbitrary commands or write to disk
+# outside of the controlled workflow.
+authorization_level = "sandbox"
+
+# Only process issues created by explicitly listed authors.
+allowed_authors = ["your-github-username", "trusted-collaborator"]
+
+# An additional label that must be present on the issue before processing.
+# Unlike gate_label (which triggers the run and is removed), require_label
+# is a permanent security gate that is never removed automatically.
+# A human must apply this label to explicitly approve processing.
+require_label = "security:approved"
+
+# ── Validation ───────────────────────────────────────────────────────
+#
+# Run a comprehensive check suite between every stage.
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo test --lib --all-features",
+    "cargo test --test '*' --all-features",
+    "cargo audit",   # check for known vulnerabilities in dependencies
+]
+
+# ── Agent config ─────────────────────────────────────────────────────
+
+[agent_config]
+# Inject security-focused instructions into every agent invocation.
+skills = ["./skills/security.md"]
+append_system_prompt = "You are operating in a high-security context. Do not introduce new dependencies without explicit justification. Prefer conservative, minimal changes."
+
+# ── Routes ───────────────────────────────────────────────────────────
+#
+# Only two routes: bugs and the triage/research workflow. No feature or chore
+# routes — new feature work requires a human to design and guide.
+
+[repos."your-org/sensitive-repo"]
+
+[repos."your-org/sensitive-repo".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1        # one at a time — avoid overlapping changes
+poll_interval = 120
+max_retries = 1        # escalate to forza:needs-human after a single failure
+model = "claude-opus-4-6"   # use the most capable model for bug analysis
+
+[repos."your-org/sensitive-repo".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 1
+poll_interval = 300
+
+# ── Per-stage hooks ──────────────────────────────────────────────────
+#
+# Run the full test suite before opening any PR.
+
+[stage_hooks.open_pr]
+pre = [
+    "cargo test --all-features",
+    "cargo audit",
+]

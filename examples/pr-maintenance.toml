@@ -1,0 +1,92 @@
+# forza configuration — PR maintenance / reactive workflows
+#
+# Focused on keeping open PRs healthy. Condition routes fire automatically
+# based on PR state — no label needed. forza watches for CI failures,
+# merge conflicts, and approved-and-green PRs, then acts accordingly.
+#
+# When to use: you want forza to act as a PR janitor: fix broken CI, resolve
+# conflicts, and merge approved PRs without manual intervention.
+
+[global]
+model = "claude-sonnet-4-6"
+# No gate_label — condition routes bypass the label gate by default.
+max_concurrency = 4
+
+max_cost_per_issue = 3.00
+max_cost_per_hour = 15.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# contributor: only act on PRs from known contributors.
+authorization_level = "contributor"
+
+# ── Validation ───────────────────────────────────────────────────────
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test --lib",
+]
+
+# ── Routes ───────────────────────────────────────────────────────────
+#
+# All routes here are condition-based. They fire automatically when the
+# described PR state is detected — no label application required.
+#
+# scope = "forza_owned" (the default) restricts evaluation to PRs on
+# branches that forza created. Set scope = "all" to watch every open PR.
+
+[repos."your-org/your-repo"]
+
+# Fix CI failures: rerun, then attempt a targeted code fix if still failing.
+[repos."your-org/your-repo".routes.fix-ci]
+type = "pr"
+condition = "ci_failing"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 2
+poll_interval = 60     # check every minute — CI failures block progress
+max_retries = 3        # give up and apply forza:needs-human after 3 attempts
+model = "claude-opus-4-6"   # CI fixes can be complex; use the capable model
+
+# Resolve merge conflicts automatically.
+[repos."your-org/your-repo".routes.fix-conflicts]
+type = "pr"
+condition = "has_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 2
+poll_interval = 120
+max_retries = 2
+
+# Handle both CI failures and conflicts in one route (alternative to the two above).
+# Uncomment this and remove the two routes above if you prefer a single route.
+# [repos."your-org/your-repo".routes.fix-all]
+# type = "pr"
+# condition = "ci_failing_or_conflicts"
+# workflow = "pr-fix"
+# scope = "forza_owned"
+# concurrency = 2
+# poll_interval = 60
+# max_retries = 3
+
+# Merge PRs that are approved and have passing CI.
+[repos."your-org/your-repo".routes.auto-merge]
+type = "pr"
+condition = "approved_and_green"
+workflow = "merge"
+scope = "forza_owned"
+concurrency = 1        # serialize merges to avoid race conditions
+poll_interval = 120
+
+# ── Workflow templates ────────────────────────────────────────────────
+#
+# Lightweight merge workflow: just merge, no agent needed for the actual step.
+
+[[workflow_templates]]
+name = "merge"
+stages = [
+    { kind = "merge" },
+]
