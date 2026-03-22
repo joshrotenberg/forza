@@ -231,31 +231,8 @@ pub(super) async fn execute_stages(
                     planned_stage.kind_name()
                 )));
             };
-            let start = std::time::Instant::now();
-            // SAFETY: input is config-trusted, not user/GitHub-controlled
-            let output = tokio::process::Command::new("sh")
-                .args(["-c", command])
-                .current_dir(worktree_dir)
-                .output()
-                .await;
-            let duration = start.elapsed();
-            let (success, output_text) = match output {
-                Ok(o) => {
-                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
-                    let text = if stderr.is_empty() { stdout } else { stderr };
-                    (o.status.success(), text)
-                }
-                Err(e) => (false, e.to_string()),
-            };
-            let result = StageResult {
-                stage: planned_stage.kind_name().to_string(),
-                success,
-                duration_secs: duration.as_secs_f64(),
-                cost_usd: None,
-                output: output_text,
-                files_modified: None,
-            };
+            let (success, output_text, duration) =
+                run_agentless_stage(command, worktree_dir, None).await;
             info!(
                 subject,
                 number,
@@ -264,6 +241,14 @@ pub(super) async fn execute_stages(
                 duration = format!("{:.1}s", duration.as_secs_f64()),
                 "agentless stage complete"
             );
+            let result = StageResult {
+                stage: planned_stage.kind_name().to_string(),
+                success,
+                duration_secs: duration.as_secs_f64(),
+                cost_usd: None,
+                output: output_text,
+                files_modified: None,
+            };
             let failed = !success;
             record.record_stage(
                 planned_stage.kind,
@@ -294,39 +279,15 @@ pub(super) async fn execute_stages(
             continue;
         }
 
-        let stage_model = ctx
-            .cli_overrides
-            .model
-            .as_deref()
-            .or(ctx.label_overrides.model.as_deref())
-            .or(planned_stage.model.as_deref())
-            .or_else(|| config.effective_model(route));
-        let stage_skills = if !ctx.cli_overrides.skills.is_empty() {
-            ctx.cli_overrides.skills.as_slice()
-        } else if !ctx.label_overrides.skills.is_empty() {
-            ctx.label_overrides.skills.as_slice()
-        } else {
-            config.effective_skills(route, planned_stage.skills.as_deref())
-        };
-        let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
-        let stage_syspr = config.effective_append_system_prompt();
-        let mut stage_adapter = ClaudeAdapter::new();
-        if let Some(m) = stage_model {
-            stage_adapter = stage_adapter.model(m);
-        }
-        if !stage_skills.is_empty() {
-            stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
-        }
-        if let Some(p) = stage_mcp {
-            stage_adapter = stage_adapter.mcp_config(p);
-        }
-        if let Some(s) = stage_syspr {
-            stage_adapter = stage_adapter.append_system_prompt(s);
-        }
-
-        match stage_adapter
-            .execute_stage(&stage_for_exec, worktree_dir)
-            .await
+        match run_agent_stage(
+            &stage_for_exec,
+            config,
+            route,
+            worktree_dir,
+            ctx.cli_overrides,
+            ctx.label_overrides,
+        )
+        .await
         {
             Ok(result) => {
                 let status = if result.success {
@@ -759,6 +720,82 @@ pub(super) fn build_pr_body(
     body.push_str(&format!("\nCloses #{issue_number}"));
 
     body
+}
+
+/// Run an agentless stage command and return `(success, output_text, duration)`.
+///
+/// If `pr_number` is `Some`, the `FORZA_PR_NUMBER` environment variable is set on
+/// the child process (reactive mode). Otherwise no extra env vars are added (linear
+/// mode).
+pub(super) async fn run_agentless_stage(
+    command: &str,
+    worktree_dir: &Path,
+    pr_number: Option<u64>,
+) -> (bool, String, std::time::Duration) {
+    let start = std::time::Instant::now();
+    // SAFETY: input is config-trusted, not user/GitHub-controlled
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.args(["-c", command]).current_dir(worktree_dir);
+    if let Some(n) = pr_number {
+        cmd.env("FORZA_PR_NUMBER", n.to_string());
+    }
+    let output = cmd.output().await;
+    let duration = start.elapsed();
+    let (success, output_text) = match output {
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+            let text = if stderr.is_empty() { stdout } else { stderr };
+            (o.status.success(), text)
+        }
+        Err(e) => (false, e.to_string()),
+    };
+    (success, output_text, duration)
+}
+
+/// Build a `ClaudeAdapter` with resolved model/skills/mcp/system-prompt and execute
+/// the given planned stage.
+///
+/// Both the linear (`execute_stages`) and reactive (`process_reactive_pr`) paths share
+/// this adapter-construction and execution logic. Pass `CliOverrides::default()` for
+/// the reactive path which has no CLI overrides.
+pub(super) async fn run_agent_stage(
+    planned: &planner::PlannedStage,
+    config: &RunnerConfig,
+    route: &Route,
+    worktree_dir: &Path,
+    cli_overrides: &CliOverrides,
+    label_overrides: &LabelOverrides,
+) -> Result<StageResult> {
+    let stage_model = cli_overrides
+        .model
+        .as_deref()
+        .or(label_overrides.model.as_deref())
+        .or(planned.model.as_deref())
+        .or_else(|| config.effective_model(route));
+    let stage_skills = if !cli_overrides.skills.is_empty() {
+        cli_overrides.skills.as_slice()
+    } else if !label_overrides.skills.is_empty() {
+        label_overrides.skills.as_slice()
+    } else {
+        config.effective_skills(route, planned.skills.as_deref())
+    };
+    let stage_mcp = config.effective_mcp_config(route, planned.mcp_config.as_deref());
+    let stage_syspr = config.effective_append_system_prompt();
+    let mut stage_adapter = ClaudeAdapter::new();
+    if let Some(m) = stage_model {
+        stage_adapter = stage_adapter.model(m);
+    }
+    if !stage_skills.is_empty() {
+        stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
+    }
+    if let Some(p) = stage_mcp {
+        stage_adapter = stage_adapter.mcp_config(p);
+    }
+    if let Some(s) = stage_syspr {
+        stage_adapter = stage_adapter.append_system_prompt(s);
+    }
+    stage_adapter.execute_stage(planned, worktree_dir).await
 }
 
 pub(super) async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &str) {
