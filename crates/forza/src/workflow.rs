@@ -276,7 +276,7 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
             name: "pr-merge".into(),
             stages: vec![
                 Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
+                    .agentless("gh pr merge $FORZA_PR_NUMBER --auto --squash 2>/dev/null; gh pr view $FORZA_PR_NUMBER --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge $FORZA_PR_NUMBER --squash"),
             ],
             ..Default::default()
         },

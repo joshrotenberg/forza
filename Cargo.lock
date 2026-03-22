@@ -758,6 +758,7 @@ dependencies = [
  "clap",
  "claude-wrapper",
  "dirs",
+ "forza-core",
  "gix",
  "http",
  "hyper-rustls",
@@ -777,6 +778,22 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "forza-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

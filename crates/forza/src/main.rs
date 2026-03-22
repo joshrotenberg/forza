@@ -722,6 +722,7 @@ async fn cmd_issue(
     let cli_overrides = forza::config::CliOverrides {
         model: args.model,
         skills: args.skill,
+        route: None,
     };
     match forza::orchestrator::process_issue_with_overrides(
         args.number,
@@ -813,6 +814,7 @@ async fn cmd_pr(
     let cli_overrides = forza::config::CliOverrides {
         model: args.model,
         skills: args.skill,
+        route: None,
     };
     match forza::orchestrator::process_pr_with_overrides(
         args.number,

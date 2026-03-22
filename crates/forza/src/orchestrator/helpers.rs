@@ -232,8 +232,13 @@ pub(super) async fn execute_stages(
                     planned_stage.kind_name()
                 )));
             };
+            let pr_num = if ctx.subject_label == "pr" {
+                Some(ctx.subject_number)
+            } else {
+                None
+            };
             let (success, output_text, duration) =
-                run_agentless_stage(command, worktree_dir, None).await;
+                run_agentless_stage(command, worktree_dir, pr_num).await;
             info!(
                 subject,
                 number,

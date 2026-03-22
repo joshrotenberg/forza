@@ -340,9 +340,16 @@ pub async fn process_pr_with_overrides(
         "fetched PR"
     );
 
-    // 2. Match route.
-    let (route_name, route) = RunnerConfig::match_pr_route_in(routes, &pr)
-        .ok_or_else(|| Error::Triage("no route matches this PR's labels".into()))?;
+    // 2. Match route — use the pre-matched route name from condition routes if
+    //    available, otherwise match by labels.
+    let (route_name, route) = if let Some(rn) = cli_overrides.route.as_deref()
+        && let Some(r) = routes.get(rn)
+    {
+        (rn, r)
+    } else {
+        RunnerConfig::match_pr_route_in(routes, &pr)
+            .ok_or_else(|| Error::Triage("no route matches this PR's labels".into()))?
+    };
 
     // 2b. Parse label overrides.
     let label_overrides = crate::config::LabelOverrides::from_labels(&pr.labels);
@@ -1106,13 +1113,18 @@ pub async fn process_batch_for_repo(
                                 )
                                 .await
                             } else {
-                                process_pr_with_config(
+                                let overrides = CliOverrides {
+                                    route: Some(route_name_for_reactive.clone()),
+                                    ..Default::default()
+                                };
+                                process_pr_with_overrides(
                                     pr_number,
                                     &repo_owned,
                                     &routes_clone,
                                     &config_clone,
                                     &state_dir_owned,
                                     &repo_dir_owned,
+                                    overrides,
                                     &*gh_clone,
                                     &*git_clone,
                                 )
