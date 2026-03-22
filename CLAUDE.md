@@ -17,9 +17,12 @@ RunnerConfig (forza.toml / runner.toml)
                                                      └─ optional / max_retries
 ```
 
-Key modules: `src/config.rs` (config structs), `src/workflow.rs` (`Stage`, `StageKind`,
-`WorkflowTemplate`), `src/planner.rs` (build stage prompts, breadcrumb instructions),
-`src/orchestrator.rs` (execute stages, load breadcrumbs, fire hooks).
+Key modules: `src/config.rs` (config structs, `SubjectType`, `RouteCondition`),
+`src/workflow.rs` (`Stage`, `StageKind`, `WorkflowTemplate`, `WorkflowMode`),
+`src/planner.rs` (build stage prompts, breadcrumb instructions),
+`src/orchestrator/mod.rs` (execute stages, load breadcrumbs, fire hooks),
+`src/orchestrator/helpers.rs` (PR body building, open_pr handling),
+`src/state.rs` (`RunRecord`, `RouteOutcome`, run persistence).
 
 ## Config structure
 
@@ -30,7 +33,7 @@ gate_label = "forza:ready"
 branch_pattern = "automation/{issue}-{slug}"
 
 [security]
-authorization_level = "contributor"   # sandbox | local | contributor | trusted
+authorization_level = "trusted"       # sandbox | local | contributor | trusted
 
 [validation]
 commands = ["cargo fmt --all -- --check", "cargo clippy --all-targets -- -D warnings"]
