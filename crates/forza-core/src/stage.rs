@@ -104,6 +104,15 @@ pub enum Execution {
     },
 }
 
+impl std::fmt::Display for Execution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Execution::Agent => f.write_str("agent"),
+            Execution::Shell { .. } => f.write_str("shell"),
+        }
+    }
+}
+
 /// A single stage in a workflow.
 ///
 /// Stages are the atomic units of work in forza. Each stage either invokes
@@ -411,6 +420,18 @@ mod tests {
         assert_eq!(restored.kind, StageKind::Merge);
         assert!(restored.optional);
         assert!(restored.is_agentless());
+    }
+
+    #[test]
+    fn execution_display() {
+        assert_eq!(Execution::Agent.to_string(), "agent");
+        assert_eq!(
+            Execution::Shell {
+                command: "cargo fmt".into()
+            }
+            .to_string(),
+            "shell"
+        );
     }
 
     #[test]
