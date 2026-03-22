@@ -325,7 +325,50 @@ impl GitHubClient for OctocrabClient {
     }
 
     async fn fetch_all_open_prs(&self, repo: &str, limit: usize) -> Result<Vec<PrCandidate>> {
-        self.fetch_eligible_prs(repo, &[], limit).await
+        // The list endpoint doesn't return mergeable/checks — fetch the list
+        // then enrich each PR with individual fetches so condition routes work.
+        let (owner, name) = parse_repo(repo)?;
+        let page = self
+            .client
+            .pulls(owner, name)
+            .list()
+            .state(octocrab::params::State::Open)
+            .per_page(limit.min(100) as u8)
+            .send()
+            .await
+            .map_err(|e| Error::GitHub(format!("list PRs: {e}")))?;
+
+        let mut results = Vec::with_capacity(page.items.len());
+        for pr in page.items {
+            let number = pr.number;
+            match self.fetch_pr(repo, number).await {
+                Ok(enriched) => results.push(enriched),
+                Err(e) => {
+                    tracing::warn!(pr = number, error = %e, "failed to enrich PR, using partial data");
+                    results.push(PrCandidate {
+                        number,
+                        repo: repo.to_string(),
+                        title: pr.title.unwrap_or_default(),
+                        body: String::new(),
+                        labels: pr
+                            .labels
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|l| l.name)
+                            .collect(),
+                        state: "open".to_string(),
+                        html_url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
+                        head_branch: pr.head.ref_field,
+                        base_branch: pr.base.ref_field,
+                        is_draft: pr.draft.unwrap_or(false),
+                        mergeable: None,
+                        review_decision: None,
+                        checks_passing: None,
+                    });
+                }
+            }
+        }
+        Ok(results)
     }
 
     async fn fetch_pr_by_branch(&self, repo: &str, branch: &str) -> Result<Option<PrCandidate>> {
