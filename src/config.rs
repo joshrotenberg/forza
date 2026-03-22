@@ -303,12 +303,14 @@ impl RouteCondition {
                 mergeable = m,
                 "mergeability not yet resolved, skipping cycle"
             );
+            return false;
         } else if pr.mergeable.is_none() {
             debug!(
                 pr = pr.number,
                 mergeable = "None",
                 "mergeability not yet resolved, skipping cycle"
             );
+            return false;
         }
         let has_conflicts = pr.mergeable.as_deref() == Some("CONFLICTING");
         let approved = pr.review_decision.as_deref() == Some("APPROVED");
@@ -1642,16 +1644,23 @@ max_retries = 3
         pr.review_decision = Some("APPROVED".into());
         assert!(RouteCondition::ApprovedAndGreen.matches(&pr));
 
-        // UNKNOWN mergeability: transient GitHub state — treated as not-conflicting
+        // UNKNOWN mergeability: transient GitHub state — must return false for all conditions
         pr.mergeable = Some("UNKNOWN".into());
         pr.checks_passing = Some(true);
+        pr.review_decision = Some("APPROVED".into());
         assert!(!RouteCondition::HasConflicts.matches(&pr));
         assert!(!RouteCondition::CiFailingOrConflicts.matches(&pr));
+        assert!(!RouteCondition::ApprovedAndGreen.matches(&pr));
+        assert!(!RouteCondition::CiGreenNoObjections.matches(&pr));
+        assert!(!RouteCondition::AnyActionable.matches(&pr));
 
-        // None mergeability: also treated as not-conflicting
+        // None mergeability: also returns false for all conditions
         pr.mergeable = None;
         assert!(!RouteCondition::HasConflicts.matches(&pr));
         assert!(!RouteCondition::CiFailingOrConflicts.matches(&pr));
+        assert!(!RouteCondition::ApprovedAndGreen.matches(&pr));
+        assert!(!RouteCondition::CiGreenNoObjections.matches(&pr));
+        assert!(!RouteCondition::AnyActionable.matches(&pr));
 
         // CiGreenNoObjections: CI green + no review decision → matches
         pr.mergeable = Some("MERGEABLE".into());
