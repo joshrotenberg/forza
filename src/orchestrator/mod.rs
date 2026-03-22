@@ -1087,7 +1087,12 @@ pub async fn process_reactive_pr(
     let pr = gh.fetch_pr(repo, pr_number).await?;
     info!(pr = pr_number, title = pr.title, "fetched PR");
 
-    // 1a. Parse label overrides.
+    // 1a. Acquire in-progress lease.
+    let _ = gh
+        .add_pr_label(repo, pr_number, &config.global.in_progress_label)
+        .await;
+
+    // 1b. Parse label overrides.
     let label_overrides = crate::config::LabelOverrides::from_labels(&pr.labels);
 
     // 2. Resolve route and template.
@@ -1312,6 +1317,11 @@ pub async fn process_reactive_pr(
     record.finish(final_status);
     state::save_run(&record, state_dir)?;
     info!(pr = pr_number, run_id = record.run_id, status = ?final_status, outcome = ?record.outcome, "reactive PR run complete");
+
+    // Release in-progress lease.
+    let _ = gh
+        .remove_pr_label(repo, pr_number, &config.global.in_progress_label)
+        .await;
 
     // Fire notifications (best-effort).
     if let Some(notif_config) = config.global.notifications.as_ref() {
