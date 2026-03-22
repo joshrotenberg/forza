@@ -14,6 +14,21 @@ gate_label = "forza:ready"
 # Branch naming pattern. {issue} = issue/PR number, {slug} = title slug.
 branch_pattern = "automation/{issue}-{slug}"
 # Auto-merge PRs after CI passes (uses gh pr merge --auto --squash).
+# The merge stage runs `gh pr merge --auto --squash --delete-branch` by default.
+# --auto queues the merge; GitHub completes it once all required status checks pass.
+# For repos without branch protection / required checks, --auto is not supported
+# and the command will fail. In that case, use a custom workflow template with a
+# fallback command that tries --auto first, then falls back to a direct merge:
+#
+#   [[workflow_templates]]
+#   name = "chore"
+#   stages = [
+#     { kind = "implement" },
+#     { kind = "test" },
+#     { kind = "open_pr" },
+#     { kind = "merge", agentless = true,
+#       command = "gh pr merge --auto --squash --delete-branch || gh pr merge --squash --delete-branch" },
+#   ]
 auto_merge = true
 
 [security]
