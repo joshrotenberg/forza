@@ -146,6 +146,12 @@ impl StageKind {
 
 /// Built-in workflow templates.
 pub fn builtin_templates() -> Vec<WorkflowTemplate> {
+    // Merge stages use `gh pr merge --auto --squash --delete-branch` by default.
+    // `--auto` queues the merge; GitHub completes it once all required status checks pass.
+    // For repos without branch protection or required checks, `--auto` is not supported and
+    // the command will fail. In that case, override the merge stage in your workflow template
+    // with a fallback command:
+    //   command = "gh pr merge --auto --squash --delete-branch || gh pr merge --squash --delete-branch"
     vec![
         WorkflowTemplate {
             name: "bug".into(),
