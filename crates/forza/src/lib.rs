@@ -39,5 +39,4 @@ pub mod state;
 pub mod workflow;
 
 pub use config::{RunnerConfig, SubjectType};
-pub use orchestrator::process_pr_with_config;
 pub use state::RouteOutcome;

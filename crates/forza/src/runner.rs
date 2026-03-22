@@ -601,6 +601,118 @@ async fn recover_stale_leases(
     }
 }
 
+// ── Single-item processing (CLI commands) ───────────────────────────────
+
+/// Process a single issue by number. Used by `forza issue`.
+#[allow(clippy::too_many_arguments)]
+pub async fn process_issue(
+    number: u64,
+    repo: &str,
+    config: &RunnerConfig,
+    routes: &IndexMap<String, Route>,
+    state_dir: &Path,
+    repo_dir: &Path,
+    gh: Arc<dyn crate::github::GitHubClient>,
+    git: Arc<dyn crate::git::GitClient>,
+    model_override: Option<String>,
+    skill_overrides: Vec<String>,
+) -> forza_core::Result<Run> {
+    let issue = gh
+        .fetch_issue(repo, number)
+        .await
+        .map_err(|e| forza_core::Error::GitHub(e.to_string()))?;
+
+    let (route_name, route) = RunnerConfig::match_route_in(routes, &issue)
+        .ok_or_else(|| forza_core::Error::NoMatchingRoute(format!(
+            "no route matches issue #{number} (labels: {:?})", issue.labels
+        )))?;
+
+    let wf_name = route.workflow.as_deref().unwrap_or("");
+    let branch = generate_branch(&config.global.branch_pattern, number, &issue.title);
+    let subject = adapters::issue_to_subject(&issue, &branch);
+
+    let mut matched = MatchedWork {
+        subject,
+        route_name: route_name.to_string(),
+        route: to_core_route(route),
+        workflow_name: wf_name.to_string(),
+    };
+
+    // Apply CLI overrides.
+    if let Some(m) = model_override {
+        matched.route.model = Some(m);
+    }
+    if !skill_overrides.is_empty() {
+        matched.route.skills = Some(skill_overrides);
+    }
+
+    let gh_adapter = Arc::new(GitHubAdapter::new(gh));
+    let git_adapter = Arc::new(GitAdapter::new(git));
+    let agent = AgentAdapter;
+
+    Ok(execute_work(
+        matched, config, state_dir, repo_dir, &*gh_adapter, &*git_adapter, &agent,
+    ).await)
+}
+
+/// Process a single PR by number. Used by `forza pr`.
+#[allow(clippy::too_many_arguments)]
+pub async fn process_pr(
+    number: u64,
+    repo: &str,
+    config: &RunnerConfig,
+    routes: &IndexMap<String, Route>,
+    state_dir: &Path,
+    repo_dir: &Path,
+    gh: Arc<dyn crate::github::GitHubClient>,
+    git: Arc<dyn crate::git::GitClient>,
+    model_override: Option<String>,
+    skill_overrides: Vec<String>,
+    route_override: Option<String>,
+) -> forza_core::Result<Run> {
+    let pr = gh
+        .fetch_pr(repo, number)
+        .await
+        .map_err(|e| forza_core::Error::GitHub(e.to_string()))?;
+
+    // Use route override if provided (from condition routes), otherwise match by labels.
+    let (route_name, route) = if let Some(ref rn) = route_override
+        && let Some(r) = routes.get(rn)
+    {
+        (rn.as_str(), r)
+    } else {
+        RunnerConfig::match_pr_route_in(routes, &pr)
+            .ok_or_else(|| forza_core::Error::NoMatchingRoute(format!(
+                "no route matches PR #{number} (labels: {:?})", pr.labels
+            )))?
+    };
+
+    let wf_name = route.workflow.as_deref().unwrap_or("");
+    let subject = adapters::pr_to_subject(&pr);
+
+    let mut matched = MatchedWork {
+        subject,
+        route_name: route_name.to_string(),
+        route: to_core_route(route),
+        workflow_name: wf_name.to_string(),
+    };
+
+    if let Some(m) = model_override {
+        matched.route.model = Some(m);
+    }
+    if !skill_overrides.is_empty() {
+        matched.route.skills = Some(skill_overrides);
+    }
+
+    let gh_adapter = Arc::new(GitHubAdapter::new(gh));
+    let git_adapter = Arc::new(GitAdapter::new(git));
+    let agent = AgentAdapter;
+
+    Ok(execute_work(
+        matched, config, state_dir, repo_dir, &*gh_adapter, &*git_adapter, &agent,
+    ).await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
