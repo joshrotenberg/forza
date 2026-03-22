@@ -540,7 +540,10 @@ impl LabelOverrides {
                         .components()
                         .any(|c| c == std::path::Component::ParentDir)
                 {
-                    tracing::warn!(label, "ignoring skill label with unsafe path (absolute or traversal)");
+                    tracing::warn!(
+                        label,
+                        "ignoring skill label with unsafe path (absolute or traversal)"
+                    );
                 } else {
                     skills.push(s.to_string());
                 }
