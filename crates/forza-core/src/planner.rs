@@ -91,9 +91,10 @@ fn select_template(kind: StageKind, subject_kind: SubjectKind) -> &'static str {
         (StageKind::Plan, SubjectKind::Pr) => PROMPT_PLAN,
         (StageKind::Implement, SubjectKind::Pr) => PROMPT_IMPLEMENT,
 
-        // Merge and triage use minimal prompts
+        // Agentless stages use minimal/empty prompts
         (StageKind::Merge, _) => "Merge the PR.",
         (StageKind::Triage, _) => "Triage the issue.",
+        (StageKind::DraftPr, _) => "", // agentless, prompt not used
     }
 }
 

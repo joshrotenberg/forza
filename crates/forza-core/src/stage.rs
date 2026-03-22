@@ -39,6 +39,8 @@ pub enum StageKind {
     Research,
     /// Post a comment on the issue/PR with findings or status.
     Comment,
+    /// Create an early draft PR for visibility (agentless).
+    DraftPr,
 }
 
 impl StageKind {
@@ -59,6 +61,7 @@ impl StageKind {
             StageKind::Merge => "merge",
             StageKind::Research => "research",
             StageKind::Comment => "comment",
+            StageKind::DraftPr => "draft_pr",
         }
     }
 
@@ -77,6 +80,7 @@ impl StageKind {
             StageKind::Merge,
             StageKind::Research,
             StageKind::Comment,
+            StageKind::DraftPr,
         ]
     }
 }
@@ -204,6 +208,10 @@ fn default_true() -> bool {
     true
 }
 
+/// Shell command for the DraftPr stage.
+/// Loaded from `commands/draft_pr.sh` at compile time.
+const DRAFT_PR_COMMAND: &str = include_str!("commands/draft_pr.sh");
+
 impl Workflow {
     /// Create a new workflow with the given name and stages.
     pub fn new(name: impl Into<String>, stages: Vec<Stage>) -> Self {
@@ -228,6 +236,7 @@ impl Workflow {
                 "bug",
                 vec![
                     Stage::agent(StageKind::Plan),
+                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
@@ -243,6 +252,7 @@ impl Workflow {
                 "feature",
                 vec![
                     Stage::agent(StageKind::Plan),
+                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
@@ -311,7 +321,7 @@ mod tests {
 
     #[test]
     fn stage_kind_all_has_every_variant() {
-        assert_eq!(StageKind::all().len(), 12);
+        assert_eq!(StageKind::all().len(), 13);
     }
 
     #[test]
