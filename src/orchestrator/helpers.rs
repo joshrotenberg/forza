@@ -74,15 +74,19 @@ pub(super) fn generate_reactive_pr_prompt(
             breadcrumb = breadcrumb,
         ),
         StageKind::RevisePr => format!(
-            "Address the review feedback for PR #{number}: {title}\n\n\
+            "Revise PR #{number}: {title}\n\n\
              ## Steps\n\n\
-             1. Run `gh pr view {number} --json reviews` to see review comments.\n\
-             2. Address each CHANGES_REQUESTED comment.\n\
-             3. Commit the revisions and push (`git push`).\n\n\
-             Branch: `{branch}`{breadcrumb}",
+             1. Check for merge conflicts: `git fetch origin && git rebase origin/{base_branch}`\n\
+             2. If the rebase has conflicts, resolve them. Read the conflicting files, \
+                understand both sides, and produce the correct merged result.\n\
+             3. Check for review feedback: `gh pr view {number} --json reviews`\n\
+             4. Address any CHANGES_REQUESTED comments.\n\
+             5. Commit any changes and push: `git push --force-with-lease origin {branch}`\n\n\
+             Branch: `{branch}` -> `{base_branch}`{breadcrumb}",
             number = pr.number,
             title = pr.title,
             branch = pr.head_branch,
+            base_branch = pr.base_branch,
             breadcrumb = breadcrumb,
         ),
         _ => format!(
