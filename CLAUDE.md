@@ -87,12 +87,12 @@ invocation happens for agentless stages.
 ## Conditional stages
 
 Set `condition = "..."` (a shell command) on a stage to gate its execution. Exit 0
-means **skip** the stage; non-zero (or absent) means **run** it. Use together with
+means **run** the stage; non-zero means **skip** it. Use together with
 `optional = true` so a skipped stage does not fail the run. No hooks fire for skipped
 stages.
 
 ```toml
-{ kind = "test", optional = true, condition = "git diff --quiet HEAD~1 -- src/tests/" }
+{ kind = "test", optional = true, condition = "! git diff --quiet HEAD~1 -- src/tests/" }
 ```
 
 The condition is evaluated by the orchestrator before the stage starts.
