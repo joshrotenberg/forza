@@ -73,6 +73,7 @@ pub(super) async fn execute_stages(
         // Skip optional stages if condition says so — no hooks run for skipped stages.
         if planned_stage.optional
             && let Some(ref condition) = planned_stage.condition
+            // SAFETY: input is config-trusted, not user/GitHub-controlled
             && let Ok(o) = tokio::process::Command::new("sh")
                 .args(["-c", condition])
                 .current_dir(worktree_dir)
@@ -231,6 +232,7 @@ pub(super) async fn execute_stages(
                 )));
             };
             let start = std::time::Instant::now();
+            // SAFETY: input is config-trusted, not user/GitHub-controlled
             let output = tokio::process::Command::new("sh")
                 .args(["-c", command])
                 .current_dir(worktree_dir)
@@ -754,6 +756,7 @@ pub(super) fn build_pr_body(
 
 pub(super) async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &str) {
     for cmd in hooks {
+        // SAFETY: input is config-trusted, not user/GitHub-controlled
         let output = tokio::process::Command::new("sh")
             .args(["-c", cmd])
             .current_dir(work_dir)
@@ -776,6 +779,7 @@ pub(super) async fn run_stage_hooks(hooks: &[String], work_dir: &Path, label: &s
 
 pub(super) async fn run_validation(commands: &[String], work_dir: &Path) {
     for cmd in commands {
+        // SAFETY: input is config-trusted, not user/GitHub-controlled
         let output = tokio::process::Command::new("sh")
             .args(["-c", cmd])
             .current_dir(work_dir)

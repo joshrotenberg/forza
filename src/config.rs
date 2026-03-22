@@ -534,7 +534,19 @@ impl LabelOverrides {
             if let Some(m) = label.strip_prefix("forza:model:") {
                 model = Some(m.to_string());
             } else if let Some(s) = label.strip_prefix("forza:skill:") {
-                skills.push(s.to_string());
+                let path = std::path::Path::new(s);
+                if path.is_absolute()
+                    || path
+                        .components()
+                        .any(|c| c == std::path::Component::ParentDir)
+                {
+                    tracing::warn!(
+                        label,
+                        "ignoring skill label with unsafe path (absolute or traversal)"
+                    );
+                } else {
+                    skills.push(s.to_string());
+                }
             }
         }
 
@@ -1710,6 +1722,17 @@ repo = "owner/repo"
         let overrides = LabelOverrides::from_labels(&labels);
         assert!(overrides.model.is_none());
         assert_eq!(overrides.skills, vec!["rust", "testing"]);
+    }
+
+    #[test]
+    fn label_overrides_rejects_unsafe_skill_paths() {
+        let labels = vec![
+            "forza:skill:../etc/passwd".to_string(),
+            "forza:skill:/absolute/path".to_string(),
+            "forza:skill:skills/rust.md".to_string(),
+        ];
+        let overrides = LabelOverrides::from_labels(&labels);
+        assert_eq!(overrides.skills, vec!["skills/rust.md"]);
     }
 
     #[test]
