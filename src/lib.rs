@@ -13,6 +13,13 @@
 //! - **Platform** (`github`): Repository adapter for issues, PRs, comments, labels
 //! - **Domain** (`planner`, `workflow`): Orchestration logic
 //! - **Execution** (`executor`, `isolation`): Agent invocation and work isolation
+//!
+//! # Re-exports
+//!
+//! - [`RunnerConfig`]: top-level configuration loaded from `forza.toml`
+//! - [`SubjectType`]: distinguishes issue routes (`SubjectType::Issue`) from PR routes (`SubjectType::Pr`)
+//! - [`RouteOutcome`]: the final outcome recorded for a completed run
+//! - [`process_pr_with_config`]: entry point for reactive PR processing
 
 pub mod api;
 pub mod config;
