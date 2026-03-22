@@ -89,6 +89,22 @@ pub(super) async fn execute_stages(
             continue;
         }
 
+        // Check accumulated cost against cap before starting this stage.
+        if let Some(cap) = config.global.max_cost_per_issue
+            && let Some(total) = record.accumulated_cost_usd()
+            && total >= cap
+        {
+            warn!(
+                subject,
+                number,
+                total_cost = total,
+                cap,
+                "cost cap reached, aborting remaining stages"
+            );
+            all_succeeded = false;
+            break;
+        }
+
         // Look up per-stage hooks.
         let stage_hooks = config.stage_hooks.get(planned_stage.kind_name());
 
@@ -417,22 +433,6 @@ pub(super) async fn execute_stages(
                     break;
                 }
             }
-        }
-
-        // Check accumulated cost against cap.
-        if let Some(cap) = config.global.max_cost_per_issue
-            && let Some(total) = record.total_cost_usd
-            && total > cap
-        {
-            warn!(
-                subject,
-                number,
-                total_cost = total,
-                cap,
-                "cost cap exceeded, aborting remaining stages"
-            );
-            all_succeeded = false;
-            break;
         }
 
         // Run validation.
