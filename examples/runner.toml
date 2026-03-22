@@ -110,6 +110,31 @@ workflow = "research"
 concurrency = 3
 poll_interval = 3600      # check hourly (not urgent)
 
+# ── Condition routes ──────────────────────────────────────────────────────────
+#
+# Condition routes fire automatically based on PR state rather than a label.
+# Supported conditions:
+#   ci_failing            — CI checks are failing on the PR
+#   has_conflicts         — the PR has merge conflicts
+#   ci_failing_or_conflicts — CI failing or conflicts (most common)
+#   approved_and_green    — PR is approved and CI is passing (auto-merge trigger)
+#
+# scope controls which PRs are evaluated:
+#   forza_owned (default) — only PRs on branches created by forza
+#   all                   — all open PRs in the repo
+#
+# No gate_label needed — condition routes bypass the label gate.
+
+[repos."joshrotenberg/claude-wrapper".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"  # fire when CI fails or conflicts detected
+workflow = "pr-fix"
+scope = "forza_owned"         # only touch forza-created branches
+concurrency = 2
+poll_interval = 60            # check every minute
+max_retries = 3               # apply forza:needs-human after 3 failures
+# model = "claude-opus-4-6"   # use a more capable model for tricky fixes
+
 # ── Workflow templates ───────────────────────────────────────────────
 #
 # Built-in templates: bug, feature, chore, research
