@@ -753,6 +753,7 @@ dependencies = [
  "http",
  "hyper-rustls",
  "hyper-util",
+ "indexmap",
  "octocrab",
  "regex",
  "reqwest",
