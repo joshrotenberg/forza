@@ -110,3 +110,4 @@ workflow = "pr-fix"
 scope = "forza_owned"
 max_retries = 3
 concurrency = 2
+poll_interval = 60

@@ -123,6 +123,7 @@ workflow   = "pr-fix"
 scope      = "forza_owned"               # forza_owned (default) | all
 max_retries = 3                          # applies forza:needs-human after N failures
 concurrency = 2
+poll_interval = 60                       # check every minute for CI/conflict issues
 model      = "claude-opus-4-6"           # per-route model override
 skills     = ["./skills/pr-fix.md"]      # per-route skills override
 mcp_config = ".mcp.json"
