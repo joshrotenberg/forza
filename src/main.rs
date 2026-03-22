@@ -989,9 +989,7 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
                         "ci_failing_or_conflicts"
                     }
                     forza::config::RouteCondition::ApprovedAndGreen => "approved_and_green",
-                    forza::config::RouteCondition::CiGreenNoObjections => {
-                        "ci_green_no_objections"
-                    }
+                    forza::config::RouteCondition::CiGreenNoObjections => "ci_green_no_objections",
                 };
                 println!("    Trigger:    condition {cond_name}");
                 println!("    Poll:       {}s", route.poll_interval);
@@ -1073,7 +1071,10 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
             }
 
             // On failure label
-            println!("    On failure: {} label applied", config.global.failed_label);
+            println!(
+                "    On failure: {} label applied",
+                config.global.failed_label
+            );
         }
 
         println!();
@@ -1085,10 +1086,7 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
     println!("  Max concurrency: {}", config.global.max_concurrency);
     println!("  Auto-merge:      {}", config.global.auto_merge);
     println!("  Draft PR:        {}", config.global.draft_pr);
-    println!(
-        "  Security level:  {}",
-        config.security.authorization_level
-    );
+    println!("  Security level:  {}", config.security.authorization_level);
 
     ExitCode::SUCCESS
 }
