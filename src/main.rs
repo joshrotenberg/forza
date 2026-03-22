@@ -755,6 +755,7 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
             eprintln!("no runs found");
             return ExitCode::FAILURE;
         }
+        println!("forza {}", env!("CARGO_PKG_VERSION"));
         println!(
             "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  {:<25}  started_at",
             "run_id", "issue#", "workflow", "status", "cost", "outcome"
@@ -785,6 +786,7 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
             eprintln!("no runs found");
             return ExitCode::FAILURE;
         }
+        println!("forza {}", env!("CARGO_PKG_VERSION"));
         println!(
             "{:<20}  {:>6}  {:>9}  {:>6}  {:>8}  {:>8}  {:>8}",
             "workflow", "total", "succeeded", "failed", "min $", "max $", "avg $"
@@ -1114,7 +1116,8 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
     };
     println!();
     println!(
-        "Run {} — {} ({})",
+        "forza {} — Run {} — {} ({})",
+        env!("CARGO_PKG_VERSION"),
         record.run_id,
         record.status_text(),
         subject
