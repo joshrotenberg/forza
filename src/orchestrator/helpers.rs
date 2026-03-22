@@ -71,6 +71,7 @@ pub(super) async fn execute_stages(
         pending_breadcrumb = None;
 
         // Skip optional stages if condition says so — no hooks run for skipped stages.
+        // Exit 0 means run the stage; non-zero means skip it.
         if planned_stage.optional
             && let Some(ref condition) = planned_stage.condition
             // SAFETY: input is config-trusted, not user/GitHub-controlled
@@ -79,13 +80,13 @@ pub(super) async fn execute_stages(
                 .current_dir(worktree_dir)
                 .output()
                 .await
-            && o.status.success()
+            && !o.status.success()
         {
             info!(
                 subject,
                 number,
                 stage = planned_stage.kind_name(),
-                "skipping optional stage (condition met)"
+                "skipping optional stage (condition not met)"
             );
             continue;
         }
