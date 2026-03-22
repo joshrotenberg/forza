@@ -281,10 +281,21 @@ impl RouteCondition {
     /// Evaluate whether this condition holds for the given PR.
     pub fn matches(&self, pr: &crate::github::PrCandidate) -> bool {
         let ci_failing = pr.checks_passing == Some(false);
-        if let Some(m) = pr.mergeable.as_deref() && m != "MERGEABLE" && m != "CONFLICTING" {
-            debug!(pr = pr.number, mergeable = m, "mergeability not yet resolved, skipping cycle");
+        if let Some(m) = pr.mergeable.as_deref()
+            && m != "MERGEABLE"
+            && m != "CONFLICTING"
+        {
+            debug!(
+                pr = pr.number,
+                mergeable = m,
+                "mergeability not yet resolved, skipping cycle"
+            );
         } else if pr.mergeable.is_none() {
-            debug!(pr = pr.number, mergeable = "None", "mergeability not yet resolved, skipping cycle");
+            debug!(
+                pr = pr.number,
+                mergeable = "None",
+                "mergeability not yet resolved, skipping cycle"
+            );
         }
         let has_conflicts = pr.mergeable.as_deref() == Some("CONFLICTING");
         let approved = pr.review_decision.as_deref() == Some("APPROVED");
