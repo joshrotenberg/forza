@@ -104,6 +104,7 @@ pub(super) async fn handle_open_pr(
     work_dir: &Path,
     gh: &dyn GitHubClient,
     git: &dyn GitClient,
+    draft: bool,
 ) -> Result<github::PullRequest> {
     let issue_number = issue.number;
 
@@ -148,8 +149,31 @@ pub(super) async fn handle_open_pr(
 
     let body = build_pr_body(issue, record, &plan_crumb, &review_crumb, &diff_stat);
 
+    // If draft mode and a draft PR was already created after the plan stage,
+    // update its body and promote it to ready-for-review instead of creating a new PR.
+    if draft && let Some(pr_number) = record.pr_number {
+        gh.update_pr_body(repo, pr_number, &body).await?;
+        gh.mark_pr_ready_for_review(repo, pr_number).await?;
+        // Fetch the PR to return accurate state.
+        let existing = gh.fetch_pr_by_branch(repo, branch).await;
+        return Ok(match existing {
+            Ok(Some(pr)) => github::PullRequest {
+                number: pr.number,
+                head_branch: pr.head_branch,
+                state: pr.state,
+                html_url: pr.html_url,
+            },
+            _ => github::PullRequest {
+                number: pr_number,
+                head_branch: branch.to_string(),
+                state: "open".to_string(),
+                html_url: String::new(),
+            },
+        });
+    }
+
     match gh
-        .create_pull_request(repo, branch, &issue.title, &body, work_dir)
+        .create_pull_request(repo, branch, &issue.title, &body, work_dir, false)
         .await
     {
         Ok(pr) => Ok(pr),
@@ -192,6 +216,50 @@ pub(super) async fn handle_open_pr(
             }
         }
     }
+}
+
+/// Create a draft PR immediately after the plan stage.
+///
+/// Pushes the branch and opens a draft PR using the plan breadcrumb as the
+/// initial body. The PR number is stored in `record.pr_number` by the caller.
+pub(super) async fn create_early_draft_pr(
+    repo: &str,
+    branch: &str,
+    issue: &github::IssueCandidate,
+    run_id: &str,
+    work_dir: &Path,
+    gh: &dyn GitHubClient,
+    git: &dyn GitClient,
+) -> Result<github::PullRequest> {
+    // Push the branch so a PR can be created.
+    git.push(work_dir, branch).await?;
+
+    // Use the plan breadcrumb as the initial PR body.
+    let crumb_path = work_dir
+        .join(".forza")
+        .join("breadcrumbs")
+        .join(run_id)
+        .join("plan.md");
+    let plan_crumb = std::fs::read_to_string(&crumb_path).unwrap_or_default();
+
+    let body = if plan_crumb.is_empty() {
+        format!(
+            "Draft PR for [#{issue_num}]({issue_url}) — {issue_title}.\n\nCloses #{issue_num}",
+            issue_num = issue.number,
+            issue_url = issue.html_url,
+            issue_title = issue.title,
+        )
+    } else {
+        format!(
+            "Draft PR for [#{issue_num}]({issue_url}) — {issue_title}.\n\n## Plan\n\n{plan_crumb}\n\nCloses #{issue_num}",
+            issue_num = issue.number,
+            issue_url = issue.html_url,
+            issue_title = issue.title,
+        )
+    };
+
+    gh.create_pull_request(repo, branch, &issue.title, &body, work_dir, true)
+        .await
 }
 
 pub(super) fn build_pr_body(

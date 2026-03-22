@@ -179,6 +179,7 @@ pub async fn process_issue_with_overrides(
 
     // 7. Execute stages.
     let validation = config.effective_validation(route);
+    let draft_pr = config.effective_draft_pr(route);
 
     let mut record = RunRecord::new(&run_id, repo, number, &template.name, &branch);
     let mut all_succeeded = true;
@@ -278,6 +279,7 @@ pub async fn process_issue_with_overrides(
                 &worktree_dir,
                 gh,
                 git,
+                draft_pr,
             )
             .await
             {
@@ -488,6 +490,32 @@ pub async fn process_issue_with_overrides(
                     }
                 }
                 record.record_stage(planned_stage.kind, status, result);
+                // After a successful plan stage, create an early draft PR when draft_pr is enabled.
+                if !failed && planned_stage.kind == StageKind::Plan && draft_pr {
+                    match create_early_draft_pr(
+                        repo,
+                        &branch,
+                        &issue,
+                        &run_id,
+                        &worktree_dir,
+                        gh,
+                        git,
+                    )
+                    .await
+                    {
+                        Ok(pr) => {
+                            record.pr_number = Some(pr.number);
+                            info!(
+                                issue = number,
+                                pr = pr.number,
+                                "created early draft PR after plan stage"
+                            );
+                        }
+                        Err(e) => {
+                            warn!(issue = number, error = %e, "failed to create early draft PR (non-fatal)");
+                        }
+                    }
+                }
                 if !failed
                     && let Some(h) = stage_hooks
                     && !h.post.is_empty()

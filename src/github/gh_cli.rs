@@ -102,8 +102,17 @@ impl GitHubClient for GhCliClient {
         title: &str,
         body: &str,
         work_dir: &Path,
+        draft: bool,
     ) -> Result<PullRequest> {
-        super::create_pull_request(repo, branch, title, body, work_dir).await
+        super::create_pull_request(repo, branch, title, body, work_dir, draft).await
+    }
+
+    async fn mark_pr_ready_for_review(&self, repo: &str, number: u64) -> Result<()> {
+        super::mark_pr_ready_for_review(repo, number).await
+    }
+
+    async fn update_pr_body(&self, repo: &str, number: u64, body: &str) -> Result<()> {
+        super::update_pr_body(repo, number, body).await
     }
 
     async fn add_pr_label(&self, repo: &str, number: u64, label: &str) -> Result<()> {
