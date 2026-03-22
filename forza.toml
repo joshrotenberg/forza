@@ -129,3 +129,12 @@ scope = "forza_owned"
 max_retries = 3
 concurrency = 2
 poll_interval = 60
+
+[repos."joshrotenberg/forza".routes.auto-merge]
+type = "pr"
+condition = "ci_green_no_objections"
+workflow = "pr-maintenance"
+scope = "forza_owned"
+max_retries = 3
+concurrency = 2
+poll_interval = 60
