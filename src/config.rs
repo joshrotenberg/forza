@@ -275,6 +275,9 @@ pub enum RouteCondition {
     CiFailingOrConflicts,
     /// The PR is approved and CI is green.
     ApprovedAndGreen,
+    /// CI is green, no conflicts, and no CHANGES_REQUESTED review decision.
+    /// Does not require an explicit APPROVED decision — branch protection is the real gate.
+    CiGreenNoObjections,
 }
 
 impl RouteCondition {
@@ -299,6 +302,7 @@ impl RouteCondition {
         }
         let has_conflicts = pr.mergeable.as_deref() == Some("CONFLICTING");
         let approved = pr.review_decision.as_deref() == Some("APPROVED");
+        let changes_requested = pr.review_decision.as_deref() == Some("CHANGES_REQUESTED");
         let ci_green = pr.checks_passing == Some(true);
 
         match self {
@@ -306,6 +310,7 @@ impl RouteCondition {
             RouteCondition::HasConflicts => has_conflicts,
             RouteCondition::CiFailingOrConflicts => ci_failing || has_conflicts,
             RouteCondition::ApprovedAndGreen => approved && ci_green && !has_conflicts,
+            RouteCondition::CiGreenNoObjections => ci_green && !has_conflicts && !changes_requested,
         }
     }
 }
@@ -1609,6 +1614,21 @@ max_retries = 3
         pr.mergeable = None;
         assert!(!RouteCondition::HasConflicts.matches(&pr));
         assert!(!RouteCondition::CiFailingOrConflicts.matches(&pr));
+
+        // CiGreenNoObjections: CI green + no review decision → matches
+        pr.mergeable = Some("MERGEABLE".into());
+        pr.checks_passing = Some(true);
+        pr.review_decision = None;
+        assert!(RouteCondition::CiGreenNoObjections.matches(&pr));
+
+        // CiGreenNoObjections: CI green + CHANGES_REQUESTED → does not match
+        pr.review_decision = Some("CHANGES_REQUESTED".into());
+        assert!(!RouteCondition::CiGreenNoObjections.matches(&pr));
+
+        // CiGreenNoObjections: CI failing + no review decision → does not match
+        pr.review_decision = None;
+        pr.checks_passing = Some(false);
+        assert!(!RouteCondition::CiGreenNoObjections.matches(&pr));
     }
 
     #[test]

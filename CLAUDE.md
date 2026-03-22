@@ -121,7 +121,8 @@ Multi-repo config uses `[repos."owner/name".routes.name]`. Each route needs a `t
 [repos."owner/name".routes.auto-fix]
 type       = "pr"
 condition  = "ci_failing_or_conflicts"   # RouteCondition: ci_failing | has_conflicts |
-                                         #   ci_failing_or_conflicts | approved_and_green
+                                         #   ci_failing_or_conflicts | approved_and_green |
+                                         #   ci_green_no_objections
 workflow   = "pr-fix"
 scope      = "forza_owned"               # forza_owned (default) | all
 max_retries = 3                          # applies forza:needs-human after N failures
@@ -205,7 +206,7 @@ skills win if present, otherwise route skills, otherwise global.
 - **Full stage pipeline**: `triage`, `clarify`, `plan`, `implement`, `test`, `review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`
 - **Workflow modes**: `linear` (sequential) and `reactive` (condition-evaluated dispatch loop)
 - **Label routes**: fire when a GitHub label is applied to an issue or PR
-- **Condition routes**: fire automatically on PR state (`ci_failing`, `has_conflicts`, `ci_failing_or_conflicts`, `approved_and_green`)
+- **Condition routes**: fire automatically on PR state (`ci_failing`, `has_conflicts`, `ci_failing_or_conflicts`, `approved_and_green`, `ci_green_no_objections`)
 - **Agentless stages**: run shell commands directly (formatting, linting, scaffolding)
 - **Conditional stages**: gate stage execution via shell command exit code; pair with `optional = true` to skip cleanly
 - **Per-stage hooks**: `pre`, `post`, `finally` hooks keyed by `StageKind` name
