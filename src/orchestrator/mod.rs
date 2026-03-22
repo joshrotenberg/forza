@@ -558,9 +558,8 @@ pub async fn process_issue_with_overrides(
         let _ = github::add_label(repo, number, &config.global.failed_label).await;
     }
 
-    // 10. Cleanup.
-    if all_succeeded && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
-    {
+    // 10. Cleanup (always — prevents stale worktrees blocking retries).
+    if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
 
@@ -939,9 +938,8 @@ pub async fn process_pr_with_overrides(
         let _ = github::add_pr_label(repo, number, &config.global.failed_label).await;
     }
 
-    // 10. Cleanup.
+    // 10. Cleanup (always — prevents stale worktrees blocking retries).
     if needs_worktree
-        && all_succeeded
         && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
     {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
@@ -1197,9 +1195,8 @@ pub async fn process_reactive_pr(
         notifications::notify_run_complete(notif_config, &record).await;
     }
 
-    // 7. Cleanup.
-    if all_succeeded && let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await
-    {
+    // 7. Cleanup (always — prevents stale worktrees blocking retries).
+    if let Err(e) = isolation::remove_worktree(repo_dir, &worktree_dir, true).await {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
 
