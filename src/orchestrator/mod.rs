@@ -22,7 +22,7 @@ use crate::isolation;
 use crate::notifications;
 use crate::planner;
 use crate::state::{self, RunRecord, RunStatus, StageStatus};
-use crate::workflow::{StageKind, WorkflowMode};
+use crate::workflow::WorkflowMode;
 
 /// A pending work item in the batch queue — either an issue or a PR.
 enum PendingSubject {
@@ -182,8 +182,6 @@ pub async fn process_issue_with_overrides(
     let draft_pr = config.effective_draft_pr(route);
 
     let mut record = RunRecord::new(&run_id, repo, number, &template.name, &branch);
-    let mut all_succeeded = true;
-    let mut pending_breadcrumb: Option<String> = None;
 
     // Check hourly cost cap before starting any stages.
     if let Some(cap) = config.global.max_cost_per_hour {
@@ -205,381 +203,29 @@ pub async fn process_issue_with_overrides(
         }
     }
 
-    for (stage_idx, planned_stage) in plan.stages.iter().enumerate() {
-        // Clone the stage and prepend breadcrumb from the previous stage when available.
-        let stage_for_exec = if let Some(ref crumb) = pending_breadcrumb {
-            let mut s = planned_stage.clone();
-            s.prompt = format!(
-                "## Context from previous stage\n\n{crumb}\n\n---\n\n{}",
-                s.prompt
-            );
-            s
-        } else {
-            planned_stage.clone()
-        };
-        pending_breadcrumb = None;
-
-        // Skip optional stages if condition says so — no hooks run for skipped stages.
-        if planned_stage.optional
-            && let Some(ref condition) = planned_stage.condition
-            && let Ok(o) = tokio::process::Command::new("sh")
-                .args(["-c", condition])
-                .current_dir(&worktree_dir)
-                .output()
-                .await
-            && o.status.success()
-        {
-            info!(
-                issue = number,
-                stage = planned_stage.kind_name(),
-                "skipping optional stage (condition met)"
-            );
-            continue;
-        }
-
-        // Look up per-stage hooks.
-        let stage_hooks = config.stage_hooks.get(planned_stage.kind_name());
-
-        // Run pre hooks before stage execution.
-        if let Some(h) = stage_hooks
-            && !h.pre.is_empty()
-        {
-            run_stage_hooks(&h.pre, &worktree_dir, "pre").await;
-        }
-
-        if planned_stage.kind == StageKind::Merge && !config.global.auto_merge {
-            info!(
-                issue = number,
-                "skipping merge stage: auto_merge is disabled"
-            );
-            continue;
-        }
-
-        if planned_stage.kind == StageKind::Merge && !config.security.allows_merge() {
-            return Err(Error::Authorization(format!(
-                "authorization_level '{}' does not permit merge",
-                config.security.authorization_level
-            )));
-        }
-
-        if planned_stage.kind == StageKind::OpenPr && !config.security.allows_push() {
-            return Err(Error::Authorization(format!(
-                "authorization_level '{}' does not permit push/PR creation",
-                config.security.authorization_level
-            )));
-        }
-
-        if planned_stage.kind == StageKind::OpenPr {
-            let open_pr_success = match handle_open_pr(
-                repo,
-                &branch,
-                &issue,
-                &record,
-                &run_id,
-                &worktree_dir,
-                gh,
-                git,
-                draft_pr,
-            )
-            .await
-            {
-                Ok(pr) => {
-                    record.pr_number = Some(pr.number);
-                    info!(
-                        issue = number,
-                        pr = pr.number,
-                        url = pr.html_url,
-                        "created PR"
-                    );
-                    record.record_stage(
-                        planned_stage.kind,
-                        StageStatus::Succeeded,
-                        StageResult {
-                            stage: "open_pr".into(),
-                            success: true,
-                            duration_secs: 0.0,
-                            cost_usd: None,
-                            output: pr.html_url,
-                            files_modified: None,
-                        },
-                    );
-                    true
-                }
-                Err(e) => {
-                    error!(issue = number, error = %e, "failed to create PR");
-                    record.record_stage(
-                        planned_stage.kind,
-                        StageStatus::Failed,
-                        StageResult {
-                            stage: "open_pr".into(),
-                            success: false,
-                            duration_secs: 0.0,
-                            cost_usd: None,
-                            output: e.to_string(),
-                            files_modified: None,
-                        },
-                    );
-                    false
-                }
-            };
-            if open_pr_success
-                && let Some(h) = stage_hooks
-                && !h.post.is_empty()
-            {
-                run_stage_hooks(&h.post, &worktree_dir, "post").await;
-            }
-            if let Some(h) = stage_hooks
-                && !h.finally.is_empty()
-            {
-                run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-            }
-            if !open_pr_success {
-                all_succeeded = false;
-                if !planned_stage.optional {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        info!(
-            issue = number,
-            stage = planned_stage.kind_name(),
-            agentless = planned_stage.agentless,
-            "running stage"
-        );
-
-        // Agentless stages run a shell command directly — no agent invocation.
-        if planned_stage.agentless {
-            let command = planned_stage
-                .command
-                .as_deref()
-                .unwrap_or("echo 'no command specified'");
-            let start = std::time::Instant::now();
-            let output = tokio::process::Command::new("sh")
-                .args(["-c", command])
-                .current_dir(&worktree_dir)
-                .output()
-                .await;
-            let duration = start.elapsed();
-            let (success, output_text) = match output {
-                Ok(o) => {
-                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
-                    let text = if stderr.is_empty() { stdout } else { stderr };
-                    (o.status.success(), text)
-                }
-                Err(e) => (false, e.to_string()),
-            };
-            let result = StageResult {
-                stage: planned_stage.kind_name().to_string(),
-                success,
-                duration_secs: duration.as_secs_f64(),
-                cost_usd: None,
-                output: output_text,
-                files_modified: None,
-            };
-            info!(
-                issue = number,
-                stage = planned_stage.kind_name(),
-                success = success,
-                duration = format!("{:.1}s", duration.as_secs_f64()),
-                "agentless stage complete"
-            );
-            let failed = !success;
-            record.record_stage(
-                planned_stage.kind,
-                if success {
-                    StageStatus::Succeeded
-                } else {
-                    StageStatus::Failed
-                },
-                result,
-            );
-            if success
-                && let Some(h) = stage_hooks
-                && !h.post.is_empty()
-            {
-                run_stage_hooks(&h.post, &worktree_dir, "post").await;
-            }
-            if let Some(h) = stage_hooks
-                && !h.finally.is_empty()
-            {
-                run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-            }
-            if failed {
-                all_succeeded = false;
-                if !planned_stage.optional {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        let stage_model = cli_overrides
-            .model
-            .as_deref()
-            .or(label_overrides.model.as_deref())
-            .or(planned_stage.model.as_deref())
-            .or_else(|| config.effective_model(route));
-        let stage_skills = if !cli_overrides.skills.is_empty() {
-            cli_overrides.skills.as_slice()
-        } else if !label_overrides.skills.is_empty() {
-            label_overrides.skills.as_slice()
-        } else {
-            config.effective_skills(route, planned_stage.skills.as_deref())
-        };
-        let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
-        let stage_syspr = config.effective_append_system_prompt();
-        let mut stage_adapter = ClaudeAdapter::new();
-        if let Some(m) = stage_model {
-            stage_adapter = stage_adapter.model(m);
-        }
-        if !stage_skills.is_empty() {
-            stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
-        }
-        if let Some(p) = stage_mcp {
-            stage_adapter = stage_adapter.mcp_config(p);
-        }
-        if let Some(s) = stage_syspr {
-            stage_adapter = stage_adapter.append_system_prompt(s);
-        }
-
-        match stage_adapter
-            .execute_stage(&stage_for_exec, &worktree_dir)
-            .await
-        {
-            Ok(result) => {
-                let status = if result.success {
-                    StageStatus::Succeeded
-                } else {
-                    StageStatus::Failed
-                };
-                info!(
-                    issue = number,
-                    stage = planned_stage.kind_name(),
-                    success = result.success,
-                    duration = format!("{:.1}s", result.duration_secs),
-                    cost = result.cost_usd,
-                    "stage complete"
-                );
-                let failed = !result.success;
-                // Load breadcrumb written by this stage for the next stage's context.
-                if !failed && stage_idx + 1 < plan.stages.len() {
-                    let crumb_path = worktree_dir
-                        .join(".forza")
-                        .join("breadcrumbs")
-                        .join(&run_id)
-                        .join(format!("{}.md", planned_stage.kind_name()));
-                    match std::fs::read_to_string(&crumb_path) {
-                        Ok(content) => {
-                            info!(
-                                issue = number,
-                                stage = planned_stage.kind_name(),
-                                "loaded breadcrumb for next stage"
-                            );
-                            pending_breadcrumb = Some(content);
-                        }
-                        Err(e) => {
-                            warn!(
-                                path = %crumb_path.display(),
-                                error = %e,
-                                "failed to read breadcrumb; next stage will run without prior context"
-                            );
-                        }
-                    }
-                }
-                record.record_stage(planned_stage.kind, status, result);
-                // After a successful plan stage, create an early draft PR when draft_pr is enabled.
-                if !failed && planned_stage.kind == StageKind::Plan && draft_pr {
-                    match create_early_draft_pr(
-                        repo,
-                        &branch,
-                        &issue,
-                        &run_id,
-                        &worktree_dir,
-                        gh,
-                        git,
-                    )
-                    .await
-                    {
-                        Ok(pr) => {
-                            record.pr_number = Some(pr.number);
-                            info!(
-                                issue = number,
-                                pr = pr.number,
-                                "created early draft PR after plan stage"
-                            );
-                        }
-                        Err(e) => {
-                            warn!(issue = number, error = %e, "failed to create early draft PR (non-fatal)");
-                        }
-                    }
-                }
-                if !failed
-                    && let Some(h) = stage_hooks
-                    && !h.post.is_empty()
-                {
-                    run_stage_hooks(&h.post, &worktree_dir, "post").await;
-                }
-                if let Some(h) = stage_hooks
-                    && !h.finally.is_empty()
-                {
-                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-                }
-                if failed {
-                    all_succeeded = false;
-                    if !planned_stage.optional {
-                        break;
-                    }
-                }
-            }
-            Err(e) => {
-                error!(issue = number, stage = planned_stage.kind_name(), error = %e, "stage error");
-                record.record_stage(
-                    planned_stage.kind,
-                    StageStatus::Failed,
-                    StageResult {
-                        stage: planned_stage.kind_name().to_string(),
-                        success: false,
-                        duration_secs: 0.0,
-                        cost_usd: None,
-                        output: e.to_string(),
-                        files_modified: None,
-                    },
-                );
-                if let Some(h) = stage_hooks
-                    && !h.finally.is_empty()
-                {
-                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-                }
-                all_succeeded = false;
-                if !planned_stage.optional {
-                    break;
-                }
-            }
-        }
-
-        // Check accumulated cost against cap.
-        if let Some(cap) = config.global.max_cost_per_issue
-            && let Some(total) = record.total_cost_usd
-            && total > cap
-        {
-            warn!(
-                issue = number,
-                total_cost = total,
-                cap = cap,
-                "cost cap exceeded, aborting remaining stages"
-            );
-            all_succeeded = false;
-            break;
-        }
-
-        // Run validation.
-        if !validation.is_empty() {
-            run_validation(validation, &worktree_dir).await;
-        }
-    }
+    let ctx = StageContext {
+        subject_number: number,
+        subject_label: "issue",
+        repo,
+        branch: &branch,
+        run_id: &run_id,
+        issue: Some(&issue),
+        draft_pr,
+        cli_overrides: &cli_overrides,
+        label_overrides: &label_overrides,
+    };
+    let all_succeeded = execute_stages(
+        &plan.stages,
+        &ctx,
+        config,
+        route,
+        &mut record,
+        &worktree_dir,
+        gh,
+        git,
+        validation,
+    )
+    .await?;
 
     // 8. Finish.
     let final_status = if all_succeeded {
@@ -758,251 +404,30 @@ pub async fn process_pr_with_overrides(
     // 7. Execute stages.
     let validation = config.effective_validation(route);
     let mut record = RunRecord::new_for_pr(&run_id, repo, number, &template.name, &branch);
-    let mut all_succeeded = true;
-    let mut pending_breadcrumb: Option<String> = None;
 
-    for (stage_idx, planned_stage) in plan.stages.iter().enumerate() {
-        let stage_for_exec = if let Some(ref crumb) = pending_breadcrumb {
-            let mut s = planned_stage.clone();
-            s.prompt = format!(
-                "## Context from previous stage\n\n{crumb}\n\n---\n\n{}",
-                s.prompt
-            );
-            s
-        } else {
-            planned_stage.clone()
-        };
-        pending_breadcrumb = None;
-
-        // Skip optional stages if condition says so.
-        if planned_stage.optional
-            && let Some(ref condition) = planned_stage.condition
-            && let Ok(o) = tokio::process::Command::new("sh")
-                .args(["-c", condition])
-                .current_dir(&worktree_dir)
-                .output()
-                .await
-            && o.status.success()
-        {
-            info!(
-                pr = number,
-                stage = planned_stage.kind_name(),
-                "skipping optional stage (condition met)"
-            );
-            continue;
-        }
-
-        // Look up per-stage hooks.
-        let stage_hooks = config.stage_hooks.get(planned_stage.kind_name());
-
-        // Run pre hooks.
-        if let Some(h) = stage_hooks
-            && !h.pre.is_empty()
-        {
-            run_stage_hooks(&h.pre, &worktree_dir, "pre").await;
-        }
-
-        if planned_stage.kind == StageKind::Merge && !config.global.auto_merge {
-            info!(pr = number, "skipping merge stage: auto_merge is disabled");
-            continue;
-        }
-
-        info!(
-            pr = number,
-            stage = planned_stage.kind_name(),
-            agentless = planned_stage.agentless,
-            "running stage"
-        );
-
-        // Agentless stages.
-        if planned_stage.agentless {
-            let command = planned_stage
-                .command
-                .as_deref()
-                .unwrap_or("echo 'no command specified'");
-            let start = std::time::Instant::now();
-            let output = tokio::process::Command::new("sh")
-                .args(["-c", command])
-                .current_dir(&worktree_dir)
-                .output()
-                .await;
-            let duration = start.elapsed();
-            let (success, output_text) = match output {
-                Ok(o) => {
-                    let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&o.stderr).to_string();
-                    let text = if stderr.is_empty() { stdout } else { stderr };
-                    (o.status.success(), text)
-                }
-                Err(e) => (false, e.to_string()),
-            };
-            let result = StageResult {
-                stage: planned_stage.kind_name().to_string(),
-                success,
-                duration_secs: duration.as_secs_f64(),
-                cost_usd: None,
-                output: output_text,
-                files_modified: None,
-            };
-            info!(
-                pr = number,
-                stage = planned_stage.kind_name(),
-                success = success,
-                duration = format!("{:.1}s", duration.as_secs_f64()),
-                "agentless stage complete"
-            );
-            let failed = !success;
-            record.record_stage(
-                planned_stage.kind,
-                if success {
-                    StageStatus::Succeeded
-                } else {
-                    StageStatus::Failed
-                },
-                result,
-            );
-            if success
-                && let Some(h) = stage_hooks
-                && !h.post.is_empty()
-            {
-                run_stage_hooks(&h.post, &worktree_dir, "post").await;
-            }
-            if let Some(h) = stage_hooks
-                && !h.finally.is_empty()
-            {
-                run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-            }
-            if failed {
-                all_succeeded = false;
-                if !planned_stage.optional {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        let stage_model = cli_overrides
-            .model
-            .as_deref()
-            .or(label_overrides.model.as_deref())
-            .or(planned_stage.model.as_deref())
-            .or_else(|| config.effective_model(route));
-        let stage_skills = if !cli_overrides.skills.is_empty() {
-            cli_overrides.skills.as_slice()
-        } else if !label_overrides.skills.is_empty() {
-            label_overrides.skills.as_slice()
-        } else {
-            config.effective_skills(route, planned_stage.skills.as_deref())
-        };
-        let stage_mcp = config.effective_mcp_config(route, planned_stage.mcp_config.as_deref());
-        let stage_syspr = config.effective_append_system_prompt();
-        let mut stage_adapter = ClaudeAdapter::new();
-        if let Some(m) = stage_model {
-            stage_adapter = stage_adapter.model(m);
-        }
-        if !stage_skills.is_empty() {
-            stage_adapter = stage_adapter.skills(stage_skills.iter().cloned());
-        }
-        if let Some(p) = stage_mcp {
-            stage_adapter = stage_adapter.mcp_config(p);
-        }
-        if let Some(s) = stage_syspr {
-            stage_adapter = stage_adapter.append_system_prompt(s);
-        }
-
-        match stage_adapter
-            .execute_stage(&stage_for_exec, &worktree_dir)
-            .await
-        {
-            Ok(result) => {
-                let status = if result.success {
-                    StageStatus::Succeeded
-                } else {
-                    StageStatus::Failed
-                };
-                info!(
-                    pr = number,
-                    stage = planned_stage.kind_name(),
-                    success = result.success,
-                    duration = format!("{:.1}s", result.duration_secs),
-                    cost = result.cost_usd,
-                    "stage complete"
-                );
-                let failed = !result.success;
-                if !failed && stage_idx + 1 < plan.stages.len() {
-                    let crumb_path = worktree_dir
-                        .join(".forza")
-                        .join("breadcrumbs")
-                        .join(&run_id)
-                        .join(format!("{}.md", planned_stage.kind_name()));
-                    match std::fs::read_to_string(&crumb_path) {
-                        Ok(content) => {
-                            info!(
-                                pr = number,
-                                stage = planned_stage.kind_name(),
-                                "loaded breadcrumb for next stage"
-                            );
-                            pending_breadcrumb = Some(content);
-                        }
-                        Err(e) => {
-                            warn!(
-                                path = %crumb_path.display(),
-                                error = %e,
-                                "failed to read breadcrumb; next stage will run without prior context"
-                            );
-                        }
-                    }
-                }
-                record.record_stage(planned_stage.kind, status, result);
-                if !failed
-                    && let Some(h) = stage_hooks
-                    && !h.post.is_empty()
-                {
-                    run_stage_hooks(&h.post, &worktree_dir, "post").await;
-                }
-                if let Some(h) = stage_hooks
-                    && !h.finally.is_empty()
-                {
-                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-                }
-                if failed {
-                    all_succeeded = false;
-                    if !planned_stage.optional {
-                        break;
-                    }
-                }
-            }
-            Err(e) => {
-                error!(pr = number, stage = planned_stage.kind_name(), error = %e, "stage error");
-                record.record_stage(
-                    planned_stage.kind,
-                    StageStatus::Failed,
-                    StageResult {
-                        stage: planned_stage.kind_name().to_string(),
-                        success: false,
-                        duration_secs: 0.0,
-                        cost_usd: None,
-                        output: e.to_string(),
-                        files_modified: None,
-                    },
-                );
-                if let Some(h) = stage_hooks
-                    && !h.finally.is_empty()
-                {
-                    run_stage_hooks(&h.finally, &worktree_dir, "finally").await;
-                }
-                all_succeeded = false;
-                if !planned_stage.optional {
-                    break;
-                }
-            }
-        }
-
-        // Run validation.
-        if !validation.is_empty() {
-            run_validation(validation, &worktree_dir).await;
-        }
-    }
+    let ctx = StageContext {
+        subject_number: number,
+        subject_label: "pr",
+        repo,
+        branch: &branch,
+        run_id: &run_id,
+        issue: None,
+        draft_pr: false,
+        cli_overrides: &cli_overrides,
+        label_overrides: &label_overrides,
+    };
+    let all_succeeded = execute_stages(
+        &plan.stages,
+        &ctx,
+        config,
+        route,
+        &mut record,
+        &worktree_dir,
+        gh,
+        git,
+        validation,
+    )
+    .await?;
 
     // 8. Finish.
     let final_status = if all_succeeded {
