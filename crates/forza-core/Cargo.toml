@@ -1,12 +1,12 @@
 [package]
 name = "forza-core"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.90.0"
-authors = ["Josh Rotenberg <joshrotenberg@gmail.com>"]
-license = "MIT OR Apache-2.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "Core abstractions for forza — workflow orchestrator for agent-driven development"
-repository = "https://github.com/joshrotenberg/forza"
+repository.workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
