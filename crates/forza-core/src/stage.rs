@@ -221,6 +221,11 @@ fn default_true() -> bool {
 /// Loaded from `commands/draft_pr.sh` at compile time.
 const DRAFT_PR_COMMAND: &str = include_str!("commands/draft_pr.sh");
 
+/// Shell command for the Merge stage.
+/// Waits for CI checks to pass before merging.
+/// Loaded from `commands/merge.sh` at compile time.
+const MERGE_COMMAND: &str = include_str!("commands/merge.sh");
+
 impl Workflow {
     /// Create a new workflow with the given name and stages.
     pub fn new(name: impl Into<String>, stages: Vec<Stage>) -> Self {
@@ -250,11 +255,7 @@ impl Workflow {
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
                     Stage::agent(StageKind::OpenPr),
-                    Stage::shell(
-                        StageKind::Merge,
-                        "gh pr merge $FORZA_PR_NUMBER --squash --delete-branch",
-                    )
-                    .optional(),
+                    Stage::shell(StageKind::Merge, MERGE_COMMAND).optional(),
                 ],
             ),
             Workflow::new(
@@ -266,11 +267,7 @@ impl Workflow {
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
                     Stage::agent(StageKind::OpenPr),
-                    Stage::shell(
-                        StageKind::Merge,
-                        "gh pr merge $FORZA_PR_NUMBER --squash --delete-branch",
-                    )
-                    .optional(),
+                    Stage::shell(StageKind::Merge, MERGE_COMMAND).optional(),
                 ],
             ),
             Workflow::new(
@@ -279,11 +276,7 @@ impl Workflow {
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::OpenPr),
-                    Stage::shell(
-                        StageKind::Merge,
-                        "gh pr merge $FORZA_PR_NUMBER --squash --delete-branch",
-                    )
-                    .optional(),
+                    Stage::shell(StageKind::Merge, MERGE_COMMAND).optional(),
                 ],
             ),
             Workflow::new(
@@ -305,10 +298,7 @@ impl Workflow {
             Workflow::new("pr-rebase", vec![Stage::agent(StageKind::RevisePr)]),
             Workflow::new(
                 "pr-merge",
-                vec![Stage::shell(
-                    StageKind::Merge,
-                    "gh pr merge $FORZA_PR_NUMBER --squash --delete-branch",
-                )],
+                vec![Stage::shell(StageKind::Merge, MERGE_COMMAND)],
             )
             .without_worktree(),
             Workflow::new("pr-review", vec![Stage::agent(StageKind::Review)]),
