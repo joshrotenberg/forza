@@ -148,20 +148,22 @@ pub fn build_router(state: AppState) -> McpRouter {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
-                match crate::orchestrator::process_issue_with_config(
+                match crate::runner::process_issue(
                     input.number,
                     &repo,
-                    &routes,
                     &app.config,
+                    &routes,
                     &app.state_dir,
                     &rd,
-                    &*app.gh,
-                    &*app.git,
+                    app.gh.clone(),
+                    app.git.clone(),
+                    None,
+                    vec![],
                 )
                 .await
                 {
-                    Ok(record) => Ok(CallToolResult::text(
-                        serde_json::to_string_pretty(&record).unwrap_or_default(),
+                    Ok(run) => Ok(CallToolResult::text(
+                        serde_json::to_string_pretty(&run).unwrap_or_default(),
                     )),
                     Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
                 }
@@ -186,20 +188,23 @@ pub fn build_router(state: AppState) -> McpRouter {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
-                match crate::orchestrator::process_pr_with_config(
+                match crate::runner::process_pr(
                     input.number,
                     &repo,
-                    &routes,
                     &app.config,
+                    &routes,
                     &app.state_dir,
                     &rd,
-                    &*app.gh,
-                    &*app.git,
+                    app.gh.clone(),
+                    app.git.clone(),
+                    None,
+                    vec![],
+                    None,
                 )
                 .await
                 {
-                    Ok(record) => Ok(CallToolResult::text(
-                        serde_json::to_string_pretty(&record).unwrap_or_default(),
+                    Ok(run) => Ok(CallToolResult::text(
+                        serde_json::to_string_pretty(&run).unwrap_or_default(),
                     )),
                     Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
                 }
@@ -233,7 +238,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
-                let mut records = crate::orchestrator::process_batch_for_repo(
+                let mut runs = crate::runner::process_batch(
                     &repo,
                     config,
                     &app.state_dir,
@@ -244,7 +249,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     app.git.clone(),
                 )
                 .await;
-                all_records.append(&mut records);
+                all_records.append(&mut runs);
             }
 
             Ok(CallToolResult::text(

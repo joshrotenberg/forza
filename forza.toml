@@ -82,7 +82,15 @@ workflow = "research"
 concurrency = 3
 poll_interval = 3600
 
-# Chores (badges, docs, config, etc.)
+# Documentation improvements.
+[repos."joshrotenberg/forza".routes.docs]
+type = "issue"
+label = "documentation"
+workflow = "chore"
+concurrency = 2
+poll_interval = 600
+
+# Chores (badges, config, etc.)
 [repos."joshrotenberg/forza".routes.chores]
 type = "issue"
 label = "chore"
@@ -123,18 +131,34 @@ concurrency = 2
 # These routes watch forza-owned PRs and automatically trigger fixes
 # when problems are detected. No manual labeling needed.
 #
-# A single any_actionable route replaces separate auto-fix and auto-merge
-# routes. Using one route prevents ping-pong: previously two routes could
-# both match the same PR in consecutive poll cycles, causing repeated
-# forza:in-progress label add/remove cycles. The reactive pr-maintenance
-# workflow handles priority ordering internally (conflicts → CI → merge).
-# Exponential backoff (poll_interval * 2^prior_fails, capped at 64x) is
-# applied automatically when prior failures are detected.
+# Each route does one thing. The poll loop handles sequencing naturally:
+# fix conflicts this cycle, fix CI next cycle, merge the cycle after.
 
-[repos."joshrotenberg/forza".routes.auto-maintain]
+# Rebase forza-owned PRs that have merge conflicts.
+[repos."joshrotenberg/forza".routes.auto-rebase]
 type = "pr"
-condition = "any_actionable"
-workflow = "pr-maintenance"
+condition = "has_conflicts"
+workflow = "pr-rebase"
+scope = "forza_owned"
+max_retries = 3
+concurrency = 2
+poll_interval = 60
+
+# Fix CI failures on forza-owned PRs.
+[repos."joshrotenberg/forza".routes.auto-fix-ci]
+type = "pr"
+condition = "ci_failing"
+workflow = "pr-fix-ci"
+scope = "forza_owned"
+max_retries = 3
+concurrency = 2
+poll_interval = 60
+
+# Merge forza-owned PRs when CI is green and no objections.
+[repos."joshrotenberg/forza".routes.auto-merge]
+type = "pr"
+condition = "ci_green_no_objections"
+workflow = "pr-merge"
 scope = "forza_owned"
 max_retries = 3
 concurrency = 2

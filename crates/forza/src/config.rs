@@ -523,6 +523,8 @@ pub struct CliOverrides {
     pub model: Option<String>,
     /// Override the skill files for every stage in the run.
     pub skills: Vec<String>,
+    /// Pre-matched route name (used by condition routes to skip label re-matching).
+    pub route: Option<String>,
 }
 
 /// Overrides parsed from `forza:*` labels on an issue or PR.

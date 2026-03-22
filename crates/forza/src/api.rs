@@ -270,18 +270,26 @@ async fn trigger_issue(
         .into_response());
     }
 
-    // Spawn background task; the orchestrator generates and persists its own run_id.
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
     let gh = state.gh.clone();
     let git = state.git.clone();
     tokio::spawn(async move {
-        match crate::orchestrator::process_issue_with_config(
-            number, &repo, &routes, &config, &state_dir, &rd, &*gh, &*git,
+        match crate::runner::process_issue(
+            number,
+            &repo,
+            &config,
+            &routes,
+            &state_dir,
+            &rd,
+            gh,
+            git,
+            None,
+            vec![],
         )
         .await
         {
-            Ok(record) => info!(run_id = record.run_id, "background issue run completed"),
+            Ok(run) => info!(run_id = run.run_id, "background issue run completed"),
             Err(e) => error!(error = ?e, issue = number, "background issue run failed"),
         }
     });
@@ -351,12 +359,22 @@ async fn trigger_pr(
     let gh = state.gh.clone();
     let git = state.git.clone();
     tokio::spawn(async move {
-        match crate::orchestrator::process_pr_with_config(
-            number, &repo, &routes, &config, &state_dir, &rd, &*gh, &*git,
+        match crate::runner::process_pr(
+            number,
+            &repo,
+            &config,
+            &routes,
+            &state_dir,
+            &rd,
+            gh,
+            git,
+            None,
+            vec![],
+            None,
         )
         .await
         {
-            Ok(record) => info!(run_id = record.run_id, "background PR run completed"),
+            Ok(run) => info!(run_id = run.run_id, "background PR run completed"),
             Err(e) => error!(error = ?e, pr = number, "background PR run failed"),
         }
     });
@@ -390,7 +408,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
     tokio::spawn(async move {
         let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         for (repo, rd, routes) in &repos_resolved {
-            let records = crate::orchestrator::process_batch_for_repo(
+            let records = crate::runner::process_batch(
                 repo,
                 &config,
                 &state_dir,
@@ -403,7 +421,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
             .await;
             let succeeded = records
                 .iter()
-                .filter(|r| r.status == crate::state::RunStatus::Succeeded)
+                .filter(|r| r.status == forza_core::RunStatus::Succeeded)
                 .count();
             info!(
                 repo = repo,

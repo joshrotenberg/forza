@@ -719,24 +719,21 @@ async fn cmd_issue(
         return ExitCode::SUCCESS;
     }
 
-    let cli_overrides = forza::config::CliOverrides {
-        model: args.model,
-        skills: args.skill,
-    };
-    match forza::orchestrator::process_issue_with_overrides(
+    match forza::runner::process_issue(
         args.number,
         &repo,
-        routes,
         config,
+        routes,
         &sd,
         &rd,
-        cli_overrides,
-        &**gh,
-        &**git,
+        gh.clone(),
+        git.clone(),
+        args.model,
+        args.skill,
     )
     .await
     {
-        Ok(record) => print_run_result(&record),
+        Ok(run) => print_core_run(&run),
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
@@ -810,24 +807,22 @@ async fn cmd_pr(
         return ExitCode::SUCCESS;
     }
 
-    let cli_overrides = forza::config::CliOverrides {
-        model: args.model,
-        skills: args.skill,
-    };
-    match forza::orchestrator::process_pr_with_overrides(
+    match forza::runner::process_pr(
         args.number,
         &repo,
-        routes,
         config,
+        routes,
         &sd,
         &rd,
-        cli_overrides,
-        &**gh,
-        &**git,
+        gh.clone(),
+        git.clone(),
+        args.model,
+        args.skill,
+        None,
     )
     .await
     {
-        Ok(record) => print_run_result(&record),
+        Ok(run) => print_core_run(&run),
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
@@ -876,7 +871,7 @@ async fn cmd_run(
         if *cancel_rx.borrow() {
             break;
         }
-        let mut records = forza::orchestrator::process_batch_for_repo(
+        let mut runs = forza::runner::process_batch(
             repo,
             config,
             &sd,
@@ -887,18 +882,18 @@ async fn cmd_run(
             git.clone(),
         )
         .await;
-        all_records.append(&mut records);
+        all_records.append(&mut runs);
     }
     let records = all_records;
 
     println!();
     let succeeded = records
         .iter()
-        .filter(|r| r.status == forza::state::RunStatus::Succeeded)
+        .filter(|r| r.status == forza_core::RunStatus::Succeeded)
         .count();
     let failed = records
         .iter()
-        .filter(|r| r.status == forza::state::RunStatus::Failed)
+        .filter(|r| r.status == forza_core::RunStatus::Failed)
         .count();
     println!(
         "Processed {} issues: {succeeded} succeeded, {failed} failed",
@@ -907,7 +902,7 @@ async fn cmd_run(
 
     if records
         .iter()
-        .all(|r| r.status == forza::state::RunStatus::Succeeded)
+        .all(|r| r.status == forza_core::RunStatus::Succeeded)
     {
         ExitCode::SUCCESS
     } else {
@@ -1035,7 +1030,7 @@ async fn cmd_watch(
         handles.push(tokio::spawn(async move {
             info!(repo = repo, "starting repo watch loop");
             loop {
-                let records = forza::orchestrator::process_batch_for_repo(
+                let records = forza::runner::process_batch(
                     &repo,
                     &config_clone,
                     &sd_clone,
@@ -1049,7 +1044,7 @@ async fn cmd_watch(
                 if !records.is_empty() {
                     let succeeded = records
                         .iter()
-                        .filter(|r| r.status == forza::state::RunStatus::Succeeded)
+                        .filter(|r| r.status == forza_core::RunStatus::Succeeded)
                         .count();
                     info!(
                         repo = repo,
@@ -1481,20 +1476,21 @@ async fn cmd_fix(
     };
 
     // Re-run the issue with error context injected.
-    // The worktree should still exist (we keep them on failure).
-    match forza::orchestrator::process_issue_with_config(
+    match forza::runner::process_issue(
         record.issue_number,
         &repo,
-        routes,
         config,
+        routes,
         &sd,
         &rd,
-        &**gh,
-        &**git,
+        gh.clone(),
+        git.clone(),
+        None,
+        vec![],
     )
     .await
     {
-        Ok(new_record) => print_run_result(&new_record),
+        Ok(run) => print_core_run(&run),
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
@@ -1716,6 +1712,52 @@ fn format_outcome(outcome: Option<&forza::state::RouteOutcome>) -> String {
         Some(RouteOutcome::NothingToDo) => "nothing_to_do".into(),
         Some(RouteOutcome::Failed { stage, .. }) => format!("failed (stage: {stage})"),
         Some(RouteOutcome::Exhausted { retries }) => format!("exhausted ({retries} retries)"),
+    }
+}
+
+fn print_core_run(run: &forza_core::Run) -> ExitCode {
+    let subject = match run.subject_kind {
+        forza_core::SubjectKind::Issue => format!("issue #{}", run.subject_number),
+        forza_core::SubjectKind::Pr => format!("PR #{}", run.subject_number),
+    };
+    println!();
+    println!(
+        "forza {} — Run {} — {} ({subject})",
+        env!("CARGO_PKG_VERSION"),
+        run.run_id,
+        run.status,
+    );
+    if let Some(ref outcome) = run.outcome {
+        println!("  Outcome:  {outcome}");
+    }
+    for stage in &run.stages {
+        let cost = stage
+            .result
+            .as_ref()
+            .and_then(|r| r.cost_usd)
+            .map(|c| format!("  ${c:.2}"))
+            .unwrap_or_default();
+        let duration = stage
+            .result
+            .as_ref()
+            .map(|r| format!("  {:.0}s", r.duration_secs))
+            .unwrap_or_default();
+        println!(
+            "  {:<15} {:?}{duration}{cost}",
+            stage.kind_name(),
+            stage.status
+        );
+    }
+    if let Some(pr) = run.pr_number {
+        println!("PR: #{pr}");
+    }
+    if let Some(cost) = run.total_cost_usd {
+        println!("Total cost: ${cost:.2}");
+    }
+    if run.status == forza_core::RunStatus::Succeeded {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 
