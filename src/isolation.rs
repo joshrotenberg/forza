@@ -4,6 +4,40 @@ use std::path::{Path, PathBuf};
 
 use crate::git::GitClient;
 
+/// Sentinel file written inside a worktree to record the owning PID.
+const OWNER_FILE: &str = ".forza-owner";
+
+/// Write the current process PID to `{worktree_dir}/.forza-owner`.
+///
+/// Best-effort: logs a warning on failure but does not abort.
+fn write_owner_file(worktree_dir: &Path) {
+    let pid = std::process::id().to_string();
+    let path = worktree_dir.join(OWNER_FILE);
+    if let Err(e) = std::fs::write(&path, &pid) {
+        tracing::warn!(path = %path.display(), error = %e, "failed to write owner file");
+    }
+}
+
+/// Return `true` if the process that created `worktree_dir` is still alive.
+///
+/// Reads `.forza-owner`, parses the PID, then sends signal 0 to check
+/// liveness.  Returns `false` if the file is missing, unparseable, or the
+/// process is no longer running.
+fn worktree_is_active(worktree_dir: &Path) -> bool {
+    let path = worktree_dir.join(OWNER_FILE);
+    let Ok(contents) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(pid_str) = contents.trim().parse::<u32>().map(|p| p.to_string()) else {
+        return false;
+    };
+    std::process::Command::new("kill")
+        .args(["-0", &pid_str])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Create an isolated work directory for a run.
 pub async fn create_worktree(
     repo_dir: &Path,
@@ -14,9 +48,12 @@ pub async fn create_worktree(
     tokio::fs::create_dir_all(repo_dir.join(base_dir)).await?;
 
     // The trait's worktree_add handles fetch, branch detection, and checkout.
-    git.worktree_add(repo_dir, branch, base_dir)
+    let worktree_dir = git
+        .worktree_add(repo_dir, branch, base_dir)
         .await
-        .map_err(|e| crate::error::Error::Isolation(format!("failed to create worktree: {e}")))
+        .map_err(|e| crate::error::Error::Isolation(format!("failed to create worktree: {e}")))?;
+    write_owner_file(&worktree_dir);
+    Ok(worktree_dir)
 }
 
 /// Remove a worktree.
@@ -76,6 +113,10 @@ pub async fn cleanup_stale_worktrees(
 
     if !dry_run {
         for path in &stale {
+            if worktree_is_active(path) {
+                tracing::info!(path = %path.display(), "skipping active worktree during cleanup");
+                continue;
+            }
             let _ = remove_worktree(repo_dir, path, true, git).await;
         }
     }
