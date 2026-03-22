@@ -743,10 +743,18 @@ mod tests {
     #[test]
     fn count_runs_for_subject_counts_all() {
         let dir = tempfile::tempdir().unwrap();
-        let r1 = make_record_with_outcome(42, "pr-fix", Some(RouteOutcome::PrUpdated { number: 42 }));
+        let r1 =
+            make_record_with_outcome(42, "pr-fix", Some(RouteOutcome::PrUpdated { number: 42 }));
         save_run(&r1, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        let r2 = make_record_with_outcome(42, "pr-fix", Some(RouteOutcome::Failed { stage: "implement".into(), error: "oops".into() }));
+        let r2 = make_record_with_outcome(
+            42,
+            "pr-fix",
+            Some(RouteOutcome::Failed {
+                stage: "implement".into(),
+                error: "oops".into(),
+            }),
+        );
         save_run(&r2, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         let r3 = make_record_with_outcome(42, "pr-fix", None);
@@ -758,20 +766,30 @@ mod tests {
     fn count_failed_runs_for_subject_only_failed_and_exhausted() {
         let dir = tempfile::tempdir().unwrap();
         // successful outcomes — should not count
-        let r1 = make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::PrUpdated { number: 10 }));
+        let r1 =
+            make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::PrUpdated { number: 10 }));
         save_run(&r1, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        let r2 = make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::PrCreated { number: 11 }));
+        let r2 =
+            make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::PrCreated { number: 11 }));
         save_run(&r2, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         let r3 = make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::NothingToDo));
         save_run(&r3, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         // failure outcomes — should count
-        let r4 = make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::Failed { stage: "review".into(), error: "bad".into() }));
+        let r4 = make_record_with_outcome(
+            10,
+            "pr-fix",
+            Some(RouteOutcome::Failed {
+                stage: "review".into(),
+                error: "bad".into(),
+            }),
+        );
         save_run(&r4, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        let r5 = make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::Exhausted { retries: 3 }));
+        let r5 =
+            make_record_with_outcome(10, "pr-fix", Some(RouteOutcome::Exhausted { retries: 3 }));
         save_run(&r5, dir.path()).unwrap();
         // no outcome — should not count
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -783,22 +801,53 @@ mod tests {
     #[test]
     fn count_failed_runs_for_subject_filters_by_workflow() {
         let dir = tempfile::tempdir().unwrap();
-        let r1 = make_record_with_outcome(5, "pr-fix", Some(RouteOutcome::Failed { stage: "plan".into(), error: "err".into() }));
+        let r1 = make_record_with_outcome(
+            5,
+            "pr-fix",
+            Some(RouteOutcome::Failed {
+                stage: "plan".into(),
+                error: "err".into(),
+            }),
+        );
         save_run(&r1, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        let r2 = make_record_with_outcome(5, "other-flow", Some(RouteOutcome::Failed { stage: "plan".into(), error: "err".into() }));
+        let r2 = make_record_with_outcome(
+            5,
+            "other-flow",
+            Some(RouteOutcome::Failed {
+                stage: "plan".into(),
+                error: "err".into(),
+            }),
+        );
         save_run(&r2, dir.path()).unwrap();
         assert_eq!(count_failed_runs_for_subject(5, "pr-fix", dir.path()), 1);
-        assert_eq!(count_failed_runs_for_subject(5, "other-flow", dir.path()), 1);
+        assert_eq!(
+            count_failed_runs_for_subject(5, "other-flow", dir.path()),
+            1
+        );
     }
 
     #[test]
     fn count_failed_runs_for_subject_filters_by_issue() {
         let dir = tempfile::tempdir().unwrap();
-        let r1 = make_record_with_outcome(1, "pr-fix", Some(RouteOutcome::Failed { stage: "test".into(), error: "fail".into() }));
+        let r1 = make_record_with_outcome(
+            1,
+            "pr-fix",
+            Some(RouteOutcome::Failed {
+                stage: "test".into(),
+                error: "fail".into(),
+            }),
+        );
         save_run(&r1, dir.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        let r2 = make_record_with_outcome(2, "pr-fix", Some(RouteOutcome::Failed { stage: "test".into(), error: "fail".into() }));
+        let r2 = make_record_with_outcome(
+            2,
+            "pr-fix",
+            Some(RouteOutcome::Failed {
+                stage: "test".into(),
+                error: "fail".into(),
+            }),
+        );
         save_run(&r2, dir.path()).unwrap();
         assert_eq!(count_failed_runs_for_subject(1, "pr-fix", dir.path()), 1);
         assert_eq!(count_failed_runs_for_subject(2, "pr-fix", dir.path()), 1);
