@@ -30,14 +30,20 @@ type RepoResolution = (String, Option<PathBuf>, HashMap<String, Route>);
 pub struct AppState {
     config: Arc<RunnerConfig>,
     state_dir: PathBuf,
+    gh: Arc<dyn crate::github::GitHubClient>,
 }
 
 impl AppState {
     /// Create a new `AppState`.
-    pub fn new(config: RunnerConfig, state_dir: PathBuf) -> Self {
+    pub fn new(
+        config: RunnerConfig,
+        state_dir: PathBuf,
+        gh: Arc<dyn crate::github::GitHubClient>,
+    ) -> Self {
         Self {
             config: Arc::new(config),
             state_dir,
+            gh,
         }
     }
 }
@@ -140,6 +146,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &app.config,
                     &app.state_dir,
                     &rd,
+                    &*app.gh,
                 )
                 .await
                 {
@@ -174,6 +181,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &app.config,
                     &app.state_dir,
                     &rd,
+                    &*app.gh,
                 )
                 .await
                 {
@@ -217,6 +225,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &rd,
                     &routes,
                     &cancel_rx,
+                    app.gh.clone(),
                 )
                 .await;
                 all_records.append(&mut records);
@@ -242,7 +251,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                         Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                     };
                 let issue =
-                    match crate::github::fetch_issue(&repo, input.number).await {
+                    match app.gh.fetch_issue(&repo, input.number).await {
                         Ok(i) => i,
                         Err(e) => {
                             return Ok(CallToolResult::text(format!("error: {e}")))
@@ -445,8 +454,12 @@ pub fn build_router(state: AppState) -> McpRouter {
 }
 
 /// Start the MCP server on stdio transport.
-pub async fn serve(config: RunnerConfig, state_dir: PathBuf) -> crate::error::Result<()> {
-    let state = AppState::new(config, state_dir);
+pub async fn serve(
+    config: RunnerConfig,
+    state_dir: PathBuf,
+    gh: Arc<dyn crate::github::GitHubClient>,
+) -> crate::error::Result<()> {
+    let state = AppState::new(config, state_dir, gh);
     let router = build_router(state);
     StdioTransport::new(router)
         .run()

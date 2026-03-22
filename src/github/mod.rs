@@ -1,13 +1,87 @@
 //! GitHub platform adapter — issues, PRs, comments, labels.
 //!
-//! Uses the `gh` CLI for all GitHub operations. Handles auth,
-//! pagination, and rate limiting transparently.
+//! Defines the `GitHubClient` trait for platform abstraction.
+//! Current implementations:
+//! - `GhCliClient` (default) — uses the `gh` CLI
+//! - `OctocrabClient` (planned) — uses the octocrab crate
+
+mod gh_cli;
+mod octocrab_client;
+
+pub use gh_cli::GhCliClient;
+pub use octocrab_client::OctocrabClient;
 
 use std::path::Path;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+
+/// Trait abstracting all GitHub API operations.
+///
+/// Implementations handle auth, pagination, and rate limiting.
+/// Git operations (push, worktree) are NOT part of this trait —
+/// those remain as free functions since they're git, not GitHub API.
+#[async_trait]
+pub trait GitHubClient: Send + Sync {
+    // ── Issues ──────────────────────────────────────────────────────
+    async fn fetch_issue(&self, repo: &str, number: u64) -> Result<IssueCandidate>;
+    async fn fetch_issue_state(&self, repo: &str, number: u64) -> Result<String>;
+    async fn fetch_eligible_issues(
+        &self,
+        repo: &str,
+        labels: &[String],
+        limit: usize,
+    ) -> Result<Vec<IssueCandidate>>;
+    async fn fetch_issues_with_label(&self, repo: &str, label: &str)
+    -> Result<Vec<IssueCandidate>>;
+    async fn add_label(&self, repo: &str, number: u64, label: &str) -> Result<()>;
+    async fn remove_label(&self, repo: &str, number: u64, label: &str) -> Result<()>;
+    async fn create_label(
+        &self,
+        repo: &str,
+        name: &str,
+        color: &str,
+        description: &str,
+    ) -> Result<()>;
+    async fn comment_on_issue(&self, repo: &str, number: u64, body: &str) -> Result<()>;
+
+    // ── Pull Requests ───────────────────────────────────────────────
+    async fn fetch_pr(&self, repo: &str, number: u64) -> Result<PrCandidate>;
+    async fn fetch_eligible_prs(
+        &self,
+        repo: &str,
+        labels: &[String],
+        limit: usize,
+    ) -> Result<Vec<PrCandidate>>;
+    async fn fetch_prs_with_label(&self, repo: &str, label: &str) -> Result<Vec<PrCandidate>>;
+    async fn fetch_all_open_prs(&self, repo: &str, limit: usize) -> Result<Vec<PrCandidate>>;
+    async fn fetch_pr_by_branch(&self, repo: &str, branch: &str) -> Result<Option<PrCandidate>>;
+    async fn create_pull_request(
+        &self,
+        repo: &str,
+        branch: &str,
+        title: &str,
+        body: &str,
+        work_dir: &Path,
+    ) -> Result<PullRequest>;
+    async fn add_pr_label(&self, repo: &str, number: u64, label: &str) -> Result<()>;
+    async fn remove_pr_label(&self, repo: &str, number: u64, label: &str) -> Result<()>;
+    async fn comment_on_pr(&self, repo: &str, number: u64, body: &str) -> Result<()>;
+
+    // ── Auth ────────────────────────────────────────────────────────
+    async fn fetch_authenticated_user(&self) -> Result<String>;
+}
+
+/// Returns the default GitHub client (GhCliClient).
+///
+/// This will be replaced with configurable client selection when
+/// OctocrabClient is implemented.
+pub fn default_client() -> &'static GhCliClient {
+    static CLIENT: GhCliClient = GhCliClient;
+    &CLIENT
+}
 
 /// A normalized issue representation, independent of GitHub API shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]

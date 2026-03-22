@@ -6,6 +6,7 @@ use tracing::warn;
 
 use crate::error::Result;
 use crate::github;
+use crate::github::GitHubClient;
 use crate::planner;
 use crate::state::{RunRecord, StageStatus};
 use crate::workflow;
@@ -99,6 +100,7 @@ pub(super) async fn handle_open_pr(
     record: &RunRecord,
     run_id: &str,
     work_dir: &Path,
+    gh: &dyn GitHubClient,
 ) -> Result<github::PullRequest> {
     let issue_number = issue.number;
 
@@ -172,7 +174,10 @@ pub(super) async fn handle_open_pr(
 
     let body = build_pr_body(issue, record, &plan_crumb, &review_crumb, &diff_stat);
 
-    match github::create_pull_request(repo, branch, &issue.title, &body, work_dir).await {
+    match gh
+        .create_pull_request(repo, branch, &issue.title, &body, work_dir)
+        .await
+    {
         Ok(pr) => Ok(pr),
         Err(e) => {
             let err_msg = e.to_string();
@@ -199,7 +204,7 @@ pub(super) async fn handle_open_pr(
                     });
                 }
                 // Fallback: fetch the PR by branch.
-                match github::fetch_pr_by_branch(repo, branch).await {
+                match gh.fetch_pr_by_branch(repo, branch).await {
                     Ok(Some(pr)) => Ok(github::PullRequest {
                         number: pr.number,
                         head_branch: pr.head_branch,

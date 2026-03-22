@@ -24,6 +24,7 @@ use crate::state::RunRecord;
 pub struct AppState {
     pub config: RunnerConfig,
     pub state_dir: PathBuf,
+    pub gh: Arc<dyn crate::github::GitHubClient>,
 }
 
 // --- Error type ---
@@ -220,7 +221,9 @@ async fn trigger_issue(
     let (repo, rd, routes) = resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
 
     if query.dry_run.unwrap_or(false) {
-        let issue = crate::github::fetch_issue(&repo, number)
+        let issue = state
+            .gh
+            .fetch_issue(&repo, number)
             .await
             .map_err(|e| ApiError::Internal(e.to_string()))?;
 
@@ -263,9 +266,10 @@ async fn trigger_issue(
     // Spawn background task; the orchestrator generates and persists its own run_id.
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
+    let gh = state.gh.clone();
     tokio::spawn(async move {
         match crate::orchestrator::process_issue_with_config(
-            number, &repo, &routes, &config, &state_dir, &rd,
+            number, &repo, &routes, &config, &state_dir, &rd, &*gh,
         )
         .await
         {
@@ -292,7 +296,9 @@ async fn trigger_pr(
     let (repo, rd, routes) = resolve_repo_for_api(query.repo.as_deref(), &state.config).await?;
 
     if query.dry_run.unwrap_or(false) {
-        let pr = crate::github::fetch_pr(&repo, number)
+        let pr = state
+            .gh
+            .fetch_pr(&repo, number)
             .await
             .map_err(|e| ApiError::Internal(e.to_string()))?;
 
@@ -333,9 +339,10 @@ async fn trigger_pr(
 
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
+    let gh = state.gh.clone();
     tokio::spawn(async move {
         match crate::orchestrator::process_pr_with_config(
-            number, &repo, &routes, &config, &state_dir, &rd,
+            number, &repo, &routes, &config, &state_dir, &rd, &*gh,
         )
         .await
         {
@@ -368,11 +375,18 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
 
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
+    let gh = state.gh.clone();
     tokio::spawn(async move {
         let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         for (repo, rd, routes) in &repos_resolved {
             let records = crate::orchestrator::process_batch_for_repo(
-                repo, &config, &state_dir, rd, routes, &cancel_rx,
+                repo,
+                &config,
+                &state_dir,
+                rd,
+                routes,
+                &cancel_rx,
+                gh.clone(),
             )
             .await;
             let succeeded = records

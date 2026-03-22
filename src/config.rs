@@ -129,6 +129,10 @@ pub struct GlobalConfig {
 
     /// Notification settings. When absent, no notifications are sent.
     pub notifications: Option<NotificationsConfig>,
+
+    /// GitHub API backend: "octocrab" (default) or "gh-cli".
+    #[serde(default = "default_github_backend")]
+    pub github_backend: String,
 }
 
 /// Notification channels fired on run completion.
@@ -409,6 +413,10 @@ fn default_max_concurrency() -> usize {
 
 fn default_agent() -> String {
     "claude".to_string()
+}
+
+fn default_github_backend() -> String {
+    "octocrab".to_string()
 }
 
 fn default_in_progress_label() -> String {
