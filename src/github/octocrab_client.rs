@@ -4,7 +4,7 @@ use std::{path::Path, sync::Arc};
 
 use async_trait::async_trait;
 use http::{
-    Uri,
+    StatusCode, Uri,
     header::{AUTHORIZATION, USER_AGENT},
 };
 use hyper_rustls::HttpsConnectorBuilder;
@@ -232,7 +232,17 @@ impl GitHubClient for OctocrabClient {
             .await;
         if let Err(e) = result {
             // If it already exists, that's fine (idempotent).
-            if !e.to_string().contains("already_exists") {
+            let is_already_exists = matches!(
+                &e,
+                octocrab::Error::GitHub { source, .. }
+                    if source.status_code == StatusCode::UNPROCESSABLE_ENTITY
+                        && source.errors.as_ref().is_some_and(|errs| {
+                            errs.iter().any(|err| {
+                                err.get("code").and_then(|c| c.as_str()) == Some("already_exists")
+                            })
+                        })
+            );
+            if !is_already_exists {
                 return Err(Error::GitHub(format!("create label '{name}': {e}")));
             }
         }
