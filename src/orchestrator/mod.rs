@@ -469,13 +469,22 @@ pub async fn process_issue_with_overrides(
                         .join("breadcrumbs")
                         .join(&run_id)
                         .join(format!("{}.md", planned_stage.kind_name()));
-                    if let Ok(content) = std::fs::read_to_string(&crumb_path) {
-                        info!(
-                            issue = number,
-                            stage = planned_stage.kind_name(),
-                            "loaded breadcrumb for next stage"
-                        );
-                        pending_breadcrumb = Some(content);
+                    match std::fs::read_to_string(&crumb_path) {
+                        Ok(content) => {
+                            info!(
+                                issue = number,
+                                stage = planned_stage.kind_name(),
+                                "loaded breadcrumb for next stage"
+                            );
+                            pending_breadcrumb = Some(content);
+                        }
+                        Err(e) => {
+                            warn!(
+                                path = %crumb_path.display(),
+                                error = %e,
+                                "failed to read breadcrumb; next stage will run without prior context"
+                            );
+                        }
                     }
                 }
                 record.record_stage(planned_stage.kind, status, result);
@@ -898,13 +907,22 @@ pub async fn process_pr_with_overrides(
                         .join("breadcrumbs")
                         .join(&run_id)
                         .join(format!("{}.md", planned_stage.kind_name()));
-                    if let Ok(content) = std::fs::read_to_string(&crumb_path) {
-                        info!(
-                            pr = number,
-                            stage = planned_stage.kind_name(),
-                            "loaded breadcrumb for next stage"
-                        );
-                        pending_breadcrumb = Some(content);
+                    match std::fs::read_to_string(&crumb_path) {
+                        Ok(content) => {
+                            info!(
+                                pr = number,
+                                stage = planned_stage.kind_name(),
+                                "loaded breadcrumb for next stage"
+                            );
+                            pending_breadcrumb = Some(content);
+                        }
+                        Err(e) => {
+                            warn!(
+                                path = %crumb_path.display(),
+                                error = %e,
+                                "failed to read breadcrumb; next stage will run without prior context"
+                            );
+                        }
                     }
                 }
                 record.record_stage(planned_stage.kind, status, result);
