@@ -236,11 +236,7 @@ impl Workflow {
                 "bug",
                 vec![
                     Stage::agent(StageKind::Plan),
-                    Stage::shell(
-                        StageKind::DraftPr,
-                        DRAFT_PR_COMMAND,
-                    )
-                    .optional(),
+                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
