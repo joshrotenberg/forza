@@ -1,9 +1,18 @@
 //! GitHub client backed by the octocrab crate (REST API).
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use async_trait::async_trait;
-use octocrab::Octocrab;
+use http::{
+    Uri,
+    header::{AUTHORIZATION, USER_AGENT},
+};
+use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use octocrab::{
+    AuthState, Octocrab, OctocrabBuilder,
+    service::middleware::{base_uri::BaseUriLayer, extra_headers::ExtraHeadersLayer},
+};
 
 use super::{GitHubClient, IssueCandidate, PrCandidate, PullRequest};
 use crate::error::{Error, Result};
@@ -33,10 +42,30 @@ impl OctocrabClient {
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         };
 
-        let client = Octocrab::builder()
-            .personal_token(token)
+        let connector = HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_or_http()
+            .enable_http1()
+            .build();
+
+        let mut http_builder = Client::builder(TokioExecutor::new());
+        http_builder.pool_idle_timeout(std::time::Duration::from_secs(20));
+        let http_client = http_builder.build(connector);
+
+        let auth_header = format!("Bearer {token}")
+            .parse()
+            .map_err(|e| Error::GitHub(format!("invalid token format: {e}")))?;
+
+        let client = OctocrabBuilder::new_empty()
+            .with_service(http_client)
+            .with_layer(&BaseUriLayer::new(Uri::from_static("https://api.github.com")))
+            .with_layer(&ExtraHeadersLayer::new(Arc::new(vec![
+                (USER_AGENT, "octocrab".parse().unwrap()),
+                (AUTHORIZATION, auth_header),
+            ])))
+            .with_auth(AuthState::None)
             .build()
-            .map_err(|e| Error::GitHub(format!("failed to create octocrab client: {e}")))?;
+            .unwrap();
 
         Ok(Self { client })
     }
