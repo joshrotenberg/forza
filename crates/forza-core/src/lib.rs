@@ -33,6 +33,7 @@ pub mod condition;
 pub mod error;
 pub mod lifecycle;
 pub mod pipeline;
+pub mod planner;
 pub mod route;
 pub mod run;
 pub mod shell;
