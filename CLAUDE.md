@@ -133,6 +133,24 @@ validation_commands = ["cargo test"]
 Condition routes fire automatically based on PR state; no label is needed. Label routes
 fire when the GitHub label is applied.
 
+## RouteOutcome variants
+
+Each run records its final outcome in `RunRecord::outcome`. The `RouteOutcome` enum
+(defined in `src/state.rs`) has the following variants:
+
+| Variant | Fields | When set |
+|---------|--------|----------|
+| `PrCreated` | `number: u64` | Issue workflow completed and a new PR was opened |
+| `PrUpdated` | `number: u64` | Existing PR was updated (rebased, CI fixed, etc.) |
+| `PrMerged` | `number: u64` | PR was successfully merged |
+| `CommentPosted` | — | Workflow posted a comment (e.g., research route) |
+| `NothingToDo` | — | Reactive/condition route found no action was needed |
+| `Failed` | `stage: String`, `error: String` | Run failed at the named stage |
+| `Exhausted` | `retries: usize` | Retry budget exhausted — `forza:needs-human` applied |
+
+`format_outcome` in `src/main.rs` renders these for the status display (e.g.,
+`pr_created (#42)`, `failed (stage: implement)`, `exhausted (3 retries)`).
+
 ## Skill injection
 
 Skills are markdown files injected into the agent's context. Three levels of override
