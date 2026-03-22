@@ -169,3 +169,24 @@ skills = ["./skills/bugfix.md"]        # overrides global for this route
 
 `RunnerConfig::effective_skills(route, stage_skills)` resolves the final list: stage
 skills win if present, otherwise route skills, otherwise global.
+
+## Current Status
+
+**Version:** 0.2.0
+
+### Implemented features
+
+- **Full stage pipeline**: `triage`, `clarify`, `plan`, `implement`, `test`, `review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`
+- **Workflow modes**: `linear` (sequential) and `reactive` (condition-evaluated dispatch loop)
+- **Label routes**: fire when a GitHub label is applied to an issue or PR
+- **Condition routes**: fire automatically on PR state (`ci_failing`, `has_conflicts`, `ci_failing_or_conflicts`, `approved_and_green`)
+- **Agentless stages**: run shell commands directly (formatting, linting, scaffolding)
+- **Conditional stages**: gate stage execution via shell command exit code; pair with `optional = true` to skip cleanly
+- **Per-stage hooks**: `pre`, `post`, `finally` hooks keyed by `StageKind` name
+- **Skill injection**: three-level override (global → route → stage)
+- **Breadcrumbs**: inter-stage context hand-off via `.forza/breadcrumbs/{run_id}/{stage}.md`
+- **Multi-retry with escalation**: `max_retries` per route; applies `forza:needs-human` on exhaustion
+- **Notifications**: desktop, Slack webhook, and generic webhook on run completion
+- **CLI**: `init`, `issue`, `pr`, `run`, `watch`, `status`, `fix`, `clean`, `serve`, `mcp`
+- **REST API** (`serve`) and **MCP server** (stdio, `mcp`) for tool integration
+- **Dependency validation**: checks `git`, `gh`, and the agent binary on startup
