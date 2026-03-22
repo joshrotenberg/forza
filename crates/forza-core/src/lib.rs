@@ -28,6 +28,22 @@
 //!   are transition functions, the poll loop is the event loop.
 //! - **Everything is public and serializable.** REST, MCP, CLI, and metrics can
 //!   access any piece of data without going through accessors.
+//!
+//! # Modules
+//!
+//! | Module | Primary exports | Purpose |
+//! |--------|----------------|---------|
+//! | [`condition`] | [`RouteCondition`] | PR-state conditions that trigger condition routes |
+//! | [`error`] | [`Error`], [`Result`] | Crate-wide error type and result alias |
+//! | [`lifecycle`] | [`lifecycle::LifecycleLabels`] | `forza:*` label management (in-progress, complete, failed, needs-human) |
+//! | [`pipeline`] | [`pipeline::PipelineConfig`], [`pipeline::execute`] | Unified stage-by-stage execution path for all subjects |
+//! | [`planner`] | [`planner::generate_prompts`] | Build per-stage prompts from a subject and workflow |
+//! | [`route`] | [`Route`], [`Trigger`], [`Scope`], [`MatchedWork`] | Route definitions and subject-matching logic |
+//! | [`run`] | [`Run`], [`RunStatus`], [`Outcome`], [`StageRecord`] | Persistent run records and outcome tracking |
+//! | [`shell`] | [`shell::ShellResult`], [`shell::run`] | `sh -c` execution with `FORZA_*` environment variables |
+//! | [`stage`] | [`Stage`], [`StageKind`], [`Workflow`], [`Execution`] | Stage and workflow type definitions |
+//! | [`subject`] | [`Subject`], [`SubjectKind`] | Unified GitHub issue/PR type flowing through the pipeline |
+//! | [`traits`] | [`GitHubClient`], [`GitClient`], [`AgentExecutor`] | Pluggable backend traits implemented by the `forza` binary |
 
 pub mod condition;
 pub mod error;
