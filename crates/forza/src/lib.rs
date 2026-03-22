@@ -34,6 +34,7 @@ pub mod mcp;
 pub mod notifications;
 pub mod orchestrator;
 pub mod planner;
+pub mod runner;
 pub mod state;
 pub mod workflow;
 
