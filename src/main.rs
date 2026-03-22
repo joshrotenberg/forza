@@ -1263,7 +1263,9 @@ async fn cmd_mcp(
     let sd = state_dir();
     if args.http {
         info!(host = %args.host, port = args.port, "MCP HTTP/SSE server listening");
-        if let Err(e) = forza::mcp::serve_http(config.clone(), sd, gh, git, &args.host, args.port).await {
+        if let Err(e) =
+            forza::mcp::serve_http(config.clone(), sd, gh, git, &args.host, args.port).await
+        {
             eprintln!("mcp server error: {e}");
             return ExitCode::FAILURE;
         }
