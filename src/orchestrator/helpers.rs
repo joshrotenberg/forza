@@ -489,35 +489,17 @@ pub(super) fn generate_reactive_pr_prompt(
     };
 
     match kind {
-        StageKind::FixCi => format!(
-            "Fix the CI failures for PR #{number}: {title}\n\n\
-             ## Steps\n\n\
-             1. Read the CI failure output (`gh pr checks {number}`).\n\
-             2. Identify the failing checks and their error messages.\n\
-             3. Fix the failures — compilation errors, test failures, lint issues.\n\
-             4. Commit the fixes and push (`git push`).\n\n\
-             Branch: `{branch}`{breadcrumb}",
-            number = pr.number,
-            title = pr.title,
-            branch = pr.head_branch,
-            breadcrumb = breadcrumb,
-        ),
-        StageKind::RevisePr => format!(
-            "Revise PR #{number}: {title}\n\n\
-             ## Steps\n\n\
-             1. Check for merge conflicts: `git fetch origin && git rebase origin/{base_branch}`\n\
-             2. If the rebase has conflicts, resolve them. Read the conflicting files, \
-                understand both sides, and produce the correct merged result.\n\
-             3. Check for review feedback: `gh pr view {number} --json reviews`\n\
-             4. Address any CHANGES_REQUESTED comments.\n\
-             5. Commit any changes and push: `git push --force-with-lease origin {branch}`\n\n\
-             Branch: `{branch}` -> `{base_branch}`{breadcrumb}",
-            number = pr.number,
-            title = pr.title,
-            branch = pr.head_branch,
-            base_branch = pr.base_branch,
-            breadcrumb = breadcrumb,
-        ),
+        StageKind::FixCi => include_str!("../prompts/reactive_fix_ci.md")
+            .replace("{pr_number}", &pr.number.to_string())
+            .replace("{pr_title}", &pr.title)
+            .replace("{head_branch}", &pr.head_branch)
+            .replace("{breadcrumb}", &breadcrumb),
+        StageKind::RevisePr => include_str!("../prompts/reactive_revise_pr.md")
+            .replace("{pr_number}", &pr.number.to_string())
+            .replace("{pr_title}", &pr.title)
+            .replace("{head_branch}", &pr.head_branch)
+            .replace("{base_branch}", &pr.base_branch)
+            .replace("{breadcrumb}", &breadcrumb),
         _ => format!(
             "Handle {} stage for PR #{}: {}",
             kind.name(),
