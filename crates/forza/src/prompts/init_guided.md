@@ -69,7 +69,7 @@ workflow = "pr-fix"
 type = "pr"
 condition = "ci_failing"   # ci_failing | has_conflicts | ci_failing_or_conflicts |
                             # approved_and_green | ci_green_no_objections
-workflow = "fix-ci"
+workflow = "pr-fix-ci"     # must match a builtin or custom workflow name exactly
 scope = "forza_owned"       # forza_owned (default) | all
 max_retries = 3
 poll_interval = 60
@@ -101,18 +101,28 @@ stages = [
 
 | Name | Stages |
 |------|--------|
-| `bug` | plan → implement → test → review → open_pr |
-| `feature` | plan → implement → test → review → open_pr |
-| `pr-fix` | revise_pr → review → open_pr |
-| `fix-ci` | fix_ci → review |
+| `bug` | plan → draft_pr* → implement → test → review → open_pr → merge* |
+| `feature` | plan → draft_pr* → implement → test → review → open_pr → merge* |
+| `chore` | implement → test → open_pr → merge* |
 | `research` | research → comment |
+| `pr-fix` | revise_pr → fix_ci |
+| `pr-fix-ci` | fix_ci |
+| `pr-rebase` | revise_pr |
+| `pr-merge` | merge (no worktree) |
+
+`*` = optional stage
 
 ## Writing the config
 
 When you have gathered enough information:
 1. Summarize what you're about to write and confirm with the developer
 2. Write the config to `{output}` using the Write tool
-3. Tell the developer what was written and how to run `forza init --repo {repo}` next
+3. Tell the developer what was written and suggest next steps:
+   - Label a GitHub issue with the appropriate label + `forza:ready`
+   - Run `forza issue <number>` to process it, or `forza watch` for continuous mode
+   - Run `forza explain` to verify the config looks correct
+
+Note: Labels have already been created by `forza init`. Do NOT tell the user to run `forza init` again.
 
 The config must be valid TOML parseable as a forza `RunnerConfig`. Add a comment above each section explaining its purpose.
 
