@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
 use crate::planner::PlannedStage;
@@ -107,7 +107,34 @@ impl AgentAdapter for ClaudeAdapter {
             .build()
             .map_err(|e| Error::Executor(format!("failed to create claude client: {e}")))?;
 
-        let mut cmd = QueryCommand::new(&stage.prompt)
+        // Read skill files and prepend their content to the prompt instead of
+        // using --file, which requires session token persistence in recent Claude
+        // Code versions.
+        let prompt = if self.skills.is_empty() {
+            stage.prompt.clone()
+        } else {
+            let mut parts = Vec::with_capacity(self.skills.len() + 1);
+            for skill in &self.skills {
+                let skill_path = {
+                    let p = Path::new(skill);
+                    if p.is_absolute() {
+                        p.to_path_buf()
+                    } else {
+                        work_dir.join(p)
+                    }
+                };
+                match std::fs::read_to_string(&skill_path) {
+                    Ok(content) => parts.push(content),
+                    Err(e) => {
+                        warn!(path = %skill_path.display(), error = %e, "skipping unreadable skill file");
+                    }
+                }
+            }
+            parts.push(stage.prompt.clone());
+            parts.join("\n\n")
+        };
+
+        let mut cmd = QueryCommand::new(&prompt)
             .output_format(OutputFormat::StreamJson)
             .permission_mode(PermissionMode::BypassPermissions)
             .no_session_persistence();
@@ -117,9 +144,6 @@ impl AgentAdapter for ClaudeAdapter {
         }
         if let Some(turns) = self.max_turns {
             cmd = cmd.max_turns(turns);
-        }
-        for skill in &self.skills {
-            cmd = cmd.file(skill);
         }
         if let Some(ref p) = self.mcp_config {
             cmd = cmd.mcp_config(p);
