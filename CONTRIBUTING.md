@@ -22,13 +22,13 @@ Run the full pre-commit checklist:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --lib --all-features
-cargo test --test '*' --all-features
+cargo clippy --all --all-targets -- -D warnings
+cargo test --all
 cargo doc --no-deps --all-features
 ```
 
-All checks must pass. The CI pipeline runs these automatically.
+This is a workspace with two crates (`forza-core` and `forza`). All checks
+must pass across the full workspace.
 
 ## Submitting changes
 
@@ -41,7 +41,7 @@ All checks must pass. The CI pipeline runs these automatically.
 
 2. Make your changes following the patterns in the existing code.
 
-3. Write or update tests. All tests live in `#[cfg(test)]` modules inside the source files — there are no separate integration test files.
+3. Write or update tests. Unit tests live in `#[cfg(test)]` modules. Pipeline integration tests are in `crates/forza-core/tests/pipeline_integration.rs` using mock traits.
 
 4. Open a pull request against `main`. Reference any related issues in the PR description.
 
@@ -51,7 +51,7 @@ Use [conventional commits](https://www.conventionalcommits.org/):
 
 ```
 feat: add schedule window support
-fix(orchestrator): handle stale lease on startup
+fix(runner): handle stale lease on startup
 docs: update CLI reference in README
 ```
 
@@ -60,7 +60,7 @@ Breaking changes use `feat!:` or `fix!:`.
 ## Code conventions
 
 - Rust 2024 edition — use if-let chains (`if let Some(x) = y && condition {`) instead of nested blocks
-- `thiserror` for library errors, `anyhow` for application errors
+- `thiserror` for errors in both crates
 - All public APIs must have doc comments
 - No emojis in code, commits, or documentation
 

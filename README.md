@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/crates/l/forza.svg)](LICENSE-MIT)
 [![CI](https://github.com/joshrotenberg/forza/actions/workflows/ci.yml/badge.svg)](https://github.com/joshrotenberg/forza/actions/workflows/ci.yml)
 
-Autonomous GitHub issue runner. Turns issues into pull requests through configurable multi-stage workflows.
+Autonomous GitHub issue runner. Turns issues into pull requests through configurable multi-stage workflows. Agent-agnostic — supports Claude and Codex backends.
 
 ## How it works
 
@@ -19,13 +19,13 @@ When an issue is labeled (or a PR enters a matching state), forza:
 2. **Matches a route** — compares the label or PR state against your configured routes to select a workflow
 3. **Executes stages** — runs each stage in order (e.g., plan → implement → test → review → open_pr), with validation commands between stages and breadcrumbs carrying context forward
 4. **Opens a PR** — commits the work to an isolated git worktree and opens a PR against your branch
-5. **Merges (optional)** — if `auto_merge = true` and CI passes, the merge stage completes the lifecycle
+5. **Merges (optional)** — if the workflow includes a merge stage, it waits for CI and merges
 
-For PRs, condition routes automatically detect CI failures and merge conflicts, fix them reactively, and merge when green.
+For PRs, condition routes automatically detect CI failures and merge conflicts, fix them, and merge when green. Each condition route does one thing — the poll loop handles sequencing across cycles.
 
-### forza vs. running Claude directly
+### forza vs. running an agent directly
 
-| | forza | Claude directly |
+| | forza | Agent directly |
 |---|---|---|
 | Stage sequencing | Deterministic, configured per workflow | Ad-hoc, single session |
 | Context hand-off | Breadcrumbs carry forward between stages | Manual copy-paste |
@@ -96,7 +96,7 @@ Add validation, multiple routes, and auto-merge. This is the recommended startin
 model = "claude-sonnet-4-6"
 gate_label = "forza:ready"
 branch_pattern = "automation/{issue}-{slug}"
-auto_merge = true
+# Merge behavior is controlled by the workflow template's merge stage.
 
 [security]
 authorization_level = "trusted"
@@ -143,7 +143,7 @@ Multiple repos, custom workflow templates, per-stage hooks, skill injection, and
 [global]
 model = "claude-sonnet-4-6"
 gate_label = "forza:ready"
-auto_merge = true
+# Merge behavior is controlled by the workflow template's merge stage.
 max_concurrency = 5
 
 [security]
@@ -217,7 +217,7 @@ Forza uses `forza.toml` with named routes per repo:
 model = "claude-sonnet-4-6"
 gate_label = "forza:ready"
 branch_pattern = "automation/{issue}-{slug}"
-auto_merge = true
+# Merge behavior is controlled by the workflow template's merge stage.
 
 [security]
 authorization_level = "trusted"
@@ -282,8 +282,8 @@ A chain of stages for a type of work. Built-in templates:
 | **research** | Linear | research -> comment |
 | **pr-fix** | Linear | revise_pr -> fix_ci -> merge |
 | **pr-fix-ci** | Linear | fix_ci -> merge |
-| **pr-rebase** | Linear | revise_pr -> merge |
-| **pr-maintenance** | Reactive | conflicts? -> fix_ci? -> review? -> merge? |
+| **pr-rebase** | Linear | revise_pr |
+| **pr-merge** | Linear | merge (no worktree) |
 
 ### Stage
 
@@ -296,8 +296,7 @@ Stages can be:
 
 ### Workflow Modes
 
-- **Linear**: stages execute in order, fail-fast on non-optional failures
-- **Reactive**: each poll cycle evaluates stage conditions, runs the first match (one action per cycle)
+- **Linear**: stages execute in order, fail-fast on non-optional failures. All workflows are linear — multi-step PR maintenance uses separate condition routes across poll cycles.
 
 ### Labels
 
@@ -335,7 +334,7 @@ Without acceptance criteria, forza must guess what "done" means. With them, it k
 
 ```
 src/config.rs
-src/orchestrator/mod.rs
+crates/forza/src/runner.rs
 ```
 
 ### Issue types and what to include
@@ -368,7 +367,7 @@ src/orchestrator/mod.rs
 > - [ ] `forza watch` retries after a backoff period instead of exiting
 > - [ ] Normal watch behavior is unchanged
 >
-> **Affected files:** `src/orchestrator/mod.rs`, `src/github.rs`
+> **Affected files:** `crates/forza/src/runner.rs`, `src/github.rs`
 
 **Feature — well-formed**
 

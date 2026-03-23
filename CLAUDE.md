@@ -1,236 +1,163 @@
 # forza — agent context
 
 forza is a GitHub automation runner that processes issues and PRs through configurable
-multi-stage workflows executed by Claude. This file documents the configuration model
-and key features for agents processing forza's own issues.
+multi-stage workflows. Agent-agnostic — supports Claude and Codex, configurable via
+`agent = "claude"` or `agent = "codex"` in `forza.toml`.
 
-## Architecture
+## Workspace structure
 
 ```
-RunnerConfig (forza.toml / runner.toml)
-  └─ repos."owner/name"
-       └─ routes.name  ──→  WorkflowTemplate  ──→  Stage[]
-                                                     ├─ kind (StageKind)
-                                                     ├─ agentless / command
-                                                     ├─ condition
-                                                     ├─ skills / model / mcp_config
-                                                     └─ optional / max_retries
+Cargo.toml                        (workspace root)
+crates/
+  forza-core/                     (library — domain model, traits, pipeline)
+    src/
+      condition.rs                RouteCondition evaluation
+      error.rs                    Error types
+      lifecycle.rs                Label management (in-progress, complete, failed)
+      pipeline.rs                 Unified stage execution (the core execute() function)
+      planner.rs                  Prompt generation from Subject + Workflow
+      route.rs                    Route, Trigger, Scope, MatchedWork
+      run.rs                      Run, RunStatus, Outcome, StageRecord
+      shell.rs                    Shell execution with FORZA_* env vars
+      stage.rs                    StageKind, Stage, Execution, Workflow, builtins
+      subject.rs                  Subject (unified issue/PR type), SubjectKind
+      testing.rs                  MockGitHub, MockGit, MockAgent for tests
+      traits.rs                   GitHubClient, GitClient, AgentExecutor traits
+      commands/draft_pr.sh        Shell script for DraftPr stage
+      prompts/*.md                Prompt templates (include_str! at compile time)
+  forza/                          (binary — CLI, API, MCP, client implementations)
+    src/
+      adapters.rs                 ClaudeAgentAdapter, CodexAgentAdapter, GitHubAdapter, GitAdapter
+      runner.rs                   Discovery, scheduling, pipeline execution
+      config.rs                   RunnerConfig, Route, GlobalConfig (TOML parsing)
+      executor.rs                 ClaudeAdapter (claude-wrapper integration)
+      main.rs                     CLI (clap)
+      api.rs                      REST API (axum)
+      mcp.rs                      MCP server (tower-mcp)
+      github/                     GitHubClient implementations (gh CLI, octocrab)
+      git/                        GitClient implementations (git CLI, gix)
 ```
 
-Key modules: `src/config.rs` (config structs, `SubjectType`, `RouteCondition`),
-`src/workflow.rs` (`Stage`, `StageKind`, `WorkflowTemplate`, `WorkflowMode`),
-`src/planner.rs` (build stage prompts, breadcrumb instructions),
-`src/orchestrator/mod.rs` (execute stages, load breadcrumbs, fire hooks),
-`src/orchestrator/helpers.rs` (PR body building, open_pr handling),
-`src/state.rs` (`RunRecord`, `RouteOutcome`, run persistence).
+## Key design decisions
+
+- **One route, one action.** Each route does exactly one thing. Multi-step PR
+  maintenance uses separate routes across poll cycles.
+- **Match once, carry through.** A subject is bound to its route at discovery
+  time via `MatchedWork`. No re-matching during execution.
+- **GitHub is the state machine.** PR state on GitHub is authoritative. Routes
+  are transition functions, the poll loop is the event loop.
+- **All workflows are linear.** Stages execute in order. No reactive dispatch.
 
 ## Config structure
 
 ```toml
 [global]
+agent = "claude"               # or "codex"
 model = "claude-sonnet-4-6"
 gate_label = "forza:ready"
 branch_pattern = "automation/{issue}-{slug}"
 
 [security]
-authorization_level = "trusted"       # sandbox | local | contributor | trusted
+authorization_level = "trusted"
 
 [validation]
 commands = ["cargo fmt --all -- --check", "cargo clippy --all-targets -- -D warnings"]
 
-[repos."owner/name"]
-[repos."owner/name".routes.route-name]
-type = "issue"          # or "pr"
-label = "bug"           # label trigger (mutually exclusive with condition)
-workflow = "bug"        # workflow template name
+[repos."owner/name".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
 
-[agent_config]
-skills = ["./skills/rust.md"]
-mcp_config = ".mcp.json"
-
-[stage_hooks.implement]
-pre    = ["..."]
-post   = ["..."]
-finally = ["..."]
+[repos."owner/name".routes.auto-rebase]
+type = "pr"
+condition = "has_conflicts"       # ci_failing | has_conflicts | ci_failing_or_conflicts |
+                                  # approved_and_green | ci_green_no_objections
+workflow = "pr-rebase"
+scope = "forza_owned"
+max_retries = 3
 ```
+
+## Builtin workflows
+
+| Template | Stages |
+|----------|--------|
+| **bug** | plan -> draft_pr* -> implement -> test -> review -> open_pr -> merge* |
+| **feature** | plan -> draft_pr* -> implement -> test -> review -> open_pr -> merge* |
+| **chore** | implement -> test -> open_pr -> merge* |
+| **research** | research -> comment |
+| **pr-fix** | revise_pr -> fix_ci |
+| **pr-fix-ci** | fix_ci |
+| **pr-rebase** | revise_pr |
+| **pr-merge** | merge (no worktree) |
+
+`*` = optional stage. Stage kinds: `triage`, `clarify`, `plan`, `implement`, `test`,
+`review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`, `draft_pr`.
 
 ## Breadcrumbs
 
-Each stage that has a successor is instructed to write a context summary to
-`.forza/breadcrumbs/{run_id}/{stage_name}.md` (e.g.,
-`.forza/breadcrumbs/run-20260321-170349-1ff7fe81/plan.md`). The orchestrator reads
-this file after the stage completes and prepends it as `## Context from previous stage`
-to the next stage's prompt.
+Each stage with a successor writes a context summary to
+`.forza/breadcrumbs/{run_id}/{stage_name}.md`. The pipeline reads this and prepends
+it as `## Context from previous stage` to the next stage's prompt.
 
-The plan stage is special: it writes to `.plan_breadcrumb.md` in the repo root (not
-`.forza/breadcrumbs/`). The implement stage reads it for the file list and exact commit
-message. Similarly `.review_breadcrumb.md` is written by review and read by open_pr.
+The plan stage writes `.plan_breadcrumb.md` in the repo root. The implement stage
+reads it for the file list and commit message.
+
+## Execution pipeline
+
+All work flows through `forza_core::pipeline::execute()` — one function for both
+issues and PRs. The runner module handles discovery (fetching subjects from GitHub),
+matching (binding to routes), and scheduling (concurrency limits via JoinSet).
+
+Shell commands (agentless stages, conditions, hooks, validation) get `FORZA_*`
+environment variables: `FORZA_REPO`, `FORZA_SUBJECT_TYPE`, `FORZA_SUBJECT_NUMBER`,
+`FORZA_ISSUE_NUMBER`/`FORZA_PR_NUMBER`, `FORZA_BRANCH`, `FORZA_RUN_ID`,
+`FORZA_ROUTE`, `FORZA_WORKFLOW`.
 
 ## Shell command trust boundary
 
-All shell commands that forza executes — `[validation].commands`, `[stage_hooks.*]`
-hook lists, agentless stage `command` fields, and stage `condition` fields — are run
-via `sh -c` with the string taken verbatim from the TOML config. There is no
-sandboxing or allowlisting.
-
-`forza.toml` is the trust boundary. These fields are equivalent to executable code:
-treat config changes that touch them the same as code changes.
-
-`authorization_level` in `[security]` controls what the Claude agent may do (merge,
-push, etc.), not what forza's own shell invocations may do. It does not restrict hooks,
-validation commands, agentless stages, or conditions.
-
-If forza is ever extended to accept config from untrusted sources (e.g., auto-applying
-PR-submitted `forza.toml` changes), these fields become a command injection vector.
-
-## Agentless stages
-
-Set `agentless = true` and `command = "..."` on a stage to run a shell command directly
-instead of invoking Claude. Useful for formatting, linting, or scaffolding steps.
-
-```toml
-[[workflow_templates]]
-name = "lint-first"
-stages = [
-  { kind = "implement", agentless = true, command = "cargo fmt --all" },
-  { kind = "review" },
-  { kind = "open_pr" },
-]
-```
-
-The orchestrator runs the command via `sh -c` and records the output. No agent
-invocation happens for agentless stages.
-
-## Conditional stages
-
-Set `condition = "..."` (a shell command) on a stage to gate its execution. Exit 0
-means **run** the stage; non-zero means **skip** it. Use together with
-`optional = true` so a skipped stage does not fail the run. No hooks fire for skipped
-stages.
-
-```toml
-{ kind = "test", optional = true, condition = "! git diff --quiet HEAD~1 -- src/tests/" }
-```
-
-The condition is evaluated by the orchestrator before the stage starts.
-
-## Per-stage hooks
-
-Define hooks keyed by the snake_case `StageKind` name (`plan`, `implement`, `test`,
-`review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`).
-
-```toml
-[stage_hooks.implement]
-pre     = ["cargo check"]          # runs before the stage
-post    = ["cargo fmt --all"]      # runs on success
-finally = ["echo done"]            # runs regardless of outcome
-```
-
-`pre` failure aborts the stage. `post` failure marks the stage failed. `finally` always
-runs (clean-up, notifications, etc.).
-
-## Route-based config
-
-Multi-repo config uses `[repos."owner/name".routes.name]`. Each route needs a `type`
-(`issue` or `pr`) and at least one trigger (`label` or `condition`).
-
-```toml
-[repos."owner/name".routes.auto-fix]
-type       = "pr"
-condition  = "ci_failing_or_conflicts"   # RouteCondition: ci_failing | has_conflicts |
-                                         #   ci_failing_or_conflicts | approved_and_green |
-                                         #   ci_green_no_objections
-workflow   = "pr-fix"
-scope      = "forza_owned"               # forza_owned (default) | all
-max_retries = 3                          # applies forza:needs-human after N failures
-concurrency = 2
-poll_interval = 60                       # check every minute for CI/conflict issues
-model      = "claude-opus-4-6"           # per-route model override
-skills     = ["./skills/pr-fix.md"]      # per-route skills override
-mcp_config = ".mcp.json"
-validation_commands = ["cargo test"]
-```
-
-Condition routes fire automatically based on PR state; no label is needed. Label routes
-fire when the GitHub label is applied.
-
-## RouteOutcome variants
-
-Each run records its final outcome in `RunRecord::outcome`. The `RouteOutcome` enum
-(defined in `src/state.rs`) has the following variants:
-
-| Variant | Fields | When set |
-|---------|--------|----------|
-| `PrCreated` | `number: u64` | Issue workflow completed and a new PR was opened |
-| `PrUpdated` | `number: u64` | Existing PR was updated (rebased, CI fixed, etc.) |
-| `PrMerged` | `number: u64` | PR was successfully merged |
-| `CommentPosted` | — | Workflow posted a comment (e.g., research route) |
-| `NothingToDo` | — | Reactive/condition route found no action was needed |
-| `Failed` | `stage: String`, `error: String` | Run failed at the named stage |
-| `Exhausted` | `retries: usize` | Retry budget exhausted — `forza:needs-human` applied |
-
-`format_outcome` in `src/main.rs` renders these for the status display (e.g.,
-`pr_created (#42)`, `failed (stage: implement)`, `exhausted (3 retries)`).
+All shell commands from `forza.toml` (validation, hooks, agentless commands,
+conditions) run via `sh -c` with no sandboxing. The config file is the trust boundary.
 
 ## Testing
 
-All tests are inline unit tests in `#[cfg(test)]` modules within the source files. There
-are no integration tests. Run the full suite with:
+```bash
+cargo test --all                    # all unit + integration tests
+cargo test -p forza-core            # core library tests (106+)
+cargo test -p forza --lib           # binary crate unit tests
+cargo test -p forza-core --test pipeline_integration  # mock-based pipeline tests
+```
+
+Key test areas:
+| Crate | Focus |
+|-------|-------|
+| `forza-core` | Subject, Stage, Workflow, Condition, Route, Run, Pipeline, Shell |
+| `forza-core/tests/pipeline_integration.rs` | End-to-end pipeline with MockGitHub/MockGit/MockAgent |
+| `forza` | Config parsing, route matching, state persistence |
+
+## Pre-push checklist
 
 ```bash
-cargo test
+cargo fmt --all -- --check
+cargo clippy --all --all-targets -- -D warnings
+cargo test --all
+cargo doc --no-deps --all-features
 ```
 
-Key test coverage by module:
+## CLI reference
 
-| Module | Focus |
-|--------|-------|
-| `src/config.rs` | Config parsing, validation, route resolution, effective skills |
-| `src/workflow.rs` | Stage/workflow construction, StageKind parsing |
-| `src/state.rs` | RunRecord serialization, RouteOutcome formatting |
-| `src/planner.rs` | Prompt assembly, breadcrumb instruction injection |
-| `src/orchestrator/mod.rs` | Stage execution logic, hook ordering |
-| `src/notifications.rs` | Notification formatting |
-
-Tests that require live GitHub API access or a running Claude process are not present;
-all tests are self-contained and use `tempfile` for filesystem fixtures where needed.
-
-## Skill injection
-
-Skills are markdown files injected into the agent's context. Three levels of override
-(stage > route > global):
-
-```toml
-[agent_config]
-skills = ["./skills/rust.md"]          # global baseline
-
-[repos."owner/name".routes.bugfix]
-skills = ["./skills/bugfix.md"]        # overrides global for this route
-
-# In a workflow template stage:
-{ kind = "implement", skills = ["./skills/impl.md"] }   # overrides route for this stage
+```
+forza init          Create labels and generate starter config
+forza issue <N>     Process a single issue
+forza pr <N>        Process a single PR
+forza run           Single batch cycle (discover + process)
+forza watch         Continuous polling loop
+forza status        View run history
+forza explain       Visualize config, routes, and workflows
+forza fix           Re-run failed stages
+forza clean         Clean worktrees and state
+forza serve         REST API server
+forza mcp           MCP server (stdio)
 ```
 
-`RunnerConfig::effective_skills(route, stage_skills)` resolves the final list: stage
-skills win if present, otherwise route skills, otherwise global.
-
-## Current Status
-
-**Version:** 0.2.0
-
-### Implemented features
-
-- **Full stage pipeline**: `triage`, `clarify`, `plan`, `implement`, `test`, `review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`
-- **Workflow modes**: `linear` (sequential) and `reactive` (condition-evaluated dispatch loop)
-- **Label routes**: fire when a GitHub label is applied to an issue or PR
-- **Condition routes**: fire automatically on PR state (`ci_failing`, `has_conflicts`, `ci_failing_or_conflicts`, `approved_and_green`, `ci_green_no_objections`)
-- **Agentless stages**: run shell commands directly (formatting, linting, scaffolding)
-- **Conditional stages**: gate stage execution via shell command exit code; pair with `optional = true` to skip cleanly
-- **Per-stage hooks**: `pre`, `post`, `finally` hooks keyed by `StageKind` name
-- **Skill injection**: three-level override (global → route → stage)
-- **Breadcrumbs**: inter-stage context hand-off via `.forza/breadcrumbs/{run_id}/{stage}.md`
-- **Multi-retry with escalation**: `max_retries` per route; applies `forza:needs-human` on exhaustion
-- **Notifications**: desktop, Slack webhook, and generic webhook on run completion
-- **CLI**: `init`, `issue`, `pr`, `run`, `watch`, `status`, `fix`, `clean`, `serve`, `mcp`
-- **REST API** (`serve`) and **MCP server** (stdio, `mcp`) for tool integration
-- **Dependency validation**: checks `git`, `gh`, and the agent binary on startup
+`forza explain` supports filters: `--issues`, `--prs`, `--conditions`, `--route <name>`,
+`--workflows`, `--workflow <name>`, `-v` (verbose), `--json`.
