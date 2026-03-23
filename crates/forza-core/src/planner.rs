@@ -8,6 +8,14 @@
 //! Prompt templates are `.md` files loaded at compile time via `include_str!`.
 //! Each template uses `{variable}` placeholders that are substituted based on
 //! the subject type (issue or PR).
+//!
+//! At runtime, templates can be overridden by placing `.md` files in a
+//! `prompts/` directory. The resolution order is:
+//! 1. `{prompts_dir}/{agent}/{stage}.md` — agent-specific override
+//! 2. `{prompts_dir}/{stage}.md` — generic override
+//! 3. compiled-in builtin
+
+use std::borrow::Cow;
 
 use crate::stage::{Execution, StageKind, Workflow};
 use crate::subject::{Subject, SubjectKind};
@@ -39,12 +47,16 @@ const _PROMPT_PR_MERGE: &str = include_str!("prompts/pr_merge.md");
 /// * `run_id` — Used for breadcrumb paths.
 /// * `validation_commands` — Validation commands to include in relevant prompts.
 /// * `preamble` — Optional preamble prepended to all agent prompts.
+/// * `agent` — The agent name (e.g. `"claude"`, `"codex"`). Used for prompt directory lookup.
+/// * `prompts_dir` — Optional path to a directory containing prompt overrides.
 pub fn generate_prompts(
     subject: &Subject,
     workflow: &Workflow,
     run_id: &str,
     validation_commands: &[String],
     preamble: &str,
+    agent: &str,
+    prompts_dir: Option<&std::path::Path>,
 ) -> Vec<String> {
     let stage_count = workflow.stages.len();
     workflow
@@ -58,9 +70,9 @@ pub fn generate_prompts(
             }
 
             let has_successor = i < stage_count - 1;
-            let template = select_template(stage.kind, subject.kind);
+            let template = select_template(stage.kind, subject.kind, agent, prompts_dir);
             substitute(
-                template,
+                &template,
                 subject,
                 run_id,
                 validation_commands,
@@ -71,8 +83,28 @@ pub fn generate_prompts(
         .collect()
 }
 
-/// Select the appropriate prompt template for a stage kind and subject type.
-fn select_template(kind: StageKind, subject_kind: SubjectKind) -> &'static str {
+/// Return the filename stem (without `.md`) for a stage kind and subject type.
+fn stage_filename(kind: StageKind, subject_kind: SubjectKind) -> &'static str {
+    match (kind, subject_kind) {
+        (StageKind::Plan, _) => "plan",
+        (StageKind::Implement, _) => "implement",
+        (StageKind::Test, _) => "test",
+        (StageKind::Review, SubjectKind::Issue) => "review",
+        (StageKind::Review, SubjectKind::Pr) => "pr_review",
+        (StageKind::OpenPr, _) => "open_pr",
+        (StageKind::Clarify, _) => "clarify",
+        (StageKind::Research, _) => "research",
+        (StageKind::Comment, _) => "comment",
+        (StageKind::FixCi, _) => "pr_fix_ci",
+        (StageKind::RevisePr, _) => "pr_revise_pr",
+        (StageKind::Merge, _) => "pr_merge",
+        (StageKind::Triage, _) => "triage",
+        (StageKind::DraftPr, _) => "draft_pr",
+    }
+}
+
+/// Return the compiled-in builtin template for a stage kind and subject type.
+fn builtin_template(kind: StageKind, subject_kind: SubjectKind) -> &'static str {
     match (kind, subject_kind) {
         // Issue-specific stages
         (StageKind::Plan, SubjectKind::Issue) => PROMPT_PLAN,
@@ -96,6 +128,34 @@ fn select_template(kind: StageKind, subject_kind: SubjectKind) -> &'static str {
         (StageKind::Triage, _) => "Triage the issue.",
         (StageKind::DraftPr, _) => "", // agentless, prompt not used
     }
+}
+
+/// Select the appropriate prompt template for a stage kind and subject type.
+///
+/// Resolution order:
+/// 1. `{prompts_dir}/{agent}/{stage}.md`
+/// 2. `{prompts_dir}/{stage}.md`
+/// 3. compiled-in builtin
+fn select_template(
+    kind: StageKind,
+    subject_kind: SubjectKind,
+    agent: &str,
+    prompts_dir: Option<&std::path::Path>,
+) -> Cow<'static, str> {
+    let filename = stage_filename(kind, subject_kind);
+
+    if let Some(dir) = prompts_dir {
+        let agent_path = dir.join(agent).join(format!("{filename}.md"));
+        if let Ok(content) = std::fs::read_to_string(&agent_path) {
+            return Cow::Owned(content);
+        }
+        let generic_path = dir.join(format!("{filename}.md"));
+        if let Ok(content) = std::fs::read_to_string(&generic_path) {
+            return Cow::Owned(content);
+        }
+    }
+
+    Cow::Borrowed(builtin_template(kind, subject_kind))
 }
 
 /// Substitute variables in a prompt template.
@@ -237,7 +297,7 @@ mod tests {
                 Stage::agent(StageKind::Test),
             ],
         );
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert_eq!(prompts.len(), 3);
     }
 
@@ -251,7 +311,7 @@ mod tests {
                 Stage::shell(StageKind::Merge, "gh pr merge"),
             ],
         );
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert!(!prompts[0].is_empty()); // agent stage
         assert!(prompts[1].is_empty()); // shell stage
     }
@@ -260,7 +320,7 @@ mod tests {
     fn issue_prompts_contain_issue_number() {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Plan)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert!(
             prompts[0].contains("#42"),
             "prompt should contain issue number: {}",
@@ -272,7 +332,7 @@ mod tests {
     fn pr_prompts_contain_pr_number() {
         let subject = make_pr();
         let workflow = Workflow::new("pr-fix-ci", vec![Stage::agent(StageKind::FixCi)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert!(
             prompts[0].contains("#99") || prompts[0].contains("99"),
             "prompt should contain PR number"
@@ -284,7 +344,7 @@ mod tests {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Plan)]);
         let preamble = "You are working on forza.";
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], preamble);
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], preamble, "claude", None);
         assert!(prompts[0].contains("You are working on forza."));
     }
 
@@ -293,7 +353,15 @@ mod tests {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Implement)]);
         let validation = vec!["cargo fmt --check".to_string(), "cargo test".to_string()];
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &validation, "");
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &validation,
+            "",
+            "claude",
+            None,
+        );
         assert!(prompts[0].contains("cargo fmt --check"));
         assert!(prompts[0].contains("cargo test"));
     }
@@ -302,7 +370,7 @@ mod tests {
     fn user_content_is_security_wrapped() {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Plan)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert!(prompts[0].contains("BEGIN USER-PROVIDED CONTENT"));
         assert!(prompts[0].contains("END USER-PROVIDED CONTENT"));
     }
@@ -324,7 +392,7 @@ mod tests {
     fn branch_substituted_in_pr_prompts() {
         let subject = make_pr();
         let workflow = Workflow::new("pr-fix-ci", vec![Stage::agent(StageKind::FixCi)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert!(
             prompts[0].contains("automation/42-fix-the-bug"),
             "PR prompt should contain branch name"
@@ -335,7 +403,7 @@ mod tests {
     fn repo_substituted_in_prompts() {
         let subject = make_pr();
         let workflow = Workflow::new("pr-fix-ci", vec![Stage::agent(StageKind::FixCi)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "");
+        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
         assert!(prompts[0].contains("owner/repo"));
     }
 
@@ -349,7 +417,7 @@ mod tests {
             } else {
                 &issue
             };
-            let prompts = generate_prompts(subject, &wf, "run-1", &[], "");
+            let prompts = generate_prompts(subject, &wf, "run-1", &[], "", "claude", None);
             assert_eq!(
                 prompts.len(),
                 wf.stages.len(),

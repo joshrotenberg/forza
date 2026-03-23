@@ -418,12 +418,16 @@ async fn execute_work(
 
     // Generate prompts.
     let preamble = planner::make_preamble(&work.subject.repo);
+    let prompts_dir = repo_dir.join("prompts");
+    let prompts_dir_opt = prompts_dir.exists().then_some(prompts_dir.as_path());
     let prompts = planner::generate_prompts(
         &work.subject,
         &workflow,
         "pending", // run_id isn't known yet; breadcrumb paths use the actual run_id from pipeline
         &pipeline_config.validation,
         &preamble,
+        config.global.agent.as_str(),
+        prompts_dir_opt,
     );
 
     // Execute.
