@@ -276,18 +276,21 @@ A chain of stages for a type of work. Built-in templates:
 
 | Template | Mode | Stages |
 |----------|------|--------|
-| **bug** | Linear | plan -> implement -> test -> review -> open_pr -> merge |
-| **feature** | Linear | plan -> implement -> test -> review -> open_pr -> merge |
-| **chore** | Linear | implement -> test -> open_pr -> merge |
+| **bug** | Linear | plan -> draft_pr* -> implement -> test -> review -> open_pr -> merge* |
+| **feature** | Linear | plan -> draft_pr* -> implement -> test -> review -> open_pr -> merge* |
+| **chore** | Linear | implement -> test -> open_pr -> merge* |
 | **research** | Linear | research -> comment |
-| **pr-fix** | Linear | revise_pr -> fix_ci -> merge |
-| **pr-fix-ci** | Linear | fix_ci -> merge |
+| **pr-fix** | Linear | revise_pr -> fix_ci |
+| **pr-fix-ci** | Linear | fix_ci |
 | **pr-rebase** | Linear | revise_pr |
 | **pr-merge** | Linear | merge (no worktree) |
+| **pr-review** | Linear | review |
+
+`*` = optional stage
 
 ### Stage
 
-A bounded unit of work. 12 stage kinds: `triage`, `clarify`, `plan`, `implement`, `test`, `review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`.
+A bounded unit of work. 13 stage kinds: `triage`, `clarify`, `plan`, `draft_pr`, `implement`, `test`, `review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`.
 
 Stages can be:
 - **Agentless**: run a shell command directly (no agent invocation)
