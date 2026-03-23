@@ -6,7 +6,7 @@ Review the changes for issue #{issue_number}. This is a read-only verification s
 
 - Correctness: does the implementation match the plan?
 - Tests: are there tests for new behavior?
-- Code quality: any obvious bugs, panics, or unsafe patterns?
+- Code quality: any obvious bugs, crashes, or unsafe operations?
 - Consistency: does the style match the surrounding code?
 
 ## Output format
