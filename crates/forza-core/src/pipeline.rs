@@ -247,6 +247,13 @@ pub async fn execute(
                 let skills = stage.skills.as_ref().unwrap_or(&config.skills);
                 let mcp = stage.mcp_config.as_deref().or(config.mcp_config.as_deref());
 
+                info!(
+                    number = work.subject.number,
+                    stage = stage_name,
+                    model = model.unwrap_or("default"),
+                    "running agent stage"
+                );
+
                 match agent
                     .execute(
                         stage_name,
