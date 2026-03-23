@@ -71,6 +71,9 @@ pub trait GitHubClient: Send + Sync {
     /// Post a comment on an issue or PR.
     async fn post_comment(&self, repo: &str, number: u64, body: &str) -> Result<()>;
 
+    /// Create an issue. Returns the issue number.
+    async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64>;
+
     /// Create a pull request. Returns the PR number.
     async fn create_pr(
         &self,

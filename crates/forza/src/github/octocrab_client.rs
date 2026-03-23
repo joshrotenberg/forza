@@ -265,6 +265,19 @@ impl GitHubClient for OctocrabClient {
         Ok(())
     }
 
+    async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64> {
+        let (owner, name) = parse_repo(repo)?;
+        let issue = self
+            .client
+            .issues(owner, name)
+            .create(title)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| Error::GitHub(format!("create issue: {e}")))?;
+        Ok(issue.number)
+    }
+
     async fn fetch_pr(&self, repo: &str, number: u64) -> Result<PrCandidate> {
         let (owner, name) = parse_repo(repo)?;
         let pr = self
