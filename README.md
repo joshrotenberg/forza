@@ -34,6 +34,24 @@ For PRs, condition routes automatically detect CI failures and merge conflicts, 
 | Worktree isolation | Each run gets a clean git worktree | Working directory |
 | PR lifecycle | Automated open, update, merge | Manual |
 
+## Responsibility boundaries
+
+Forza is infrastructure, not an autonomous agent. Three actors share responsibility:
+
+| Actor | Decides |
+|-------|---------|
+| **You (human)** | What to work on, when to start, what "done" means |
+| **Forza (process)** | Which stages run, where work happens, when to stop, label lifecycle |
+| **Agent (Claude/Codex)** | How to implement, what files to change, how to fix failures |
+
+Adding decision-making to the framework — adaptive prompting, automatic workflow
+selection, intelligent retries — blurs these lanes and adds unpredictability. When
+evaluating a new feature, ask: does this belong with the human, the agent, or the
+framework? If it belongs with the human or agent, it does not belong in forza.
+
+See [design/principles.md](design/principles.md) for the full design principles and
+feature evaluation guidelines.
+
 ## Quick start
 
 ```bash
