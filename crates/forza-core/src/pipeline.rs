@@ -466,17 +466,41 @@ pub async fn execute(
         }
     }
 
-    // 5. Release lease.
+    // 5. Post failure comment (best-effort).
+    if run.status == RunStatus::Failed
+        && let Some(failed) = run.failed_stage()
+    {
+        let stage_name = failed.kind_name().to_string();
+        let raw_output = failed
+            .result
+            .as_ref()
+            .map(|r| r.output.as_str())
+            .unwrap_or("");
+        let truncated: String = {
+            let last_lines: Vec<&str> = raw_output.lines().collect();
+            let start = last_lines.len().saturating_sub(50);
+            let joined = last_lines[start..].join("\n");
+            joined.chars().take(500).collect()
+        };
+        let comment = format!(
+            "**forza pipeline failed** — stage: `{stage_name}` — run: `{run_id}`\n\n```\n{truncated}\n```"
+        );
+        let _ = gh
+            .post_comment(&work.subject.repo, work.subject.number, &comment)
+            .await;
+    }
+
+    // 6. Release lease.
     lifecycle::release(&work.subject, &run, &config.labels, gh).await;
 
-    // 6. Cleanup worktree.
+    // 7. Cleanup worktree.
     if let Some(ref wt) = worktree
         && let Err(e) = git.remove_worktree(repo_dir, wt).await
     {
         warn!(error = %e, "failed to clean worktree (non-fatal)");
     }
 
-    // 7. Persist run record.
+    // 8. Persist run record.
     if let Err(e) = save_run(&run, state_dir) {
         warn!(error = %e, "failed to save run record (non-fatal)");
     }
