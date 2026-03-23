@@ -9,7 +9,7 @@ use forza_core::route::MatchedWork;
 use forza_core::run::{Outcome, RunStatus, StageStatus};
 use forza_core::stage::{Stage, StageKind, Workflow};
 use forza_core::testing::*;
-use forza_core::{Route, Scope, Trigger};
+use forza_core::{Route, RouteCondition, Scope, Trigger};
 
 use std::collections::HashMap;
 
@@ -446,4 +446,199 @@ async fn pipeline_lifecycle_labels_on_failure() {
     assert!(gh.label_was_removed(9, "forza:in-progress"));
     assert!(gh.label_was_added(9, "forza:failed"));
     assert!(!gh.label_was_added(9, "forza:complete"));
+}
+
+// ── Condition routes ─────────────────────────────────────────────────────
+
+fn ci_failing_route() -> Route {
+    Route {
+        subject_type: forza_core::SubjectKind::Pr,
+        trigger: Trigger::Condition(RouteCondition::CiFailing),
+        workflow: "pr-fix-ci".into(),
+        scope: Scope::ForzaOwned,
+        concurrency: 1,
+        poll_interval: 60,
+        max_retries: Some(3),
+        model: None,
+        skills: None,
+        mcp_config: None,
+        validation_commands: None,
+    }
+}
+
+#[tokio::test]
+async fn pipeline_condition_route_ci_failing_pr_runs_successfully() {
+    let gh = MockGitHub::new().with_pr(
+        10,
+        "fix ci",
+        "automation/10-fix-ci",
+        Some("MERGEABLE"),
+        Some(false),
+    );
+    let git = MockGit::new();
+    let agent = MockAgent::new();
+
+    let workflow = Workflow::new("test", vec![Stage::agent(StageKind::FixCi)]).without_worktree();
+
+    let work = MatchedWork {
+        subject: make_test_pr(
+            10,
+            "fix ci",
+            "automation/10-fix-ci",
+            Some("MERGEABLE"),
+            Some(false),
+            None,
+        ),
+        route_name: "auto-fix-ci".into(),
+        route: ci_failing_route(),
+        workflow_name: "pr-fix-ci".into(),
+    };
+    let prompts = vec!["fix the failing ci".into()];
+    let config = default_config();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let run = pipeline::execute(
+        &work,
+        &workflow,
+        &config,
+        tmp.path(),
+        tmp.path(),
+        &gh,
+        &git,
+        &agent,
+        &prompts,
+    )
+    .await;
+
+    assert_eq!(run.status, RunStatus::Succeeded);
+    assert_eq!(agent.call_count(), 1);
+    assert!(gh.label_was_added(10, "forza:in-progress"));
+    assert!(gh.label_was_removed(10, "forza:in-progress"));
+    assert!(gh.label_was_added(10, "forza:complete"));
+}
+
+#[tokio::test]
+async fn pipeline_condition_route_has_conflicts_pr_runs_rebase() {
+    let gh = MockGitHub::new().with_pr(
+        11,
+        "conflicting pr",
+        "automation/11-rebase",
+        Some("CONFLICTING"),
+        Some(true),
+    );
+    let git = MockGit::new();
+    let agent = MockAgent::new();
+
+    let route = Route {
+        subject_type: forza_core::SubjectKind::Pr,
+        trigger: Trigger::Condition(RouteCondition::HasConflicts),
+        workflow: "pr-rebase".into(),
+        scope: Scope::ForzaOwned,
+        concurrency: 1,
+        poll_interval: 60,
+        max_retries: Some(3),
+        model: None,
+        skills: None,
+        mcp_config: None,
+        validation_commands: None,
+    };
+
+    let workflow =
+        Workflow::new("test", vec![Stage::agent(StageKind::RevisePr)]).without_worktree();
+
+    let work = MatchedWork {
+        subject: make_test_pr(
+            11,
+            "conflicting pr",
+            "automation/11-rebase",
+            Some("CONFLICTING"),
+            Some(true),
+            None,
+        ),
+        route_name: "auto-rebase".into(),
+        route,
+        workflow_name: "pr-rebase".into(),
+    };
+    let prompts = vec!["rebase the pr".into()];
+    let config = default_config();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let run = pipeline::execute(
+        &work,
+        &workflow,
+        &config,
+        tmp.path(),
+        tmp.path(),
+        &gh,
+        &git,
+        &agent,
+        &prompts,
+    )
+    .await;
+
+    assert_eq!(run.status, RunStatus::Succeeded);
+    assert_eq!(agent.call_count(), 1);
+    assert!(gh.label_was_added(11, "forza:complete"));
+}
+
+#[tokio::test]
+async fn pipeline_condition_route_matches_subject_state() {
+    // Verify that the condition in the route correctly identifies the PR state
+    // before binding to a pipeline run. Only PRs whose state matches the condition
+    // should be discovered and dispatched.
+    let ci_failing_pr = make_test_pr(
+        20,
+        "broken build",
+        "automation/20-fix",
+        Some("MERGEABLE"),
+        Some(false),
+        None,
+    );
+    let ci_green_pr = make_test_pr(
+        21,
+        "passing build",
+        "automation/21-green",
+        Some("MERGEABLE"),
+        Some(true),
+        None,
+    );
+
+    let route = ci_failing_route();
+
+    // Only the CI failing PR matches; the green one does not.
+    assert!(route.matches(&ci_failing_pr));
+    assert!(!route.matches(&ci_green_pr));
+
+    // Run the pipeline for the matched PR.
+    let gh = MockGitHub::new();
+    let git = MockGit::new();
+    let agent = MockAgent::new();
+
+    let workflow = Workflow::new("test", vec![Stage::agent(StageKind::FixCi)]).without_worktree();
+
+    let work = MatchedWork {
+        subject: ci_failing_pr,
+        route_name: "auto-fix-ci".into(),
+        route: ci_failing_route(),
+        workflow_name: "pr-fix-ci".into(),
+    };
+    let prompts = vec!["fix ci".into()];
+    let config = default_config();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let run = pipeline::execute(
+        &work,
+        &workflow,
+        &config,
+        tmp.path(),
+        tmp.path(),
+        &gh,
+        &git,
+        &agent,
+        &prompts,
+    )
+    .await;
+
+    assert_eq!(run.status, RunStatus::Succeeded);
+    assert_eq!(agent.call_count(), 1);
 }
