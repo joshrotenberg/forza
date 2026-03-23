@@ -51,6 +51,8 @@ enum Command {
     Mcp(McpArgs),
     /// Show a structured breakdown of the loaded config and route paths.
     Explain(ExplainArgs),
+    /// Open a new GitHub issue using agent assistance.
+    Open(OpenArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -285,6 +287,28 @@ struct ExplainArgs {
     json: bool,
 }
 
+#[derive(Debug, Parser)]
+#[command(
+    after_long_help = "Examples:\n  forza open --repo owner/name\n  forza open --repo owner/name --prompt \"add retry backoff\"\n  forza open --repo owner/name --label enhancement --ready"
+)]
+struct OpenArgs {
+    /// Repository to open an issue in (owner/name). Required when multiple repos are configured.
+    #[arg(long)]
+    repo: Option<String>,
+    /// Prompt describing the issue to open.
+    #[arg(long)]
+    prompt: Option<String>,
+    /// Label to apply to the created issue.
+    #[arg(long)]
+    label: Option<String>,
+    /// Also add the forza:ready label to the created issue.
+    #[arg(long, default_value = "false")]
+    ready: bool,
+    /// Override the model (e.g. claude-opus-4-6).
+    #[arg(long)]
+    model: Option<String>,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -397,6 +421,63 @@ async fn main() -> ExitCode {
         Command::Serve(args) => cmd_serve(args, config, gh, git).await,
         Command::Mcp(args) => cmd_mcp(args, &config, gh, git).await,
         Command::Explain(args) => cmd_explain(args, &config),
+        Command::Open(args) => cmd_open(args, &config, &git).await,
+    }
+}
+
+async fn cmd_open(
+    args: OpenArgs,
+    config: &forza::RunnerConfig,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
+) -> ExitCode {
+    let (repo, rd, _routes) = match resolve_repo(args.repo.as_deref(), &None, config, &**git).await
+    {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    // Build preamble: base agent preamble + optional prompt + label hints.
+    let mut preamble = forza_core::planner::make_preamble(&repo);
+    if let Some(ref prompt) = args.prompt {
+        preamble.push_str("\n\n");
+        preamble.push_str(prompt);
+    }
+    if let Some(ref label) = args.label {
+        preamble.push_str(&format!("\n\nApply the label `{label}` to the issue."));
+    }
+    if args.ready {
+        preamble.push_str("\n\nAlso add the label `forza:ready` to the issue.");
+    }
+
+    let prompt = forza_core::planner::PROMPT_OPEN_ISSUE
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", &repo);
+
+    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
+        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
+        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
+    };
+
+    let model = args.model.as_deref().or(config.global.model.as_deref());
+
+    match agent
+        .execute("open", &prompt, &rd, model, &[], None, None)
+        .await
+    {
+        Ok(result) => {
+            if !result.output.is_empty() {
+                println!("{}", result.output);
+            }
+            if result.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 
