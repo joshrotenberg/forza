@@ -89,6 +89,7 @@ max_retries = 3
 | **pr-fix-ci** | fix_ci |
 | **pr-rebase** | revise_pr |
 | **pr-merge** | merge (no worktree) |
+| **pr-review** | review |
 
 `*` = optional stage. Stage kinds: `triage`, `clarify`, `plan`, `implement`, `test`,
 `review`, `open_pr`, `revise_pr`, `fix_ci`, `merge`, `research`, `comment`, `draft_pr`.
