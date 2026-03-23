@@ -650,7 +650,7 @@ fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```text
 /// // "automation/{issue}-{slug}" with number=42, title="Fix the bug"
 /// // → "automation/42-fix-the-bug"
 /// ```
