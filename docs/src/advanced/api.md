@@ -8,7 +8,7 @@ Forza exposes a REST API for programmatic control and status inspection.
 forza serve [--port <port>] [--config path]
 ```
 
-Default port is `3000`. The server binds to `127.0.0.1` by default.
+Default port is `8080`. The server binds to `127.0.0.1` by default.
 
 ## Endpoints
 
@@ -25,14 +25,6 @@ Returns the server health status.
 ### GET /runs
 
 List recent runs.
-
-**Query parameters:**
-
-| Parameter | Description |
-|-----------|-------------|
-| `limit` | Maximum number of runs to return (default: 20) |
-| `route` | Filter by route name |
-| `outcome` | Filter by outcome |
 
 **Response:**
 
@@ -51,32 +43,47 @@ List recent runs.
 ]
 ```
 
-### GET /runs/:id
+### GET /runs/latest
+
+Get the most recent run.
+
+### GET /runs/{run_id}
 
 Get details for a specific run.
 
-### POST /runs
+### POST /runs/issue/{number}
 
-Trigger a run manually.
+Trigger a run for a specific issue.
 
-**Request body:**
+**Query parameters:**
 
-```json
-{
-  "repo": "owner/name",
-  "subject_type": "issue",
-  "subject_number": 42,
-  "route": "bugfix"
-}
-```
+| Parameter | Description |
+|-----------|-------------|
+| `repo` | Target repo (required when multiple repos are configured) |
+| `dry_run` | If `true`, return the matched route and plan without executing |
 
-### GET /routes
+### POST /runs/pr/{number}
 
-List all configured routes.
+Trigger a run for a specific pull request.
+
+**Query parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `repo` | Target repo (required when multiple repos are configured) |
+| `dry_run` | If `true`, return the matched route and plan without executing |
+
+### POST /runs/batch
+
+Trigger a full batch cycle across all configured repos.
 
 ### GET /status
 
-Return current runner status (active runs, queue depth, hourly cost).
+Return current runner status (workflow summaries with run counts and cost stats).
+
+### GET /config
+
+Return the current runner configuration.
 
 ## Authentication
 
