@@ -266,6 +266,16 @@ fn state_dir() -> PathBuf {
         .join("runs")
 }
 
+/// Build the log filter. Respects RUST_LOG if set, otherwise uses a default
+/// that suppresses noisy HTTP/TLS/connection-pool crates at debug level.
+fn default_log_filter() -> tracing_subscriber::EnvFilter {
+    tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new(
+            "info,hyper_util=warn,rustls=warn,tower=warn,octocrab=warn,claude_wrapper=info",
+        )
+    })
+}
+
 fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> {
     match forza::RunnerConfig::from_file(path) {
         Ok(c) => Ok(c),
@@ -287,13 +297,13 @@ async fn main() -> ExitCode {
         );
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
         tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_env_filter(default_log_filter())
             .with_writer(non_blocking)
             .init();
         Some(guard)
     } else {
         tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_env_filter(default_log_filter())
             .init();
         None
     };
