@@ -1,20 +1,58 @@
 # Getting Started
 
-## Installation
+## Quickstart
+
+### 1. Install forza
+
+**Homebrew (macOS and Linux):**
+
+```bash
+brew install joshrotenberg/brew/forza
+```
+
+**Shell installer (macOS and Linux):**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/joshrotenberg/forza/releases/latest/download/forza-installer.sh | sh
+```
+
+**PowerShell installer (Windows):**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/joshrotenberg/forza/releases/latest/download/forza-installer.ps1 | iex"
+```
+
+**Cargo:**
 
 ```bash
 cargo install forza
 ```
 
-## Initialize a repository
+### 2. Initialize your repository
 
-Run `forza init` to create the required GitHub labels and generate a starter `forza.toml`:
+Run the guided setup in your repository directory:
 
 ```bash
 forza init --repo owner/name
 ```
 
-This creates the `forza:ready`, `forza:in-progress`, `forza:complete`, `forza:failed`, and `forza:needs-human` labels in your repository and writes a minimal `forza.toml` to the current directory.
+This creates the required GitHub labels (`forza:ready`, `forza:in-progress`, `forza:complete`, `forza:failed`, `forza:needs-human`) and writes a starter `forza.toml` to the current directory.
+
+### 3. Process your first issue
+
+Label an issue with `bug` and `forza:ready`, then run:
+
+```bash
+forza issue 123
+```
+
+Forza picks up the issue, plans the fix, implements it, runs tests, and opens a PR.
+
+To preview without executing:
+
+```bash
+forza issue 123 --dry-run
+```
 
 ## Minimal configuration
 
@@ -36,18 +74,6 @@ workflow = "bug"
 ```
 
 Save this as `forza.toml` in your working directory.
-
-## Process your first issue
-
-Label an issue in your repository with `bug` (and optionally `forza:ready` if you set `gate_label`), then run:
-
-```bash
-# Process a single issue by number
-forza issue 123
-
-# Preview without executing
-forza issue 123 --dry-run
-```
 
 ## Common commands
 
