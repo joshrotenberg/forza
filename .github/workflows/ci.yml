@@ -66,3 +66,13 @@ jobs:
       - run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -Dwarnings
+
+  docs:
+    name: Docs (mdbook)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mdbook
+        run: cargo install mdbook
+      - name: Build docs
+        run: mdbook build docs
