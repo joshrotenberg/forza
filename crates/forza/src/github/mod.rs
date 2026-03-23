@@ -46,6 +46,7 @@ pub trait GitHubClient: Send + Sync {
         description: &str,
     ) -> Result<()>;
     async fn comment_on_issue(&self, repo: &str, number: u64, body: &str) -> Result<()>;
+    async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64>;
 
     // ── Pull Requests ───────────────────────────────────────────────
     async fn fetch_pr(&self, repo: &str, number: u64) -> Result<PrCandidate>;
@@ -979,6 +980,31 @@ pub async fn comment_on_issue(repo: &str, number: u64, body: &str) -> Result<()>
     }
 
     Ok(())
+}
+
+/// Create an issue via gh CLI. Returns the issue number.
+pub async fn create_issue(repo: &str, title: &str, body: &str) -> Result<u64> {
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "issue", "create", "--repo", repo, "--title", title, "--body", body,
+        ])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh issue create failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh issue create failed: {stderr}")));
+    }
+
+    let issue_url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let issue_number = issue_url
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    Ok(issue_number)
 }
 
 #[cfg(test)]

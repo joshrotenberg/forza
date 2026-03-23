@@ -169,6 +169,13 @@ impl forza_core::GitHubClient for GitHubAdapter {
             .map_err(|e| CoreError::GitHub(e.to_string()))
     }
 
+    async fn create_issue(&self, repo: &str, title: &str, body: &str) -> CoreResult<u64> {
+        self.inner
+            .create_issue(repo, title, body)
+            .await
+            .map_err(|e| CoreError::GitHub(e.to_string()))
+    }
+
     async fn create_pr(
         &self,
         repo: &str,

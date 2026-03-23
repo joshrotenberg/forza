@@ -619,6 +619,9 @@ mod tests {
         async fn post_comment(&self, _repo: &str, _number: u64, _body: &str) -> Result<()> {
             Ok(())
         }
+        async fn create_issue(&self, _repo: &str, _title: &str, _body: &str) -> Result<u64> {
+            Ok(0)
+        }
         async fn create_pr(
             &self,
             _repo: &str,

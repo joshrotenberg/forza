@@ -70,6 +70,10 @@ impl GitHubClient for GhCliClient {
         super::comment_on_issue(repo, number, body).await
     }
 
+    async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64> {
+        super::create_issue(repo, title, body).await
+    }
+
     async fn fetch_pr(&self, repo: &str, number: u64) -> Result<PrCandidate> {
         super::fetch_pr(repo, number).await
     }

@@ -119,7 +119,8 @@ pub enum MockCall {
     AddLabel(u64, String),
     RemoveLabel(u64, String),
     PostComment(u64, String),
-    CreatePr(String), // branch
+    CreateIssue(String), // title
+    CreatePr(String),    // branch
     UpdatePrBody(u64),
     MarkPrReady(u64),
     AgentExecute(String),   // prompt (truncated)
@@ -136,6 +137,7 @@ pub struct MockGitHub {
     prs_by_branch: HashMap<String, u64>,
     all_open_prs: Vec<Subject>,
     next_pr_number: Arc<Mutex<u64>>,
+    next_issue_number: Arc<Mutex<u64>>,
     pub calls: Arc<Mutex<Vec<MockCall>>>,
 }
 
@@ -147,6 +149,7 @@ impl MockGitHub {
             prs_by_branch: HashMap::new(),
             all_open_prs: Vec::new(),
             next_pr_number: Arc::new(Mutex::new(100)),
+            next_issue_number: Arc::new(Mutex::new(200)),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -195,6 +198,15 @@ impl MockGitHub {
             .unwrap()
             .iter()
             .any(|c| matches!(c, MockCall::RemoveLabel(n, l) if *n == number && l == label))
+    }
+
+    /// Check if an issue was created.
+    pub fn issue_was_created(&self) -> bool {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, MockCall::CreateIssue(_)))
     }
 
     /// Check if a PR was created.
@@ -283,6 +295,14 @@ impl crate::traits::GitHubClient for MockGitHub {
             .get(branch)
             .and_then(|n| self.prs.get(n))
             .cloned())
+    }
+
+    async fn create_issue(&self, _repo: &str, title: &str, _body: &str) -> Result<u64> {
+        self.record(MockCall::CreateIssue(title.to_string()));
+        let mut next = self.next_issue_number.lock().unwrap();
+        let number = *next;
+        *next += 1;
+        Ok(number)
     }
 
     async fn add_label(&self, _repo: &str, number: u64, label: &str) -> Result<()> {
