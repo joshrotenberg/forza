@@ -1181,6 +1181,7 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
         if let Some(ref gate) = config.global.gate_label {
             println!("  Gate label:     {gate}");
         }
+        println!("  Agent:          {}", config.global.agent);
         println!("  Max concurrency: {}", config.global.max_concurrency);
         println!("  Security:       {}", config.security.authorization_level);
         let validation = &config.validation.commands;
@@ -1338,6 +1339,7 @@ fn explain_route_verbose(name: &str, route: &forza::config::Route, config: &forz
         .unwrap_or("(default)")
         .to_string();
     println!("  Model:       {model}");
+    println!("  Agent:       {}", config.global.agent);
 
     // Skills.
     let skills = config.effective_skills(route, None);
