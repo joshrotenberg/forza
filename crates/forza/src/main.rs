@@ -139,7 +139,7 @@ struct PrArgs {
 #[derive(Debug, Parser)]
 #[command(after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate")]
 struct RunArgs {
-    /// Repository directory.
+    /// Repository directory (default: current directory).
     #[arg(long)]
     repo_dir: Option<PathBuf>,
     /// Bypass the gate_label requirement and process all matching issues immediately.
