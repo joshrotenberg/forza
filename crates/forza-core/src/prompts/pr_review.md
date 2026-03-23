@@ -13,7 +13,7 @@ Branch: `{head_branch}` -> `{base_branch}`
 
 - Correctness: does the implementation look correct?
 - Tests: are there tests for new behavior?
-- Code quality: any obvious bugs, panics, or unsafe patterns?
+- Code quality: any obvious bugs, crashes, or unsafe operations?
 - Consistency: does the style match the surrounding code?
 
 ## Output format
