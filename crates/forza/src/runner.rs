@@ -41,12 +41,6 @@ async fn discover(
     gh: &dyn crate::github::GitHubClient,
 ) -> Vec<MatchedWork> {
     let mut work = Vec::new();
-    let branch_prefix = config
-        .global
-        .branch_pattern
-        .split('{')
-        .next()
-        .unwrap_or("automation/");
 
     // 1. Discover issues with gate label.
     let labels = config
@@ -64,7 +58,7 @@ async fn discover(
                     let wf_name = route.workflow.as_deref().unwrap_or("");
                     if config.resolve_workflow(wf_name).is_some() {
                         let branch = generate_branch(
-                            &config.global.branch_pattern,
+                            config.effective_branch_pattern(route),
                             issue.number,
                             &issue.title,
                         );
@@ -176,15 +170,20 @@ async fn discover(
                 }
 
                 // Scope filter.
-                if route.scope == config::ConditionScope::ForzaOwned
-                    && !pr.head_branch.starts_with(branch_prefix)
-                {
-                    debug!(
-                        pr = pr.number,
-                        route = route_name,
-                        "skipping: outside forza_owned scope"
-                    );
-                    continue;
+                if route.scope == config::ConditionScope::ForzaOwned {
+                    let branch_prefix = config
+                        .effective_branch_pattern(route)
+                        .split('{')
+                        .next()
+                        .unwrap_or("automation/");
+                    if !pr.head_branch.starts_with(branch_prefix) {
+                        debug!(
+                            pr = pr.number,
+                            route = route_name,
+                            "skipping: outside forza_owned scope"
+                        );
+                        continue;
+                    }
                 }
 
                 // Condition check (uses forza-core's RouteCondition via the old type).
@@ -733,7 +732,7 @@ pub async fn process_issue(
     })?;
 
     let wf_name = route.workflow.as_deref().unwrap_or("");
-    let branch = generate_branch(&config.global.branch_pattern, number, &issue.title);
+    let branch = generate_branch(config.effective_branch_pattern(route), number, &issue.title);
     let subject = adapters::issue_to_subject(&issue, &branch);
 
     let mut matched = MatchedWork {
