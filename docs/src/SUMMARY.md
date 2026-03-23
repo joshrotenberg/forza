@@ -16,6 +16,7 @@
   - [Examples](configuration/examples.md)
 
 - [Usage](usage/overview.md)
+  - [Workflow Patterns](usage/workflow-patterns.md)
   - [Writing Issues](usage/writing-issues.md)
   - [CLI Reference](usage/cli-reference.md)
   - [Security](usage/security.md)
