@@ -47,8 +47,6 @@ Cargo.toml                    (workspace root)
 crates/
   forza-core/                 (library — domain model, traits, pipeline)
   forza/                      (binary — CLI, API, MCP, client implementations)
-design/
-  principles.md               Design principles and feature evaluation guidelines
 docs/                         mdbook documentation site
 examples/                     Example forza.toml configurations
 ```
@@ -67,7 +65,7 @@ See [Writing Issues for Forza](usage/writing-issues.md) — the same guidelines 
 
 ## Design principles
 
-Before proposing a new feature, read [design/principles.md](https://github.com/joshrotenberg/forza/blob/main/design/principles.md). The key question is: does this belong with the human, the agent, or the framework? Features that blur the responsibility boundary between these three actors are generally out of scope for forza.
+Before proposing a new feature, read [What forza isn't](concepts/what-forza-isnt.md) — particularly the feature evaluation guidelines. The key question is: does this belong with the human, the agent, or the framework? Features that blur the responsibility boundary between these three actors are generally out of scope for forza. See the [Architecture](concepts/architecture.md) page for how the codebase is structured.
 
 ## License
 
