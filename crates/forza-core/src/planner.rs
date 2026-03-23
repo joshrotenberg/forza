@@ -34,6 +34,7 @@ const PROMPT_PR_FIX_CI: &str = include_str!("prompts/pr_fix_ci.md");
 const PROMPT_PR_REVISE: &str = include_str!("prompts/pr_revise_pr.md");
 const PROMPT_PR_REVIEW: &str = include_str!("prompts/pr_review.md");
 const _PROMPT_PR_MERGE: &str = include_str!("prompts/pr_merge.md");
+const _PROMPT_OPEN_ISSUE: &str = include_str!("prompts/open_issue.md");
 
 /// Generate prompts for each stage in a workflow.
 ///
