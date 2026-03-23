@@ -19,6 +19,9 @@ indexmap = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true }
 
+[features]
+testing = []
+
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
