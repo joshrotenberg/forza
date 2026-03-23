@@ -26,6 +26,7 @@ forza-core = { path = "crates/forza-core" }
 tower-mcp = { version = "0.9", features = ["http"] }
 schemars = "1"
 claude-wrapper = "0.4"
+codex-wrapper = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 clap = { version = "4", features = ["derive"] }
