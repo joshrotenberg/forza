@@ -166,7 +166,14 @@ impl AgentAdapter for ClaudeAdapter {
                     "Grep",
                     "Bash(cargo *)",
                     "Bash(npm *)",
+                    "Bash(yarn *)",
+                    "Bash(pnpm *)",
+                    "Bash(python *)",
+                    "Bash(pip *)",
+                    "Bash(go *)",
+                    "Bash(make *)",
                     "Bash(git *)",
+                    "Bash(gh *)",
                 ]);
             }
             StageKind::Test => {
@@ -177,7 +184,13 @@ impl AgentAdapter for ClaudeAdapter {
                     "Grep",
                     "Bash(cargo *)",
                     "Bash(npm *)",
+                    "Bash(yarn *)",
+                    "Bash(pnpm *)",
+                    "Bash(python *)",
+                    "Bash(pytest *)",
+                    "Bash(go *)",
                     "Bash(make *)",
+                    "Bash(git *)",
                 ]);
             }
             StageKind::Review => {
