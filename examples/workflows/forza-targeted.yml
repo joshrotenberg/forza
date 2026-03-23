@@ -1,0 +1,36 @@
+# Targeted mode — process a specific issue or PR with explicit control.
+#
+# Triggers on issue labels only, processes the exact issue that was labeled.
+# Shows how to use direct command mode with model overrides.
+
+name: forza (issues only)
+
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: forza-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  forza:
+    # Only run when a forza-relevant label is applied.
+    if: contains(fromJSON('["bug", "enhancement", "chore", "research"]'), github.event.label.name)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/setup-claude-code@v1
+
+      - uses: joshrotenberg/forza-action@v1
+        with:
+          command: issue
+          args: "${{ github.event.issue.number }}"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

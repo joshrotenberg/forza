@@ -1,0 +1,89 @@
+name: "forza"
+description: "Run forza to process GitHub issues and PRs through configurable agent workflows"
+author: "joshrotenberg"
+
+branding:
+  icon: "zap"
+  color: "orange"
+
+inputs:
+  version:
+    description: "forza version to install (e.g. '0.2.0', 'latest')"
+    default: "latest"
+  config:
+    description: "Path to forza config file"
+    default: "forza.toml"
+  command:
+    description: >
+      forza command to run. 'auto' inspects the GitHub event and picks the right
+      command (issue/pr/run). Use 'run', 'issue', or 'pr' for explicit control.
+    default: "auto"
+  args:
+    description: "Additional arguments passed to the forza command"
+    default: ""
+  anthropic_api_key:
+    description: "Anthropic API key (alternative to setting ANTHROPIC_API_KEY env var)"
+    required: false
+
+outputs:
+  run-id:
+    description: "The forza run ID for this execution"
+    value: ${{ steps.forza.outputs.run-id }}
+  outcome:
+    description: "The run outcome (e.g. pr_created, failed)"
+    value: ${{ steps.forza.outputs.outcome }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install forza
+      shell: bash
+      env:
+        FORZA_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        # Detect platform.
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64)  ARCH="x86_64" ;;
+          aarch64) ARCH="aarch64" ;;
+          arm64)   ARCH="aarch64" ;;
+          *)       echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        case "$OS" in
+          linux)  OS="unknown-linux-gnu" ;;
+          darwin) OS="apple-darwin" ;;
+          *)      echo "::error::Unsupported OS: $OS"; exit 1 ;;
+        esac
+
+        TARGET="${ARCH}-${OS}"
+
+        # Resolve version.
+        if [ "$FORZA_VERSION" = "latest" ]; then
+          FORZA_VERSION=$(gh release view --repo joshrotenberg/forza --json tagName -q '.tagName' | sed 's/^v//')
+        fi
+
+        echo "Installing forza v${FORZA_VERSION} for ${TARGET}"
+
+        # Download and extract.
+        DOWNLOAD_URL="https://github.com/joshrotenberg/forza/releases/download/v${FORZA_VERSION}/forza-${TARGET}.tar.gz"
+        curl -sL "$DOWNLOAD_URL" | tar xz -C /usr/local/bin
+
+        forza --version
+
+    - name: Run forza
+      id: forza
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key || env.ANTHROPIC_API_KEY }}
+        FORZA_CONFIG: ${{ inputs.config }}
+        FORZA_COMMAND: ${{ inputs.command }}
+        FORZA_ARGS: ${{ inputs.args }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_EVENT_ACTION: ${{ github.event.action }}
+        EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: ${{ github.action_path }}/entrypoint.sh

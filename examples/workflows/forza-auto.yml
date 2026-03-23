@@ -1,0 +1,37 @@
+# Auto mode — forza inspects the event and runs the right command.
+#
+# Label an issue with "bug" or "enhancement" → forza processes that issue.
+# Label a PR with "forza:fix-ci" → forza fixes CI on that PR.
+# CI finishes → forza discovers PRs needing rebase, CI fixes, or merge.
+
+name: forza
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [labeled, synchronize]
+  check_suite:
+    types: [completed]
+
+# Only one forza run per issue/PR at a time.
+concurrency:
+  group: forza-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  forza:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/setup-claude-code@v1
+
+      - uses: joshrotenberg/forza-action@v1
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
