@@ -663,13 +663,58 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
         return ExitCode::SUCCESS;
     }
 
-    // Detect language for validation commands.
-    let validation_commands = if std::path::Path::new("Cargo.toml").exists() {
-        "commands = [\n    \"cargo fmt --all -- --check\",\n    \"cargo clippy --all-targets -- -D warnings\",\n    \"cargo test --lib\",\n]"
+    // Detect language and set validation commands + context template.
+    let (language, validation_commands) = if std::path::Path::new("Cargo.toml").exists() {
+        (
+            Some("rust"),
+            "commands = [\n    \"cargo fmt --all -- --check\",\n    \"cargo clippy --all-targets -- -D warnings\",\n    \"cargo test --lib\",\n]",
+        )
     } else if std::path::Path::new("package.json").exists() {
-        "commands = [\n    \"npm run lint\",\n    \"npm test\",\n]"
+        (
+            Some("node"),
+            "commands = [\n    \"npm run lint\",\n    \"npm test\",\n]",
+        )
+    } else if std::path::Path::new("pyproject.toml").exists()
+        || std::path::Path::new("setup.py").exists()
+    {
+        (Some("python"), "commands = [\n    \"python -m pytest\",\n]")
+    } else if std::path::Path::new("go.mod").exists() {
+        (
+            Some("go"),
+            "commands = [\n    \"go vet ./...\",\n    \"go test ./...\",\n]",
+        )
     } else {
-        "# commands = []  # add your validation commands here"
+        (None, "# commands = []  # add your validation commands here")
+    };
+
+    // Write language context template if detected.
+    let agent_config_block = if let Some(lang) = language {
+        let context_dir = std::path::Path::new("forza-context");
+        if let Err(e) = std::fs::create_dir_all(context_dir) {
+            eprintln!("warning: could not create forza-context/: {e}");
+        }
+
+        let template_content: &str = match lang {
+            "rust" => include_str!("context_templates/rust.md"),
+            "node" => include_str!("context_templates/node.md"),
+            "python" => include_str!("context_templates/python.md"),
+            "go" => include_str!("context_templates/go.md"),
+            _ => unreachable!(),
+        };
+
+        let context_path = context_dir.join(format!("{lang}.md"));
+        match std::fs::write(&context_path, template_content) {
+            Ok(()) => {
+                println!("Created {}", context_path.display());
+                format!("\n[agent_config]\ncontext = [\"./forza-context/{lang}.md\"]\n")
+            }
+            Err(e) => {
+                eprintln!("warning: could not write {}: {e}", context_path.display());
+                String::new()
+            }
+        }
+    } else {
+        String::new()
     };
 
     let config_content = format!(
@@ -686,7 +731,7 @@ authorization_level = "contributor"
 
 [validation]
 {validation}
-
+{agent_config}
 [routes.bugfix]
 type = "issue"
 label = "bug"
@@ -699,6 +744,7 @@ workflow = "feature"
 "#,
         repo = args.repo,
         validation = validation_commands,
+        agent_config = agent_config_block,
     );
 
     if let Err(e) = std::fs::write(&args.output, &config_content) {

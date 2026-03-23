@@ -50,7 +50,8 @@ authorization_level = "contributor"
 
 [validation]
 # These commands run before a PR is opened. They must all pass.
-commands = ["cargo fmt --all -- --check", "cargo test"]
+# Use the commands appropriate for the detected language and toolchain.
+commands = ["your-lint-command", "your-test-command"]
 
 # Label-triggered route for issues
 [routes.bugfix]

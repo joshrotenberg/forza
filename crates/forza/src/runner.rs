@@ -523,6 +523,8 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
         .clone()
         .unwrap_or_else(|| config.agent_config.skills.clone());
 
+    let context = config.agent_config.context.clone();
+
     let mcp_config = work
         .route
         .mcp_config
@@ -547,6 +549,7 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
     PipelineConfig {
         labels,
         model,
+        context,
         skills,
         mcp_config,
         validation,
