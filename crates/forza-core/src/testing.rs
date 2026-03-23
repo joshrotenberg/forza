@@ -505,6 +505,7 @@ impl crate::traits::AgentExecutor for MockAgent {
         _skills: &[String],
         _mcp_config: Option<&str>,
         _append_system_prompt: Option<&str>,
+        _allowed_tools: &[String],
     ) -> Result<StageResult> {
         let truncated = if prompt.len() > 100 {
             format!("{}...", &prompt[..100])
@@ -619,6 +620,7 @@ mod tests {
                 &[],
                 None,
                 None,
+                &[],
             )
             .await
             .unwrap();
@@ -641,6 +643,7 @@ mod tests {
                 &[],
                 None,
                 None,
+                &[],
             )
             .await
             .unwrap();
@@ -655,6 +658,7 @@ mod tests {
                 &[],
                 None,
                 None,
+                &[],
             )
             .await
             .unwrap();
@@ -666,7 +670,16 @@ mod tests {
     async fn mock_agent_always_fail() {
         let agent = MockAgent::new().always_fail("nope");
         let result = agent
-            .execute("test", "anything", Path::new("/tmp"), None, &[], None, None)
+            .execute(
+                "test",
+                "anything",
+                Path::new("/tmp"),
+                None,
+                &[],
+                None,
+                None,
+                &[],
+            )
             .await
             .unwrap();
         assert!(!result.success);

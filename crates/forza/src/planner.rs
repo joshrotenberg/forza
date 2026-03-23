@@ -52,6 +52,8 @@ pub struct PlannedStage {
     pub skills: Option<Vec<String>>,
     /// Override MCP config file path for this stage.
     pub mcp_config: Option<String>,
+    /// Allowed tools for this stage (passed to the agent executor).
+    pub allowed_tools: Vec<String>,
 }
 
 impl PlannedStage {
@@ -125,6 +127,7 @@ pub fn create_plan_with_config(
                 model: stage.model.clone(),
                 skills: stage.skills.clone(),
                 mcp_config: stage.mcp_config.clone(),
+                allowed_tools: vec![],
             }
         })
         .collect();
@@ -194,6 +197,7 @@ pub fn create_pr_plan_with_config(
                 model: stage.model.clone(),
                 skills: stage.skills.clone(),
                 mcp_config: stage.mcp_config.clone(),
+                allowed_tools: vec![],
             }
         })
         .collect();

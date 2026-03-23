@@ -309,6 +309,7 @@ impl forza_core::AgentExecutor for ClaudeAgentAdapter {
         skills: &[String],
         mcp_config: Option<&str>,
         append_system_prompt: Option<&str>,
+        allowed_tools: &[String],
     ) -> CoreResult<CoreStageResult> {
         let mut adapter = crate::executor::ClaudeAdapter::new();
         if let Some(m) = model {
@@ -338,6 +339,7 @@ impl forza_core::AgentExecutor for ClaudeAgentAdapter {
             model: None,
             skills: None,
             mcp_config: None,
+            allowed_tools: allowed_tools.to_vec(),
         };
 
         let result = crate::executor::AgentAdapter::execute_stage(&adapter, &planned, work_dir)
@@ -374,6 +376,7 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
         _skills: &[String],
         _mcp_config: Option<&str>,
         _append_system_prompt: Option<&str>,
+        _allowed_tools: &[String],
     ) -> CoreResult<CoreStageResult> {
         let codex = codex_wrapper::Codex::builder()
             .working_dir(work_dir)

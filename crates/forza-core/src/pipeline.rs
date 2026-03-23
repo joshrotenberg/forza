@@ -8,6 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::tools;
+
 use tracing::{error, info, warn};
 
 use crate::error::Result;
@@ -41,6 +43,10 @@ pub struct PipelineConfig {
     pub append_system_prompt: Option<String>,
     /// Per-stage hooks.
     pub stage_hooks: std::collections::HashMap<String, StageHooks>,
+    /// Directory containing tool list overrides (parallel to `prompts/`).
+    pub tools_dir: Option<PathBuf>,
+    /// Agent name used for agent-specific tool list lookup.
+    pub agent: String,
 }
 
 /// Pre/post/finally hooks for a stage kind.
@@ -254,6 +260,8 @@ pub async fn execute(
                     .cloned()
                     .collect();
                 let mcp = stage.mcp_config.as_deref().or(config.mcp_config.as_deref());
+                let allowed_tools =
+                    tools::select_tools(stage.kind, &config.agent, config.tools_dir.as_deref());
 
                 info!(
                     number = work.subject.number,
@@ -271,6 +279,7 @@ pub async fn execute(
                         &effective_skills,
                         mcp,
                         config.append_system_prompt.as_deref(),
+                        &allowed_tools,
                     )
                     .await
                 {
@@ -744,6 +753,7 @@ mod tests {
             _skills: &[String],
             _mcp_config: Option<&str>,
             _append_system_prompt: Option<&str>,
+            _allowed_tools: &[String],
         ) -> Result<StageResult> {
             Ok(StageResult {
                 stage: "test".into(),
@@ -802,6 +812,8 @@ mod tests {
             validation: vec![],
             append_system_prompt: None,
             stage_hooks: std::collections::HashMap::new(),
+            tools_dir: None,
+            agent: "claude".into(),
         }
     }
 
@@ -1004,6 +1016,8 @@ mod tests {
             validation: vec![],
             append_system_prompt: None,
             stage_hooks: std::collections::HashMap::new(),
+            tools_dir: None,
+            agent: "claude".into(),
         };
         assert!(config.stage_hooks.is_empty());
         assert!(config.validation.is_empty());

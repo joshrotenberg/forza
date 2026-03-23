@@ -151,6 +151,7 @@ pub trait AgentExecutor: Send + Sync {
         skills: &[String],
         mcp_config: Option<&str>,
         append_system_prompt: Option<&str>,
+        allowed_tools: &[String],
     ) -> Result<StageResult>;
 }
 

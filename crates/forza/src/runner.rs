@@ -415,7 +415,12 @@ async fn execute_work(
     };
 
     // Build pipeline config from global + route overrides.
-    let pipeline_config = build_pipeline_config(config, &work);
+    let mut pipeline_config = build_pipeline_config(config, &work);
+    pipeline_config.agent = config.global.agent.clone();
+    let tools_dir = repo_dir.join("tools");
+    if tools_dir.exists() {
+        pipeline_config.tools_dir = Some(tools_dir);
+    }
 
     // Generate prompts.
     let preamble = planner::make_preamble(&work.subject.repo);
@@ -555,6 +560,8 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
         validation,
         append_system_prompt,
         stage_hooks,
+        tools_dir: None,
+        agent: String::new(),
     }
 }
 
