@@ -477,10 +477,21 @@ pub async fn execute(
             .map(|r| r.output.as_str())
             .unwrap_or("");
         let truncated: String = {
-            let last_lines: Vec<&str> = raw_output.lines().collect();
-            let start = last_lines.len().saturating_sub(50);
-            let joined = last_lines[start..].join("\n");
-            joined.chars().take(500).collect()
+            let all_lines: Vec<&str> = raw_output.lines().collect();
+            let start = all_lines.len().saturating_sub(30);
+            let was_truncated = start > 0;
+            let joined = all_lines[start..].join("\n");
+            let char_count = joined.chars().count();
+            if char_count <= 1000 {
+                if was_truncated {
+                    format!("<...truncated...>\n{joined}")
+                } else {
+                    joined
+                }
+            } else {
+                let tail: String = joined.chars().skip(char_count - 1000).collect();
+                format!("<...truncated...>\n{tail}")
+            }
         };
         let comment = format!(
             "**forza pipeline failed** — stage: `{stage_name}` — run: `{run_id}`\n\n```\n{truncated}\n```"
@@ -986,5 +997,64 @@ mod tests {
         };
         assert!(config.stage_hooks.is_empty());
         assert!(config.validation.is_empty());
+    }
+
+    #[test]
+    fn failure_comment_truncation_keeps_tail() {
+        // Build output where failure details are at the end.
+        let mut lines: Vec<String> = (0..50).map(|i| format!("line {i}")).collect();
+        lines.push("FAILED: actual error message".to_string());
+        let raw_output = lines.join("\n");
+
+        // Replicate the truncation logic from pipeline.rs.
+        let all_lines: Vec<&str> = raw_output.lines().collect();
+        let start = all_lines.len().saturating_sub(30);
+        let was_truncated = start > 0;
+        let joined = all_lines[start..].join("\n");
+        let char_count = joined.chars().count();
+        let truncated: String = if char_count <= 1000 {
+            if was_truncated {
+                format!("<...truncated...>\n{joined}")
+            } else {
+                joined
+            }
+        } else {
+            let tail: String = joined.chars().skip(char_count - 1000).collect();
+            format!("<...truncated...>\n{tail}")
+        };
+
+        // The failure message must appear at the end of the truncated output.
+        assert!(
+            truncated.ends_with("FAILED: actual error message"),
+            "failure message was cut off: {truncated}"
+        );
+        assert!(truncated.contains("<...truncated...>"));
+    }
+
+    #[test]
+    fn failure_comment_truncation_long_tail_keeps_last_1000_chars() {
+        // Build a single-line output longer than 1000 chars so char-level truncation fires.
+        let long_suffix = "X".repeat(900);
+        let raw_output = format!("{}\nFAILED: {long_suffix}", "padding\n".repeat(40));
+
+        let all_lines: Vec<&str> = raw_output.lines().collect();
+        let start = all_lines.len().saturating_sub(30);
+        let was_truncated = start > 0;
+        let joined = all_lines[start..].join("\n");
+        let char_count = joined.chars().count();
+        let truncated: String = if char_count <= 1000 {
+            if was_truncated {
+                format!("<...truncated...>\n{joined}")
+            } else {
+                joined
+            }
+        } else {
+            let tail: String = joined.chars().skip(char_count - 1000).collect();
+            format!("<...truncated...>\n{tail}")
+        };
+
+        // Output should end with the tail of the long suffix.
+        assert!(truncated.ends_with(&long_suffix));
+        assert!(truncated.contains("<...truncated...>"));
     }
 }
