@@ -137,11 +137,16 @@ struct PrArgs {
 }
 
 #[derive(Debug, Parser)]
-#[command(after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate")]
+#[command(
+    after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate\n  forza run --route bugfix"
+)]
 struct RunArgs {
     /// Repository directory.
     #[arg(long)]
     repo_dir: Option<PathBuf>,
+    /// Only run a specific route.
+    #[arg(long)]
+    route: Option<String>,
     /// Bypass the gate_label requirement and process all matching issues immediately.
     #[arg(long, default_value = "false")]
     no_gate: bool,
@@ -900,7 +905,16 @@ async fn cmd_run(
                 return ExitCode::FAILURE;
             }
         };
-        repos_resolved.push((repo.to_string(), rd, routes.clone()));
+        let routes = if let Some(ref route_filter) = args.route {
+            routes
+                .iter()
+                .filter(|(name, _)| *name == route_filter)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        } else {
+            routes.clone()
+        };
+        repos_resolved.push((repo.to_string(), rd, routes));
     }
 
     let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
