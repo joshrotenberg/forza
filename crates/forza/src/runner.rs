@@ -444,6 +444,11 @@ async fn execute_work(
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// Resolve a workflow name to a forza-core Workflow (public for use by explain).
+pub fn resolve_workflow_public(config: &RunnerConfig, name: &str) -> Option<Workflow> {
+    resolve_workflow(config, name)
+}
+
 /// Resolve a workflow name to a forza-core Workflow.
 fn resolve_workflow(config: &RunnerConfig, name: &str) -> Option<Workflow> {
     // Prefer forza-core builtins (which include DraftPr stages).

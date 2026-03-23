@@ -248,12 +248,33 @@ struct ServeArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza explain\n  forza explain --repo owner/name\n  forza explain --json"
+    after_long_help = "Examples:\n  forza explain\n  forza explain --issues\n  forza explain --route bugfix\n  forza explain --workflows\n  forza explain --json"
 )]
 struct ExplainArgs {
     /// Filter output to a single repository (owner/name).
     #[arg(long)]
     repo: Option<String>,
+    /// Show only issue routes.
+    #[arg(long)]
+    issues: bool,
+    /// Show only PR routes (label and condition).
+    #[arg(long)]
+    prs: bool,
+    /// Show only condition routes.
+    #[arg(long)]
+    conditions: bool,
+    /// Show a single route in detail (auto-verbose).
+    #[arg(long)]
+    route: Option<String>,
+    /// List all workflow templates.
+    #[arg(long)]
+    workflows: bool,
+    /// Show a single workflow's stages.
+    #[arg(long)]
+    workflow: Option<String>,
+    /// Verbose output — show per-stage detail.
+    #[arg(short, long)]
+    verbose: bool,
     /// Output as JSON instead of human-readable text.
     #[arg(long)]
     json: bool,
@@ -1119,6 +1140,34 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
         }
     }
 
+    // --workflows: list all workflow templates.
+    if args.workflows {
+        println!("Workflow Templates");
+        println!("{}", "=".repeat(60));
+        for wf in forza_core::Workflow::builtins() {
+            let stages: Vec<&str> = wf.stages.iter().map(|s| s.kind.name()).collect();
+            let wt = if wf.needs_worktree {
+                ""
+            } else {
+                " (no worktree)"
+            };
+            println!("  {:<16} {}{wt}", wf.name, stages.join(" -> "));
+        }
+        if !config.workflow_templates.is_empty() {
+            println!("\n  Custom:");
+            for wf in &config.workflow_templates {
+                let stages: Vec<&str> = wf.stages.iter().map(|s| s.kind.name()).collect();
+                println!("  {:<16} {}", wf.name, stages.join(" -> "));
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    // --workflow <name>: show a single workflow's stages in detail.
+    if let Some(ref wf_name) = args.workflow {
+        return explain_workflow(wf_name, config);
+    }
+
     let repos = config.iter_repos();
     for (repo_slug, _repo_dir, routes) in &repos {
         if let Some(ref filter) = args.repo
@@ -1127,134 +1176,282 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
             continue;
         }
 
+        // Global header.
         println!("Repository: {repo_slug}");
-        println!("{}", "-".repeat(60));
-
-        if routes.is_empty() {
-            println!("  (no routes configured)");
+        if let Some(ref gate) = config.global.gate_label {
+            println!("  Gate label:     {gate}");
+        }
+        println!("  Max concurrency: {}", config.global.max_concurrency);
+        println!("  Security:       {}", config.security.authorization_level);
+        let validation = &config.validation.commands;
+        if !validation.is_empty() {
+            println!("  Validation:     {} command(s)", validation.len());
         }
 
-        for (route_name, route) in routes.iter() {
-            println!();
-            println!("  Route: {route_name}");
-
-            // Trigger
-            if let Some(ref label) = route.label {
-                let gate = config
-                    .global
-                    .gate_label
-                    .as_deref()
-                    .map(|g| format!(" + gate label \"{g}\""))
-                    .unwrap_or_default();
-                println!("    Trigger:    label \"{label}\"{gate}");
-            } else if let Some(ref cond) = route.condition {
-                let cond_name = match cond {
-                    forza::config::RouteCondition::CiFailing => "ci_failing",
-                    forza::config::RouteCondition::HasConflicts => "has_conflicts",
-                    forza::config::RouteCondition::CiFailingOrConflicts => {
-                        "ci_failing_or_conflicts"
-                    }
-                    forza::config::RouteCondition::ApprovedAndGreen => "approved_and_green",
-                    forza::config::RouteCondition::CiGreenNoObjections => "ci_green_no_objections",
-                    forza::config::RouteCondition::AnyActionable => "any_actionable",
-                };
-                println!("    Trigger:    condition {cond_name}");
-                println!("    Poll:       {}s", route.poll_interval);
-            }
-
-            // Type
-            let route_type = match route.route_type {
-                forza::config::SubjectType::Issue => "issue",
-                forza::config::SubjectType::Pr => "pr",
-            };
-            println!("    Type:       {route_type}");
-
-            // Workflow + stages
-            let wf_name = route.workflow.as_deref().unwrap_or("(none)");
-            if let Some(template) = config.resolve_workflow(wf_name) {
-                let mode = match template.mode {
-                    forza::workflow::WorkflowMode::Linear => "linear",
-                    forza::workflow::WorkflowMode::Reactive => "reactive",
-                };
-                println!("    Workflow:   {wf_name} ({mode})");
-
-                let stage_parts: Vec<String> = template
-                    .stages
-                    .iter()
-                    .map(|s| {
-                        let mut label = s.kind.name().to_string();
-                        if s.agentless {
-                            label.push_str(" (agentless)");
-                        }
-                        if s.condition.is_some() {
-                            label.push_str(" (conditional)");
-                        }
-                        if s.optional {
-                            format!("[{label}]")
-                        } else {
-                            label
-                        }
-                    })
-                    .collect();
-                println!("    Stages:     {}", stage_parts.join(" -> "));
+        // Single route mode (auto-verbose).
+        if let Some(ref route_filter) = args.route {
+            if let Some(route) = routes.get(route_filter) {
+                println!();
+                explain_route_verbose(route_filter, route, config);
             } else {
-                println!("    Workflow:   {wf_name} (unresolved)");
+                eprintln!("route '{route_filter}' not found");
+                return ExitCode::FAILURE;
             }
+            return ExitCode::SUCCESS;
+        }
 
-            // Retries
-            let retries = route
-                .max_retries
-                .map(|r| r.to_string())
-                .unwrap_or_else(|| "default (2 per stage)".into());
-            println!("    Retries:    {retries}");
+        // Categorize routes.
+        let issue_routes: Vec<_> = routes
+            .iter()
+            .filter(|(_, r)| r.route_type == forza::config::SubjectType::Issue)
+            .collect();
+        let pr_label_routes: Vec<_> = routes
+            .iter()
+            .filter(|(_, r)| r.route_type == forza::config::SubjectType::Pr && r.label.is_some())
+            .collect();
+        let pr_condition_routes: Vec<_> = routes
+            .iter()
+            .filter(|(_, r)| {
+                r.route_type == forza::config::SubjectType::Pr && r.condition.is_some()
+            })
+            .collect();
 
-            // Model
-            let model = config
-                .effective_model(route)
-                .unwrap_or("(none)")
-                .to_string();
-            println!("    Model:      {model}");
-
-            // Skills
-            let skills = config.effective_skills(route, None);
-            if skills.is_empty() {
-                println!("    Skills:     (none)");
-            } else {
-                println!("    Skills:     {}", skills.join(", "));
+        // Issue routes.
+        if !issue_routes.is_empty() && !args.prs && !args.conditions {
+            println!("\n-- Issue Routes {}", "-".repeat(45));
+            for (name, route) in &issue_routes {
+                explain_route_compact(name, route, config, args.verbose);
             }
+        }
 
-            // Validation
-            let validation = config.effective_validation(route);
-            if validation.is_empty() {
-                println!("    Validation: (none)");
-            } else {
-                for (i, cmd) in validation.iter().enumerate() {
-                    if i == 0 {
-                        println!("    Validation: {cmd}");
-                    } else {
-                        println!("                {cmd}");
-                    }
-                }
+        // PR label routes.
+        if !pr_label_routes.is_empty() && !args.issues && !args.conditions {
+            println!("\n-- PR Routes (label) {}", "-".repeat(40));
+            for (name, route) in &pr_label_routes {
+                explain_route_compact(name, route, config, args.verbose);
             }
+        }
 
-            // On failure label
-            println!(
-                "    On failure: {} label applied",
-                config.global.failed_label
-            );
+        // PR condition routes.
+        if !pr_condition_routes.is_empty() && !args.issues && (!args.prs || args.conditions) {
+            println!("\n-- PR Routes (condition) {}", "-".repeat(37));
+            for (name, route) in &pr_condition_routes {
+                explain_route_compact(name, route, config, args.verbose);
+            }
         }
 
         println!();
     }
 
-    // Global section
-    println!("Global");
-    println!("{}", "-".repeat(60));
-    println!("  Max concurrency: {}", config.global.max_concurrency);
-    println!("  Auto-merge:      {}", config.global.auto_merge);
-    println!("  Draft PR:        {}", config.global.draft_pr);
-    println!("  Security level:  {}", config.security.authorization_level);
+    ExitCode::SUCCESS
+}
 
+fn explain_route_compact(
+    name: &str,
+    route: &forza::config::Route,
+    config: &forza::RunnerConfig,
+    verbose: bool,
+) {
+    if verbose {
+        explain_route_verbose(name, route, config);
+        return;
+    }
+
+    println!();
+    println!("{name}");
+
+    // Trigger.
+    if let Some(ref label) = route.label {
+        let gate = config
+            .global
+            .gate_label
+            .as_deref()
+            .map(|g| format!(" + \"{g}\""))
+            .unwrap_or_default();
+        println!("  Trigger:     label \"{label}\"{gate}");
+    } else if let Some(ref cond) = route.condition {
+        let scope = match route.scope {
+            forza::config::ConditionScope::ForzaOwned => " (forza_owned)",
+            forza::config::ConditionScope::All => " (all)",
+        };
+        println!("  Trigger:     {cond:?}{scope}");
+    }
+
+    // Workflow + stages.
+    let wf_name = route.workflow.as_deref().unwrap_or("(none)");
+    if let Some(wf) = forza::runner::resolve_workflow_public(config, wf_name) {
+        let stages: Vec<String> = wf
+            .stages
+            .iter()
+            .map(|s| {
+                let name = s.kind.name();
+                if s.optional {
+                    format!("{name}*")
+                } else {
+                    name.to_string()
+                }
+            })
+            .collect();
+        println!("  Workflow:    {wf_name}");
+        println!("  Stages:      {}", stages.join(" -> "));
+    } else {
+        println!("  Workflow:    {wf_name} (unresolved)");
+    }
+
+    // Concurrency + poll.
+    println!("  Concurrency: {}", route.concurrency);
+    if route.condition.is_some() {
+        println!("  Poll:        {}s", route.poll_interval);
+    }
+
+    // Retries (condition routes only).
+    if let Some(max) = route.max_retries {
+        println!("  Retries:     {max} -> forza:needs-human");
+    }
+}
+
+fn explain_route_verbose(name: &str, route: &forza::config::Route, config: &forza::RunnerConfig) {
+    println!();
+    println!("{name} (verbose)");
+
+    // Trigger.
+    if let Some(ref label) = route.label {
+        let gate = config
+            .global
+            .gate_label
+            .as_deref()
+            .map(|g| format!(" + gate \"{g}\""))
+            .unwrap_or_default();
+        println!("  Trigger:     label \"{label}\"{gate}");
+    } else if let Some(ref cond) = route.condition {
+        let scope = match route.scope {
+            forza::config::ConditionScope::ForzaOwned => " (forza_owned)",
+            forza::config::ConditionScope::All => " (all)",
+        };
+        println!("  Trigger:     {cond:?}{scope}");
+        println!("  Poll:        {}s", route.poll_interval);
+    }
+
+    // Model.
+    let model = config
+        .effective_model(route)
+        .unwrap_or("(default)")
+        .to_string();
+    println!("  Model:       {model}");
+
+    // Skills.
+    let skills = config.effective_skills(route, None);
+    if skills.is_empty() {
+        println!("  Skills:      (none)");
+    } else {
+        println!("  Skills:      {}", skills.join(", "));
+    }
+
+    // Workflow + per-stage detail.
+    let wf_name = route.workflow.as_deref().unwrap_or("(none)");
+    if let Some(wf) = forza::runner::resolve_workflow_public(config, wf_name) {
+        println!("  Workflow:    {wf_name}");
+        println!("  Stages:");
+        for (i, stage) in wf.stages.iter().enumerate() {
+            let exec = if stage.is_agentless() {
+                "shell"
+            } else {
+                "agent"
+            };
+            let opt = if stage.optional { " (optional)" } else { "" };
+            let cond = stage
+                .condition
+                .as_ref()
+                .map(|c| format!(" [if: {c}]"))
+                .unwrap_or_default();
+            println!("    {}. {:<13} {exec}{opt}{cond}", i + 1, stage.kind.name());
+        }
+    }
+
+    // Validation.
+    let validation = config.effective_validation(route);
+    if !validation.is_empty() {
+        println!("  Validation:");
+        for cmd in validation {
+            println!("    - {cmd}");
+        }
+    }
+
+    // Hooks.
+    let hooks = &config.stage_hooks;
+    if !hooks.is_empty() {
+        let relevant: Vec<_> = hooks
+            .iter()
+            .filter(|(_, h)| !h.pre.is_empty() || !h.post.is_empty() || !h.finally.is_empty())
+            .collect();
+        if !relevant.is_empty() {
+            println!("  Hooks:");
+            for (stage, h) in &relevant {
+                if !h.pre.is_empty() {
+                    println!("    {stage}.pre:     {}", h.pre.join(", "));
+                }
+                if !h.post.is_empty() {
+                    println!("    {stage}.post:    {}", h.post.join(", "));
+                }
+                if !h.finally.is_empty() {
+                    println!("    {stage}.finally: {}", h.finally.join(", "));
+                }
+            }
+        }
+    }
+
+    // Retries.
+    if let Some(max) = route.max_retries {
+        println!("  Retries:     {max} -> forza:needs-human");
+    }
+
+    println!("  On failure:  {} label", config.global.failed_label);
+}
+
+fn explain_workflow(name: &str, config: &forza::RunnerConfig) -> ExitCode {
+    let wf = if let Some(wf) = forza::runner::resolve_workflow_public(config, name) {
+        wf
+    } else {
+        eprintln!("workflow '{name}' not found");
+        return ExitCode::FAILURE;
+    };
+
+    let wt = if wf.needs_worktree {
+        "needs worktree"
+    } else {
+        "no worktree"
+    };
+    println!("Workflow: {} ({wt})", wf.name);
+    println!("{}", "-".repeat(60));
+    for (i, stage) in wf.stages.iter().enumerate() {
+        let exec = if stage.is_agentless() {
+            "shell"
+        } else {
+            "agent"
+        };
+        let opt = if stage.optional { " (optional)" } else { "" };
+        let cond = stage
+            .condition
+            .as_ref()
+            .map(|c| format!("\n     condition: {c}"))
+            .unwrap_or_default();
+        let cmd = stage
+            .shell_command()
+            .map(|c| {
+                let truncated = if c.len() > 60 {
+                    format!("{}...", &c[..60])
+                } else {
+                    c.to_string()
+                };
+                format!("\n     command: {truncated}")
+            })
+            .unwrap_or_default();
+        println!(
+            "  {}. {:<13} {exec}{opt}{cond}{cmd}",
+            i + 1,
+            stage.kind.name()
+        );
+    }
     ExitCode::SUCCESS
 }
 
