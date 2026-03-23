@@ -1,3 +1,2 @@
 [workspace]
 changelog_update = true
-git_cliff_config = "cliff.toml"
