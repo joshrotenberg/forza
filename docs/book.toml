@@ -1,0 +1,10 @@
+[book]
+title = "forza"
+authors = ["Josh Rotenberg"]
+language = "en"
+src = "src"
+description = "Autonomous GitHub issue runner — turns issues into pull requests through configurable multi-stage workflows."
+
+[output.html]
+git-repository-url = "https://github.com/joshrotenberg/forza"
+edit-url-template = "https://github.com/joshrotenberg/forza/edit/main/docs/{path}"
