@@ -104,7 +104,7 @@ fn env_with_fake_gh() -> Vec<(String, String)> {
     let gh_link = fake_dir.join("gh");
     if !gh_link.exists() {
         #[cfg(unix)]
-        std::os::unix::fs::symlink(fake_gh_path(), &gh_link).ok();
+        std::os::unix::fs::symlink("fake-gh.sh", &gh_link).ok();
     }
 
     let original_path = std::env::var("PATH").unwrap_or_default();
