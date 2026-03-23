@@ -1,5 +1,5 @@
 [workspace]
-members = ["cargo:forza"]
+members = ["cargo:crates/forza"]
 
 # Config for 'dist'
 [dist]
