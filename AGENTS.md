@@ -1,89 +1,81 @@
 # forza — agent context
 
 forza is a GitHub automation runner that processes issues and PRs through configurable
-multi-stage workflows executed by Claude. This file provides context for AI agents
-(GitHub Copilot, Claude Code, and others) working on this codebase.
+multi-stage workflows. Agent-agnostic — supports Claude and Codex backends. This file
+provides context for AI agents (GitHub Copilot, Claude Code, Codex) working on the codebase.
 
-## Architecture
+## Workspace structure
 
-```
-RunnerConfig (forza.toml / runner.toml)
-  └─ repos."owner/name"
-       └─ routes.name  ──→  WorkflowTemplate  ──→  Stage[]
-                                                     ├─ kind (StageKind)
-                                                     ├─ agentless / command
-                                                     ├─ condition
-                                                     ├─ skills / model / mcp_config
-                                                     └─ optional / max_retries
-```
+Two crates:
+- **`crates/forza-core/`** — library crate with domain model, traits, and pipeline
+- **`crates/forza/`** — binary crate with CLI, API, MCP, and client implementations
 
 Key modules:
-- `src/config.rs` — config structs, `SubjectType`, `RouteCondition`
-- `src/workflow.rs` — `Stage`, `StageKind`, `WorkflowTemplate`, `WorkflowMode`
-- `src/planner.rs` — build stage prompts, breadcrumb instructions
-- `src/orchestrator/mod.rs` — execute stages, load breadcrumbs, fire hooks
-- `src/orchestrator/helpers.rs` — PR body building, open_pr handling
-- `src/state.rs` — `RunRecord`, `RouteOutcome`, run persistence
+- `crates/forza-core/src/pipeline.rs` — unified `execute()` function for all subjects
+- `crates/forza-core/src/stage.rs` — `StageKind`, `Stage`, `Workflow`, builtin templates
+- `crates/forza-core/src/subject.rs` — `Subject` (unified issue/PR type)
+- `crates/forza-core/src/traits.rs` — `GitHubClient`, `GitClient`, `AgentExecutor` traits
+- `crates/forza-core/src/testing.rs` — `MockGitHub`, `MockGit`, `MockAgent`
+- `crates/forza/src/runner.rs` — discovery, scheduling, pipeline execution
+- `crates/forza/src/adapters.rs` — `ClaudeAgentAdapter`, `CodexAgentAdapter`
+- `crates/forza/src/config.rs` — `RunnerConfig`, `Route`, TOML parsing
 
 ## Development
 
 ### Prerequisites
 
-- Rust (MSRV: 1.90.0)
+- Rust (MSRV: 1.90.0, edition 2024)
 - `gh` CLI (authenticated)
 - `git`
 
 ### Build and test
 
 ```bash
-cargo build
-cargo test
+cargo build --all
+cargo test --all
 ```
 
-### Pre-commit checks (all must pass before opening a PR)
+### Pre-push checks (all must pass)
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --lib --all-features
-cargo test --test '*' --all-features
+cargo clippy --all --all-targets -- -D warnings
+cargo test --all
 cargo doc --no-deps --all-features
 ```
 
 ## Code conventions
 
-- Rust 2024 edition — use if-let chains (`if let Some(x) = y && condition {`) instead of nested blocks
-- `thiserror` for library errors, `anyhow` for application errors
+- Rust 2024 edition — use if-let chains (`if let Some(x) = y && condition {`)
+- `thiserror` for errors in both crates
 - All public APIs must have doc comments
 - No emojis in code, commits, or documentation
+- Prefer editing existing files over creating new ones
 
 ## Testing
 
-All tests are inline unit tests in `#[cfg(test)]` modules within the source files. There
-are no separate integration test files. Tests are self-contained and use `tempfile` for
-filesystem fixtures where needed.
+Unit tests in `#[cfg(test)]` modules, plus integration tests:
 
-Key test coverage by module:
-
-| Module | Focus |
-|--------|-------|
-| `src/config.rs` | Config parsing, validation, route resolution, effective skills |
-| `src/workflow.rs` | Stage/workflow construction, StageKind parsing |
-| `src/state.rs` | RunRecord serialization, RouteOutcome formatting |
-| `src/planner.rs` | Prompt assembly, breadcrumb instruction injection |
-| `src/orchestrator/mod.rs` | Stage execution logic, hook ordering |
-| `src/notifications.rs` | Notification formatting |
+| Location | Focus |
+|----------|-------|
+| `crates/forza-core/src/*.rs` | Core type tests (Subject, Stage, Route, Run, Condition) |
+| `crates/forza-core/tests/pipeline_integration.rs` | Pipeline with MockGitHub/MockGit/MockAgent |
+| `crates/forza/src/config.rs` | Config parsing, route matching |
+| `crates/forza/src/runner.rs` | Branch generation |
+| `crates/forza/tests/orchestrator.rs` | Route matching, serialization |
 
 ## Commit style
 
-Use [conventional commits](https://www.conventionalcommits.org/):
+[Conventional commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add schedule window support
-fix(orchestrator): handle stale lease on startup
+feat(forza-core): add DraftPr stage kind
+fix(runner): handle stale lease on startup
 docs: update CLI reference in README
+refactor(adapters): rename AgentAdapter to ClaudeAgentAdapter
 ```
 
+Scopes: `forza-core`, `runner`, `pipeline`, `config`, `adapters`, `github`, `git`.
 Breaking changes use `feat!:` or `fix!:`.
 
 ## Branch naming
@@ -94,40 +86,19 @@ Breaking changes use `feat!:` or `fix!:`.
 - `refactor/` — code refactoring
 - `test/` — test improvements
 
-## Config structure
-
-```toml
-[global]
-model = "claude-sonnet-4-6"
-gate_label = "forza:ready"
-branch_pattern = "automation/{issue}-{slug}"
-
-[security]
-authorization_level = "trusted"       # sandbox | local | contributor | trusted
-
-[validation]
-commands = ["cargo fmt --all -- --check", "cargo clippy --all-targets -- -D warnings"]
-
-[repos."owner/name"]
-[repos."owner/name".routes.route-name]
-type = "issue"          # or "pr"
-label = "bug"           # label trigger (mutually exclusive with condition)
-workflow = "bug"        # workflow template name
-```
-
 ## Stage kinds
 
-12 stage kinds: `triage`, `clarify`, `plan`, `implement`, `test`, `review`, `open_pr`,
-`revise_pr`, `fix_ci`, `merge`, `research`, `comment`.
+13 stage kinds: `triage`, `clarify`, `plan`, `implement`, `test`, `review`, `open_pr`,
+`revise_pr`, `fix_ci`, `merge`, `research`, `comment`, `draft_pr`.
 
-## RouteOutcome variants
+## Outcome variants
 
 | Variant | When set |
 |---------|----------|
 | `PrCreated` | Issue workflow completed and a new PR was opened |
-| `PrUpdated` | Existing PR was updated (rebased, CI fixed, etc.) |
+| `PrUpdated` | Existing PR was updated (rebased, CI fixed) |
 | `PrMerged` | PR was successfully merged |
-| `CommentPosted` | Workflow posted a comment (e.g., research route) |
-| `NothingToDo` | Reactive/condition route found no action was needed |
+| `CommentPosted` | Workflow posted a comment (research route) |
+| `NothingToDo` | No action was needed this cycle |
 | `Failed` | Run failed at the named stage |
-| `Exhausted` | Retry budget exhausted — `forza:needs-human` applied |
+| `Exhausted` | Retry budget exhausted, `forza:needs-human` applied |
