@@ -348,6 +348,78 @@ impl forza_core::AgentExecutor for AgentAdapter {
     }
 }
 
+// ── Codex agent adapter ─────────────────────────────────────────────
+
+/// Wraps `codex-wrapper` to satisfy `forza_core::AgentExecutor`.
+///
+/// Uses `codex exec --full-auto` with the prompt as the command argument.
+/// Codex uses its own default model unless overridden.
+pub struct CodexAgentAdapter;
+
+#[async_trait]
+impl forza_core::AgentExecutor for CodexAgentAdapter {
+    async fn execute(
+        &self,
+        _stage_name: &str,
+        prompt: &str,
+        work_dir: &Path,
+        model: Option<&str>,
+        _skills: &[String],
+        _mcp_config: Option<&str>,
+        _append_system_prompt: Option<&str>,
+    ) -> CoreResult<CoreStageResult> {
+        let codex = codex_wrapper::Codex::builder()
+            .working_dir(work_dir)
+            .build()
+            .map_err(|e| CoreError::Agent(format!("failed to create codex client: {e}")))?;
+
+        let mut cmd = codex_wrapper::ExecCommand::new(prompt).full_auto();
+
+        if let Some(m) = model {
+            cmd = cmd.model(m);
+        }
+
+        let start = std::time::Instant::now();
+        let result = codex_wrapper::command::CodexCommand::execute(&cmd, &codex).await;
+        let duration = start.elapsed();
+
+        match result {
+            Ok(output) => Ok(CoreStageResult {
+                stage: "codex".into(),
+                success: output.success,
+                duration_secs: duration.as_secs_f64(),
+                cost_usd: None,
+                output: if output.stdout.is_empty() {
+                    output.stderr
+                } else {
+                    output.stdout
+                },
+                files_modified: None,
+            }),
+            Err(e) => {
+                let error_msg = match &e {
+                    codex_wrapper::Error::CommandFailed { stdout, stderr, .. } => {
+                        if stderr.is_empty() {
+                            stdout.clone()
+                        } else {
+                            stderr.clone()
+                        }
+                    }
+                    other => other.to_string(),
+                };
+                Ok(CoreStageResult {
+                    stage: "codex".into(),
+                    success: false,
+                    duration_secs: duration.as_secs_f64(),
+                    cost_usd: None,
+                    output: error_msg,
+                    files_modified: None,
+                })
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

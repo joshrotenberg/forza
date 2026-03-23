@@ -26,7 +26,7 @@ use forza_core::run::Run;
 use forza_core::stage::Workflow;
 use forza_core::subject::SubjectKind;
 
-use crate::adapters::{self, AgentAdapter, GitAdapter, GitHubAdapter};
+use crate::adapters::{self, AgentAdapter, CodexAgentAdapter, GitAdapter, GitHubAdapter};
 use crate::config::{self, Route, RunnerConfig};
 use crate::state;
 
@@ -291,7 +291,7 @@ pub async fn process_batch(
     // Schedule and execute.
     let gh_adapter = Arc::new(GitHubAdapter::new(gh.clone()));
     let git_adapter = Arc::new(GitAdapter::new(git.clone()));
-    let agent = Arc::new(AgentAdapter);
+    let agent = create_agent(config);
 
     let max_concurrency = config.global.max_concurrency;
     let mut pending: VecDeque<MatchedWork> = candidates.into();
@@ -616,6 +616,24 @@ fn to_core_stage_kind(kind: crate::workflow::StageKind) -> forza_core::StageKind
 
 /// Generate a branch name from a pattern by substituting issue metadata.
 ///
+/// Create the appropriate agent executor based on the config's `agent` field.
+///
+/// Supported values: `"claude"` (default), `"codex"`.
+fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
+    match config.global.agent.as_str() {
+        "codex" => {
+            info!(agent = "codex", "using Codex agent backend");
+            Arc::new(CodexAgentAdapter)
+        }
+        other => {
+            if other != "claude" {
+                warn!(agent = other, "unknown agent, falling back to Claude");
+            }
+            Arc::new(AgentAdapter)
+        }
+    }
+}
+
 /// The pattern supports two placeholders:
 /// - `{issue}` — replaced with the issue or PR number.
 /// - `{slug}` — replaced with a URL-safe slug derived from `title`: lowercased,
@@ -733,7 +751,7 @@ pub async fn process_issue(
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
     let git_adapter = Arc::new(GitAdapter::new(git));
-    let agent = AgentAdapter;
+    let agent = create_agent(config);
 
     Ok(execute_work(
         matched,
@@ -742,7 +760,7 @@ pub async fn process_issue(
         repo_dir,
         &*gh_adapter,
         &*git_adapter,
-        &agent,
+        &*agent,
     )
     .await)
 }
@@ -801,7 +819,7 @@ pub async fn process_pr(
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
     let git_adapter = Arc::new(GitAdapter::new(git));
-    let agent = AgentAdapter;
+    let agent = create_agent(config);
 
     Ok(execute_work(
         matched,
@@ -810,7 +828,7 @@ pub async fn process_pr(
         repo_dir,
         &*gh_adapter,
         &*git_adapter,
-        &agent,
+        &*agent,
     )
     .await)
 }
