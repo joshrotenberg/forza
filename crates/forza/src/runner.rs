@@ -26,7 +26,7 @@ use forza_core::run::Run;
 use forza_core::stage::Workflow;
 use forza_core::subject::SubjectKind;
 
-use crate::adapters::{self, AgentAdapter, CodexAgentAdapter, GitAdapter, GitHubAdapter};
+use crate::adapters::{self, ClaudeAgentAdapter, CodexAgentAdapter, GitAdapter, GitHubAdapter};
 use crate::config::{self, Route, RunnerConfig};
 use crate::state;
 
@@ -629,7 +629,7 @@ fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
             if other != "claude" {
                 warn!(agent = other, "unknown agent, falling back to Claude");
             }
-            Arc::new(AgentAdapter)
+            Arc::new(ClaudeAgentAdapter)
         }
     }
 }

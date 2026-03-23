@@ -288,11 +288,11 @@ impl forza_core::GitClient for GitAdapter {
 
 // ── Agent adapter ───────────────────────────────────────────────────────
 
-/// Wraps the `ClaudeAdapter` to satisfy `forza_core::AgentExecutor`.
-pub struct AgentAdapter;
+/// Wraps `claude-wrapper` to satisfy `forza_core::AgentExecutor`.
+pub struct ClaudeAgentAdapter;
 
 #[async_trait]
-impl forza_core::AgentExecutor for AgentAdapter {
+impl forza_core::AgentExecutor for ClaudeAgentAdapter {
     async fn execute(
         &self,
         stage_name: &str,
