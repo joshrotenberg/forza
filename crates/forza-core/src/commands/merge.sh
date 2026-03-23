@@ -4,4 +4,4 @@
 # If any check fails, gh pr checks exits non-zero and the merge is skipped.
 
 gh pr checks "$FORZA_PR_NUMBER" --watch
-gh pr merge "$FORZA_PR_NUMBER" --squash --delete-branch
+gh pr merge "$FORZA_PR_NUMBER" --squash
