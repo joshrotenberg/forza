@@ -249,6 +249,7 @@ pub async fn execute(
 
                 match agent
                     .execute(
+                        stage_name,
                         &full_prompt,
                         work_dir,
                         model,
@@ -685,6 +686,7 @@ mod tests {
     impl AgentExecutor for SuccessAgent {
         async fn execute(
             &self,
+            _stage_name: &str,
             _prompt: &str,
             _work_dir: &std::path::Path,
             _model: Option<&str>,

@@ -138,8 +138,10 @@ pub trait AgentExecutor: Send + Sync {
     /// Execute a stage with the given prompt in the given working directory.
     ///
     /// Returns a `StageResult` with success/failure, duration, cost, and output.
+    #[allow(clippy::too_many_arguments)]
     async fn execute(
         &self,
+        stage_name: &str,
         prompt: &str,
         work_dir: &Path,
         model: Option<&str>,

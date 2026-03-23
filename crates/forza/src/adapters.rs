@@ -295,6 +295,7 @@ pub struct AgentAdapter;
 impl forza_core::AgentExecutor for AgentAdapter {
     async fn execute(
         &self,
+        stage_name: &str,
         prompt: &str,
         work_dir: &Path,
         model: Option<&str>,
@@ -318,7 +319,7 @@ impl forza_core::AgentExecutor for AgentAdapter {
 
         // Create a minimal PlannedStage for the existing executor interface.
         let planned = crate::planner::PlannedStage {
-            kind: crate::workflow::StageKind::Implement,
+            kind: crate::workflow::StageKind::from_name(stage_name),
             prompt: prompt.to_string(),
             allowed_files: None,
             validation: vec![],
