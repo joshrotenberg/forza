@@ -61,6 +61,8 @@ async fn discover(
                             config.effective_branch_pattern(route),
                             issue.number,
                             &issue.title,
+                            route_name,
+                            route.label.as_deref(),
                         );
                         let subject = adapters::issue_to_subject(issue, &branch);
                         work.push(MatchedWork {
@@ -639,11 +641,13 @@ fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
     }
 }
 
-/// The pattern supports two placeholders:
+/// The pattern supports four placeholders:
 /// - `{issue}` — replaced with the issue or PR number.
 /// - `{slug}` — replaced with a URL-safe slug derived from `title`: lowercased,
 ///   non-alphanumeric characters converted to hyphens, consecutive hyphens collapsed,
 ///   and truncated to 40 characters (trimming any trailing hyphen).
+/// - `{route}` — replaced with the route name.
+/// - `{label}` — replaced with the trigger label, or an empty string if none.
 ///
 /// # Examples
 ///
@@ -651,7 +655,13 @@ fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
 /// // "automation/{issue}-{slug}" with number=42, title="Fix the bug"
 /// // → "automation/42-fix-the-bug"
 /// ```
-fn generate_branch(pattern: &str, number: u64, title: &str) -> String {
+fn generate_branch(
+    pattern: &str,
+    number: u64,
+    title: &str,
+    route_name: &str,
+    label: Option<&str>,
+) -> String {
     let slug: String = title
         .to_lowercase()
         .chars()
@@ -669,6 +679,8 @@ fn generate_branch(pattern: &str, number: u64, title: &str) -> String {
     pattern
         .replace("{issue}", &number.to_string())
         .replace("{slug}", &slug)
+        .replace("{route}", route_name)
+        .replace("{label}", label.unwrap_or(""))
 }
 
 /// Recover stale in-progress leases.
@@ -736,7 +748,13 @@ pub async fn process_issue(
     })?;
 
     let wf_name = route.workflow.as_deref().unwrap_or("");
-    let branch = generate_branch(config.effective_branch_pattern(route), number, &issue.title);
+    let branch = generate_branch(
+        config.effective_branch_pattern(route),
+        number,
+        &issue.title,
+        route_name,
+        route.label.as_deref(),
+    );
     let subject = adapters::issue_to_subject(&issue, &branch);
 
     let mut matched = MatchedWork {
@@ -844,7 +862,13 @@ mod tests {
 
     #[test]
     fn generate_branch_basic() {
-        let branch = generate_branch("automation/{issue}-{slug}", 42, "Fix the bug");
+        let branch = generate_branch(
+            "automation/{issue}-{slug}",
+            42,
+            "Fix the bug",
+            "bugfix",
+            None,
+        );
         assert_eq!(branch, "automation/42-fix-the-bug");
     }
 
@@ -854,6 +878,8 @@ mod tests {
             "automation/{issue}-{slug}",
             123,
             "This is a very long issue title that should be truncated to forty chars",
+            "bugfix",
+            None,
         );
         assert!(branch.len() < 80);
         assert!(branch.starts_with("automation/123-"));
@@ -861,7 +887,61 @@ mod tests {
 
     #[test]
     fn generate_branch_handles_special_chars() {
-        let branch = generate_branch("automation/{issue}-{slug}", 1, "fix: the bug (part 2)");
+        let branch = generate_branch(
+            "automation/{issue}-{slug}",
+            1,
+            "fix: the bug (part 2)",
+            "bugfix",
+            None,
+        );
         assert_eq!(branch, "automation/1-fix-the-bug-part-2");
+    }
+
+    #[test]
+    fn generate_branch_route_placeholder() {
+        let branch = generate_branch(
+            "automation/{route}/{issue}-{slug}",
+            7,
+            "add feature",
+            "my-route",
+            None,
+        );
+        assert_eq!(branch, "automation/my-route/7-add-feature");
+    }
+
+    #[test]
+    fn generate_branch_label_placeholder() {
+        let branch = generate_branch(
+            "automation/{label}/{issue}-{slug}",
+            5,
+            "fix bug",
+            "bugfix",
+            Some("bug"),
+        );
+        assert_eq!(branch, "automation/bug/5-fix-bug");
+    }
+
+    #[test]
+    fn generate_branch_label_placeholder_none() {
+        let branch = generate_branch(
+            "automation/{label}/{issue}-{slug}",
+            5,
+            "fix bug",
+            "bugfix",
+            None,
+        );
+        assert_eq!(branch, "automation//5-fix-bug");
+    }
+
+    #[test]
+    fn generate_branch_all_placeholders() {
+        let branch = generate_branch(
+            "{route}/{label}/{issue}-{slug}",
+            99,
+            "My feature",
+            "feature-route",
+            Some("enhancement"),
+        );
+        assert_eq!(branch, "feature-route/enhancement/99-my-feature");
     }
 }
