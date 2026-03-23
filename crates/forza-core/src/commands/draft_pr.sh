@@ -5,7 +5,7 @@
 # If draft creation fails, exits 0 so the optional stage doesn't block.
 
 # Create an empty commit to establish a diff from main.
-git commit --allow-empty -m "wip: issue #$FORZA_SUBJECT_NUMBER" 2>/dev/null
+git commit --allow-empty -m "wip: issue #$FORZA_SUBJECT_NUMBER [skip ci]" 2>/dev/null
 
 # Push the branch.
 git push origin HEAD 2>/dev/null || true
