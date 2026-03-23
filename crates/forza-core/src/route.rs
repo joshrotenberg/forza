@@ -39,6 +39,15 @@ pub enum Scope {
     All,
 }
 
+impl std::fmt::Display for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Scope::ForzaOwned => write!(f, "forza_owned"),
+            Scope::All => write!(f, "all"),
+        }
+    }
+}
+
 /// A named rule that maps a trigger to a workflow.
 ///
 /// All fields are public for observability. Routes are loaded from config
@@ -345,6 +354,12 @@ mod tests {
             Trigger::Condition(RouteCondition::CiFailing).to_string(),
             "condition:ci_failing"
         );
+    }
+
+    #[test]
+    fn scope_display() {
+        assert_eq!(Scope::ForzaOwned.to_string(), "forza_owned");
+        assert_eq!(Scope::All.to_string(), "all");
     }
 
     // ── Serialization ───────────────────────────────────────────────
