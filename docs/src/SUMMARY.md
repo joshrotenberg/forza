@@ -15,12 +15,12 @@
   - [Reference](configuration/reference.md)
   - [Examples](configuration/examples.md)
 
-- [Usage](usage/writing-issues.md)
+- [Usage](usage/overview.md)
   - [Writing Issues](usage/writing-issues.md)
   - [CLI Reference](usage/cli-reference.md)
   - [Security](usage/security.md)
 
-- [Advanced](advanced/self-hosting.md)
+- [Advanced](advanced/overview.md)
   - [Self-Hosting](advanced/self-hosting.md)
   - [Custom Workflows](advanced/custom-workflows.md)
   - [REST API](advanced/api.md)
