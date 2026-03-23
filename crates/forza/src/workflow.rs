@@ -142,6 +142,27 @@ impl StageKind {
             StageKind::Comment => "comment",
         }
     }
+
+    /// Parse a snake_case stage name back into a `StageKind`.
+    ///
+    /// Unknown names default to `Implement`.
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "triage" => StageKind::Triage,
+            "clarify" => StageKind::Clarify,
+            "plan" => StageKind::Plan,
+            "implement" => StageKind::Implement,
+            "test" => StageKind::Test,
+            "review" => StageKind::Review,
+            "open_pr" => StageKind::OpenPr,
+            "revise_pr" => StageKind::RevisePr,
+            "fix_ci" => StageKind::FixCi,
+            "merge" => StageKind::Merge,
+            "research" => StageKind::Research,
+            "comment" => StageKind::Comment,
+            _ => StageKind::Implement,
+        }
+    }
 }
 
 /// Built-in workflow templates.
