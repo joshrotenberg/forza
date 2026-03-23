@@ -45,6 +45,10 @@
 //! | [`subject`] | [`Subject`], [`SubjectKind`] | Unified GitHub issue/PR type flowing through the pipeline |
 //! | [`traits`] | [`GitHubClient`], [`GitClient`], [`AgentExecutor`] | Pluggable backend traits implemented by the `forza` binary |
 
+/// Mock implementations of forza-core traits for testing.
+/// Available unconditionally so integration tests and downstream crates can use them.
+pub mod testing;
+
 pub mod condition;
 pub mod error;
 pub mod lifecycle;

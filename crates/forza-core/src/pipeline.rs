@@ -391,11 +391,9 @@ pub async fn execute(
             break;
         }
 
-        if !success {
+        if !success && !stage.optional {
             all_succeeded = false;
-            if !stage.optional {
-                break;
-            }
+            break;
         }
     }
 
