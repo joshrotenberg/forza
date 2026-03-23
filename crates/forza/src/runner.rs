@@ -173,12 +173,11 @@ async fn discover(
 
                 // Scope filter.
                 if route.scope == config::ConditionScope::ForzaOwned {
-                    let branch_prefix = config
-                        .effective_branch_pattern(route)
-                        .split('{')
-                        .next()
-                        .unwrap_or("automation/");
-                    if !pr.head_branch.starts_with(branch_prefix) {
+                    let prefixes = config.forza_owned_prefixes(routes);
+                    if !prefixes
+                        .iter()
+                        .any(|p| pr.head_branch.starts_with(p.as_str()))
+                    {
                         debug!(
                             pr = pr.number,
                             route = route_name,

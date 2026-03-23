@@ -729,6 +729,31 @@ impl RunnerConfig {
             .unwrap_or(&self.global.branch_pattern)
     }
 
+    /// Collect all unique branch prefixes (the part before the first `{`) from
+    /// the global `branch_pattern` and every route's optional `branch_pattern`
+    /// override.  Used by the `forza_owned` scope filter in condition routes so
+    /// that a condition route covers branches created by *any* forza route in
+    /// the repo, not just the one that happens to share the global pattern.
+    pub fn forza_owned_prefixes(&self, routes: &IndexMap<String, Route>) -> Vec<String> {
+        let global_prefix = self
+            .global
+            .branch_pattern
+            .split('{')
+            .next()
+            .unwrap_or("automation/")
+            .to_string();
+        let mut prefixes = vec![global_prefix];
+        for route in routes.values() {
+            if let Some(ref pattern) = route.branch_pattern {
+                let prefix = pattern.split('{').next().unwrap_or("").to_string();
+                if !prefix.is_empty() && !prefixes.contains(&prefix) {
+                    prefixes.push(prefix);
+                }
+            }
+        }
+        prefixes
+    }
+
     /// Generate a branch name for an issue.
     pub fn branch_for_issue(&self, issue: &IssueCandidate) -> String {
         let slug = slugify(&issue.title, 40);
@@ -1838,5 +1863,69 @@ repo = "owner/repo"
         let overrides = LabelOverrides::from_labels(&labels);
         assert_eq!(overrides.model.as_deref(), Some("haiku"));
         assert_eq!(overrides.skills, vec!["rust"]);
+    }
+
+    #[test]
+    fn forza_owned_prefixes_global_only() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+branch_pattern = "automation/{issue}-{slug}"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap();
+
+        let prefixes = config.forza_owned_prefixes(&config.routes);
+        assert_eq!(prefixes, vec!["automation/"]);
+    }
+
+    #[test]
+    fn forza_owned_prefixes_includes_route_overrides() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+branch_pattern = "automation/{issue}-{slug}"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+branch_pattern = "fix/{issue}-{slug}"
+"#,
+        )
+        .unwrap();
+
+        let prefixes = config.forza_owned_prefixes(&config.routes);
+        assert!(prefixes.contains(&"automation/".to_string()));
+        assert!(prefixes.contains(&"fix/".to_string()));
+        assert_eq!(prefixes.len(), 2);
+    }
+
+    #[test]
+    fn forza_owned_prefixes_deduplicates() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+branch_pattern = "automation/{issue}-{slug}"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+branch_pattern = "automation/{issue}-{slug}"
+"#,
+        )
+        .unwrap();
+
+        let prefixes = config.forza_owned_prefixes(&config.routes);
+        assert_eq!(prefixes, vec!["automation/"]);
     }
 }
