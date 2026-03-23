@@ -17,6 +17,7 @@ fn default_config() -> PipelineConfig {
     PipelineConfig {
         labels: LifecycleLabels::default(),
         model: Some("test-model".into()),
+        context: vec![],
         skills: vec![],
         mcp_config: None,
         validation: vec![],

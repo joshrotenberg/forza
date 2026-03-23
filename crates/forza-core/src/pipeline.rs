@@ -29,6 +29,8 @@ pub struct PipelineConfig {
     pub labels: LifecycleLabels,
     /// Default model for agent stages.
     pub model: Option<String>,
+    /// Context files prepended to every agent stage prompt (before skills).
+    pub context: Vec<String>,
     /// Default skill files.
     pub skills: Vec<String>,
     /// Default MCP config path.
@@ -244,7 +246,13 @@ pub async fn execute(
             }
             Execution::Agent => {
                 let model = stage.model.as_deref().or(config.model.as_deref());
-                let skills = stage.skills.as_ref().unwrap_or(&config.skills);
+                let base_skills = stage.skills.as_ref().unwrap_or(&config.skills);
+                let effective_skills: Vec<String> = config
+                    .context
+                    .iter()
+                    .chain(base_skills.iter())
+                    .cloned()
+                    .collect();
                 let mcp = stage.mcp_config.as_deref().or(config.mcp_config.as_deref());
 
                 info!(
@@ -260,7 +268,7 @@ pub async fn execute(
                         &full_prompt,
                         work_dir,
                         model,
-                        skills,
+                        &effective_skills,
                         mcp,
                         config.append_system_prompt.as_deref(),
                     )
@@ -788,6 +796,7 @@ mod tests {
         PipelineConfig {
             labels: crate::lifecycle::LifecycleLabels::default(),
             model: None,
+            context: vec![],
             skills: vec![],
             mcp_config: None,
             validation: vec![],
@@ -989,6 +998,7 @@ mod tests {
         let config = PipelineConfig {
             labels: LifecycleLabels::default(),
             model: None,
+            context: vec![],
             skills: vec![],
             mcp_config: None,
             validation: vec![],
