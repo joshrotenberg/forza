@@ -620,15 +620,17 @@ fn to_core_stage_kind(kind: crate::workflow::StageKind) -> forza_core::StageKind
 ///
 /// Supported values: `"claude"` (default), `"codex"`.
 fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
+    let model = config.global.model.as_deref().unwrap_or("default");
     match config.global.agent.as_str() {
         "codex" => {
-            info!(agent = "codex", "using Codex agent backend");
+            info!(agent = "codex", model, "using Codex agent backend");
             Arc::new(CodexAgentAdapter)
         }
         other => {
             if other != "claude" {
                 warn!(agent = other, "unknown agent, falling back to Claude");
             }
+            info!(agent = "claude", model, "using Claude agent backend");
             Arc::new(ClaudeAgentAdapter)
         }
     }
