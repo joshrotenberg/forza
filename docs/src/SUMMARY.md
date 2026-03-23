@@ -10,6 +10,7 @@
   - [Stage Kinds](concepts/stage-kinds.md)
   - [Lifecycle](concepts/lifecycle.md)
   - [Breadcrumbs](concepts/breadcrumbs.md)
+  - [What forza isn't](concepts/what-forza-isnt.md)
 
 - [Configuration](configuration/overview.md)
   - [Reference](configuration/reference.md)

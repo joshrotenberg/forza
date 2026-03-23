@@ -54,6 +54,18 @@ Full documentation at **[joshrotenberg.github.io/forza](https://joshrotenberg.gi
 - [Writing Issues](https://joshrotenberg.github.io/forza/usage/writing-issues.html)
 - [Security](https://joshrotenberg.github.io/forza/usage/security.html)
 
+## What forza isn't
+
+forza will fail, and that's by design. When a run fails, forza stops, labels the issue, and tells you what happened. It doesn't retry, work around, or guess.
+
+- Not fully autonomous — humans decide what to work on and when
+- Not self-healing — failures are reported, not automatically resolved
+- Not a replacement for good issue writing — vague issues produce vague results
+- Not an agent — forza is infrastructure that agents run inside
+- Not trying to handle every edge case — simplicity and determinism over cleverness
+
+See [design/principles.md](design/principles.md) for the full rationale.
+
 ## Design
 
 See [design/principles.md](design/principles.md) for the design principles and feature evaluation guidelines.
