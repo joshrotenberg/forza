@@ -409,6 +409,9 @@ pub struct Route {
 
     /// Override draft_pr setting for this route.
     pub draft_pr: Option<bool>,
+
+    /// Override branch_pattern for this route.
+    pub branch_pattern: Option<String>,
 }
 
 impl Route {
@@ -716,6 +719,14 @@ impl RunnerConfig {
     /// Get the effective draft_pr setting (route override > global default).
     pub fn effective_draft_pr(&self, route: &Route) -> bool {
         route.draft_pr.unwrap_or(self.global.draft_pr)
+    }
+
+    /// Get the effective branch pattern for a route (route override > global default).
+    pub fn effective_branch_pattern<'a>(&'a self, route: &'a Route) -> &'a str {
+        route
+            .branch_pattern
+            .as_deref()
+            .unwrap_or(&self.global.branch_pattern)
     }
 
     /// Generate a branch name for an issue.
@@ -1402,6 +1413,7 @@ workflow = "bug"
                 scope: ConditionScope::default(),
                 max_retries: None,
                 draft_pr: None,
+                branch_pattern: None,
             },
         );
 
@@ -1557,6 +1569,7 @@ repo = "owner/repo"
             scope: ConditionScope::default(),
             max_retries: None,
             draft_pr: None,
+            branch_pattern: None,
         };
         assert!(route.validate("test").is_err()); // no trigger
 
