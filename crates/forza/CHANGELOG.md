@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/joshrotenberg/forza/compare/forza-v0.3.0...forza-v0.3.1) - 2026-03-24
+
+### Fixed
+
+- add homepage, allow-dirty, and homebrew publish job for brew formula ([#397](https://github.com/joshrotenberg/forza/pull/397))
+
 ## [0.3.0](https://github.com/joshrotenberg/forza/compare/forza-v0.2.0...forza-v0.3.0) - 2026-03-23
 
 ### Added
