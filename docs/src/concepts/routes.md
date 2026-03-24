@@ -115,6 +115,25 @@ branch_pattern = "review/{issue}-{slug}"
 
 Each route has its own concurrency limit. Multiple routes can run concurrently up to `[global].max_concurrency`. A route with `concurrency = 1` processes one issue at a time within that route, reducing merge conflicts.
 
+## Issue selection and ordering
+
+Each discovery cycle, forza fetches up to 10 issues that have the gate label (if configured) and matches each against the defined routes. The GitHub API returns issues in an unspecified order — without explicit ordering, the set of issues processed each cycle is non-deterministic.
+
+Use `issue_order` in `[global]` to control the order:
+
+```toml
+[global]
+issue_order = "oldest_first"   # default — lower issue numbers first
+# issue_order = "newest_first" # higher issue numbers first
+```
+
+| Value | Behavior |
+|-------|----------|
+| `oldest_first` | Issues are sorted by issue number ascending (lower = older). This is the default. |
+| `newest_first` | Issues are sorted by issue number descending (higher = more recent). |
+
+Note that `issue_order` controls priority within a single discovery cycle only. When the cycle produces more candidates than `max_concurrency` allows, lower-priority candidates are dropped and re-discovered next cycle — there are no fairness or starvation guarantees across cycles.
+
 ## Max retries
 
 When a route's run fails, forza increments a retry counter for that subject. Once `max_retries` is reached, forza applies the `forza:needs-human` label and stops processing that subject, preserving it for manual review.

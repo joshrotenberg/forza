@@ -8,6 +8,7 @@
 //!
 //! No reactive dispatch. No re-matching. One path for issues and PRs.
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ use forza_core::stage::Workflow;
 use forza_core::subject::SubjectKind;
 
 use crate::adapters::{self, ClaudeAgentAdapter, CodexAgentAdapter, GitAdapter, GitHubAdapter};
-use crate::config::{self, Route, RunnerConfig};
+use crate::config::{self, IssueOrder, Route, RunnerConfig};
 use crate::state;
 
 // ── Discovery ───────────────────────────────────────────────────────────
@@ -51,7 +52,11 @@ async fn discover(
         .unwrap_or_default();
 
     match gh.fetch_eligible_issues(repo, &labels, 10).await {
-        Ok(issues) => {
+        Ok(mut issues) => {
+            match config.global.issue_order {
+                IssueOrder::OldestFirst => issues.sort_by_key(|i| i.number),
+                IssueOrder::NewestFirst => issues.sort_by_key(|i| Reverse(i.number)),
+            }
             info!(repo, count = issues.len(), "found eligible issues");
             for issue in &issues {
                 if let Some((route_name, route)) = RunnerConfig::match_route_in(routes, issue) {
