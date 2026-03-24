@@ -19,6 +19,8 @@ pub enum RunStatus {
     Failed,
     /// The run is still in progress.
     Running,
+    /// The run was cancelled before execution (e.g. gate label removed).
+    Skipped,
 }
 
 impl std::fmt::Display for RunStatus {
@@ -27,6 +29,7 @@ impl std::fmt::Display for RunStatus {
             RunStatus::Succeeded => f.write_str("succeeded"),
             RunStatus::Failed => f.write_str("failed"),
             RunStatus::Running => f.write_str("running"),
+            RunStatus::Skipped => f.write_str("skipped"),
         }
     }
 }
@@ -496,6 +499,7 @@ mod tests {
         assert_eq!(RunStatus::Succeeded.to_string(), "succeeded");
         assert_eq!(RunStatus::Failed.to_string(), "failed");
         assert_eq!(RunStatus::Running.to_string(), "running");
+        assert_eq!(RunStatus::Skipped.to_string(), "skipped");
     }
 
     #[test]
