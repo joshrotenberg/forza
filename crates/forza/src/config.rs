@@ -68,6 +68,17 @@ pub struct RunnerConfig {
     pub prompt_templates: HashMap<String, String>,
 }
 
+/// Processing order for eligible issues discovered each cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IssueOrder {
+    /// Process lower-numbered (older) issues first. This is the default.
+    #[default]
+    OldestFirst,
+    /// Process higher-numbered (newer) issues first.
+    NewestFirst,
+}
+
 /// Global settings shared across all routes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalConfig {
@@ -145,6 +156,10 @@ pub struct GlobalConfig {
     /// Git backend: "gix" (default) or "git-cli".
     #[serde(default = "default_git_backend")]
     pub git_backend: String,
+
+    /// Processing order for eligible issues. Default: `oldest_first`.
+    #[serde(default)]
+    pub issue_order: IssueOrder,
 }
 
 /// Notification channels fired on run completion.

@@ -14,6 +14,7 @@ Complete field reference for `forza.toml`.
 | `max_cost_per_issue` | float | — | Stop a run if it exceeds this USD cost |
 | `max_cost_per_hour` | float | — | Pause all routes if hourly spend exceeds this USD amount |
 | `auto_merge` | bool | `false` | Automatically merge PRs once CI is green (deprecated; prefer a `merge` stage) |
+| `issue_order` | string | `"oldest_first"` | Order in which eligible issues are processed each cycle: `"oldest_first"` (lowest issue number first) or `"newest_first"` (highest issue number first) |
 
 ## [security]
 
