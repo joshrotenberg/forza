@@ -8,7 +8,7 @@
 //!
 //! No reactive dispatch. No re-matching. One path for issues and PRs.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -294,81 +294,57 @@ pub async fn process_batch(
     let agent = create_agent(config);
 
     let max_concurrency = config.global.max_concurrency;
-    let mut pending: VecDeque<MatchedWork> = candidates.into();
     let mut total_active = 0usize;
     let mut active_per_route: HashMap<String, usize> = HashMap::new();
-    let mut join_set: JoinSet<(String, Run)> = JoinSet::new();
-    let mut results = Vec::new();
+    let mut join_set: JoinSet<Run> = JoinSet::new();
 
-    loop {
-        if *cancel.borrow() {
-            info!("cancellation requested, stopping batch");
-            break;
-        }
+    if *cancel.borrow() {
+        info!("cancellation requested, stopping batch");
+        return Vec::new();
+    }
 
-        // Fill available slots.
-        let mut deferred: VecDeque<MatchedWork> = VecDeque::new();
-        while let Some(work) = pending.pop_front() {
-            let route_active = *active_per_route.get(&work.route_name).unwrap_or(&0);
-            let route_limit = work.route.concurrency;
+    // Single pass: spawn up to the concurrency limits, drop overflow.
+    // Dropped candidates will be rediscovered next cycle with fresh state.
+    for work in candidates {
+        let route_active = *active_per_route.get(&work.route_name).unwrap_or(&0);
+        let route_limit = work.route.concurrency;
 
-            if total_active < max_concurrency && route_active < route_limit {
-                total_active += 1;
-                *active_per_route.entry(work.route_name.clone()).or_insert(0) += 1;
+        if total_active < max_concurrency && route_active < route_limit {
+            total_active += 1;
+            *active_per_route.entry(work.route_name.clone()).or_insert(0) += 1;
 
-                let config_clone = config.clone();
-                let state_dir_owned = state_dir.to_path_buf();
-                let repo_dir_owned = repo_dir.to_path_buf();
-                let gh_adapter_clone = gh_adapter.clone();
-                let git_adapter_clone = git_adapter.clone();
-                let agent_clone = agent.clone();
-                let route_name = work.route_name.clone();
+            let config_clone = config.clone();
+            let state_dir_owned = state_dir.to_path_buf();
+            let repo_dir_owned = repo_dir.to_path_buf();
+            let gh_adapter_clone = gh_adapter.clone();
+            let git_adapter_clone = git_adapter.clone();
+            let agent_clone = agent.clone();
 
-                join_set.spawn(async move {
-                    let run = execute_work(
-                        work,
-                        &config_clone,
-                        &state_dir_owned,
-                        &repo_dir_owned,
-                        &*gh_adapter_clone,
-                        &*git_adapter_clone,
-                        &*agent_clone,
-                    )
-                    .await;
-                    (route_name, run)
-                });
-            } else {
-                deferred.push_back(work);
-            }
-        }
-        pending = deferred;
-
-        if pending.is_empty() && join_set.is_empty() {
-            break;
-        }
-
-        // Wait for one task to finish.
-        if let Some(join_result) = join_set.join_next().await {
-            match join_result {
-                Ok((route_name, run)) => {
-                    total_active = total_active.saturating_sub(1);
-                    if let Some(c) = active_per_route.get_mut(&route_name) {
-                        *c = c.saturating_sub(1);
-                    }
-                    results.push(run);
-                }
-                Err(e) => {
-                    total_active = total_active.saturating_sub(1);
-                    warn!(error = %e, "task join error");
-                }
-            }
+            join_set.spawn(async move {
+                execute_work(
+                    work,
+                    &config_clone,
+                    &state_dir_owned,
+                    &repo_dir_owned,
+                    &*gh_adapter_clone,
+                    &*git_adapter_clone,
+                    &*agent_clone,
+                )
+                .await
+            });
+        } else {
+            debug!(
+                route = work.route_name,
+                subject = work.subject.number,
+                "concurrency limit reached, dropping — will rediscover next cycle"
+            );
         }
     }
 
-    // Drain remaining tasks.
+    let mut results = Vec::new();
     while let Some(join_result) = join_set.join_next().await {
         match join_result {
-            Ok((_, run)) => results.push(run),
+            Ok(run) => results.push(run),
             Err(e) => warn!(error = %e, "task join error"),
         }
     }
@@ -388,49 +364,6 @@ async fn execute_work(
     git: &dyn forza_core::GitClient,
     agent: &dyn forza_core::AgentExecutor,
 ) -> Run {
-    // Re-check gate label before execution (issues only).
-    //
-    // Discovery and execution are separated in time. The gate label may have
-    // been removed between discovery and now. Re-fetching the issue and
-    // verifying the label is still present avoids processing stale work.
-    // On fetch error we fail-open (proceed) to avoid silently dropping work
-    // due to a transient API error.
-    if work.subject.kind == forza_core::SubjectKind::Issue
-        && let Some(ref gate_label) = config.global.gate_label
-    {
-        match gh
-            .fetch_issue(&work.subject.repo, work.subject.number)
-            .await
-        {
-            Ok(fresh) => {
-                if !fresh.labels.iter().any(|l| l == gate_label) {
-                    info!(
-                        issue = work.subject.number,
-                        gate_label, "gate label removed since discovery, skipping"
-                    );
-                    let mut run = forza_core::Run::new(
-                        forza_core::generate_run_id(),
-                        &work.subject.repo,
-                        work.subject.number,
-                        work.subject.kind,
-                        &work.route_name,
-                        &work.workflow_name,
-                        &work.subject.branch,
-                    );
-                    run.finish(forza_core::RunStatus::Skipped);
-                    return run;
-                }
-            }
-            Err(e) => {
-                warn!(
-                    issue = work.subject.number,
-                    error = %e,
-                    "failed to re-fetch issue for gate label check, proceeding"
-                );
-            }
-        }
-    }
-
     // Resolve the workflow.
     let workflow = match resolve_workflow(config, &work.workflow_name) {
         Some(wf) => wf,
