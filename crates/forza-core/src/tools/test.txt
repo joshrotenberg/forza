@@ -1,0 +1,7 @@
+Read
+Edit
+Glob
+Grep
+Bash(cargo *)
+Bash(npm *)
+Bash(make *)

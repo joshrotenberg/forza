@@ -10,7 +10,6 @@ use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
 use crate::planner::PlannedStage;
-use crate::workflow::StageKind;
 
 /// Result of executing a single stage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,55 +151,10 @@ impl AgentAdapter for ClaudeAdapter {
             cmd = cmd.append_system_prompt(s);
         }
 
-        // Scope tools based on stage kind.
-        match stage.kind {
-            StageKind::Plan | StageKind::Research => {
-                cmd = cmd.allowed_tools(["Read", "Glob", "Grep", "Write", "WebSearch", "WebFetch"]);
-            }
-            StageKind::Implement => {
-                cmd = cmd.allowed_tools([
-                    "Read",
-                    "Edit",
-                    "Write",
-                    "Glob",
-                    "Grep",
-                    "Bash(cargo *)",
-                    "Bash(npm *)",
-                    "Bash(yarn *)",
-                    "Bash(pnpm *)",
-                    "Bash(python *)",
-                    "Bash(pip *)",
-                    "Bash(go *)",
-                    "Bash(make *)",
-                    "Bash(git *)",
-                    "Bash(gh *)",
-                ]);
-            }
-            StageKind::Test => {
-                cmd = cmd.allowed_tools([
-                    "Read",
-                    "Edit",
-                    "Glob",
-                    "Grep",
-                    "Bash(cargo *)",
-                    "Bash(npm *)",
-                    "Bash(yarn *)",
-                    "Bash(pnpm *)",
-                    "Bash(python *)",
-                    "Bash(pytest *)",
-                    "Bash(go *)",
-                    "Bash(make *)",
-                    "Bash(git *)",
-                ]);
-            }
-            StageKind::Review => {
-                cmd = cmd.allowed_tools(["Read", "Glob", "Grep"]);
-                cmd = cmd.disallowed_tools(["Edit", "Write"]);
-            }
-            StageKind::Comment | StageKind::Clarify => {
-                cmd = cmd.allowed_tools(["Read", "Glob", "Grep", "Bash(gh *)"]);
-            }
-            _ => {}
+        // Scope tools based on the passed allowed_tools list.
+        if !stage.allowed_tools.is_empty() {
+            let tools: Vec<&str> = stage.allowed_tools.iter().map(String::as_str).collect();
+            cmd = cmd.allowed_tools(tools);
         }
 
         info!(

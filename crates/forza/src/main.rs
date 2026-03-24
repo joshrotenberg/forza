@@ -461,7 +461,7 @@ async fn cmd_open(
     let model = args.model.as_deref().or(config.global.model.as_deref());
 
     match agent
-        .execute("open", &prompt, &rd, model, &[], None, None)
+        .execute("open", &prompt, &rd, model, &[], None, None, &[])
         .await
     {
         Ok(result) => {

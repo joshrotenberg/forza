@@ -23,6 +23,8 @@ fn default_config() -> PipelineConfig {
         validation: vec![],
         append_system_prompt: None,
         stage_hooks: HashMap::new(),
+        tools_dir: None,
+        agent: "claude".into(),
     }
 }
 

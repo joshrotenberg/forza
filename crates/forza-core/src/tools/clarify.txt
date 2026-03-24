@@ -1,0 +1,4 @@
+Read
+Glob
+Grep
+Bash(gh *)

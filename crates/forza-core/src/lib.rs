@@ -59,6 +59,7 @@ pub mod run;
 pub mod shell;
 pub mod stage;
 pub mod subject;
+pub mod tools;
 pub mod traits;
 
 // ── Re-exports ──────────────────────────────────────────────────────────
