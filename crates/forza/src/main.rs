@@ -8,7 +8,7 @@ use tracing::info;
 #[derive(Debug, Parser)]
 #[command(
     name = "forza",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"),
     about,
     long_about = "Autonomous GitHub issue runner that processes issues through\n\
         configurable workflow templates (plan -> implement -> test -> PR).\n\n\
@@ -1619,7 +1619,10 @@ fn print_status_dashboard(sd: &std::path::Path, workflow_filter: Option<&str>) -
         return ExitCode::FAILURE;
     }
 
-    println!("forza {}", env!("CARGO_PKG_VERSION"));
+    println!(
+        "forza {}",
+        concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")")
+    );
     let sep = "─".repeat(53);
     println!(
         "{:<20}  {:>6}  {:>6}  {:>6}  {:>9}",
@@ -1717,7 +1720,10 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
             eprintln!("no runs found");
             return ExitCode::FAILURE;
         }
-        println!("forza {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "forza {}",
+            concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")")
+        );
         println!(
             "{:<30}  {:>6}  {:<20}  {:<10}  {:>8}  {:<25}  started_at",
             "run_id", "issue#", "workflow", "status", "cost", "outcome"
@@ -2081,7 +2087,7 @@ fn print_core_run(run: &forza_core::Run) -> ExitCode {
     println!();
     println!(
         "forza {} — Run {} — {} ({subject})",
-        env!("CARGO_PKG_VERSION"),
+        concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"),
         run.run_id,
         run.status,
     );
@@ -2127,7 +2133,7 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
     println!();
     println!(
         "forza {} — Run {} — {} ({})",
-        env!("CARGO_PKG_VERSION"),
+        concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"),
         record.run_id,
         record.status_text(),
         subject
