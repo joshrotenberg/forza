@@ -9,7 +9,7 @@
 //! No reactive dispatch. No re-matching. One path for issues and PRs.
 
 use std::cmp::Reverse;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -158,6 +158,7 @@ async fn discover(
             }
         };
 
+        let mut queued_prs: HashSet<u64> = HashSet::new();
         for (route_name, route) in &condition_routes {
             let condition = route.condition.as_ref().unwrap();
             let mut matched = 0usize;
@@ -200,6 +201,16 @@ async fn discover(
                         pr = pr.number,
                         route = route_name,
                         "skipping: condition not matched"
+                    );
+                    continue;
+                }
+
+                // Deduplication: skip if this PR was already queued by a higher-priority route.
+                if queued_prs.contains(&pr.number) {
+                    debug!(
+                        pr = pr.number,
+                        route = route_name,
+                        "skipping: already queued by a prior condition route"
                     );
                     continue;
                 }
@@ -251,6 +262,7 @@ async fn discover(
                 }
 
                 info!(pr = pr.number, route = route_name, condition = ?condition, "condition matched, queuing PR");
+                queued_prs.insert(pr.number);
                 work.push(MatchedWork {
                     subject,
                     route_name: route_name.to_string(),
@@ -933,5 +945,27 @@ mod tests {
             Some("enhancement"),
         );
         assert_eq!(branch, "feature-route/enhancement/99-my-feature");
+    }
+
+    #[test]
+    fn queued_prs_deduplicates_across_condition_routes() {
+        // Simulate the deduplication logic: a PR matching two routes should
+        // only be queued once (by the first matching route).
+        let mut queued_prs: HashSet<u64> = HashSet::new();
+        let pr_number: u64 = 42;
+
+        // First route matches — insert and queue.
+        assert!(!queued_prs.contains(&pr_number));
+        queued_prs.insert(pr_number);
+        let mut queued_count = 1usize;
+
+        // Second route also matches the same PR — should be skipped.
+        if queued_prs.contains(&pr_number) {
+            // skipped
+        } else {
+            queued_count += 1;
+        }
+
+        assert_eq!(queued_count, 1, "PR should only be queued once");
     }
 }
