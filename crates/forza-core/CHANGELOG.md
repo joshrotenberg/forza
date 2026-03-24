@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.1.0...forza-core-v0.3.0) - 2026-03-23
+
+### Added
+
+- *(init)* ship built-in language context templates closes #375 ([#378](https://github.com/joshrotenberg/forza/pull/378))
+
+### Fixed
+
+- *(prompts)* remove Rust-specific language from core prompt templates ([#377](https://github.com/joshrotenberg/forza/pull/377))
+- bump forza-core version to 0.3.0 to resolve release tag conflict ([#373](https://github.com/joshrotenberg/forza/pull/373))
+
 ## [0.1.0](https://github.com/joshrotenberg/forza/releases/tag/forza-core-v0.1.0) - 2026-03-23
 
 ### Added
