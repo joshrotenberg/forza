@@ -77,6 +77,7 @@ pub async fn release(
         RunStatus::Succeeded => &labels.complete,
         RunStatus::Failed => &labels.failed,
         RunStatus::Running => return, // still running, don't touch labels
+        RunStatus::Skipped => return, // cancelled before execution, don't touch labels
     };
 
     if let Err(e) = gh.add_label(repo, number, outcome_label).await {

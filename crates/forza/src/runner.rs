@@ -388,6 +388,49 @@ async fn execute_work(
     git: &dyn forza_core::GitClient,
     agent: &dyn forza_core::AgentExecutor,
 ) -> Run {
+    // Re-check gate label before execution (issues only).
+    //
+    // Discovery and execution are separated in time. The gate label may have
+    // been removed between discovery and now. Re-fetching the issue and
+    // verifying the label is still present avoids processing stale work.
+    // On fetch error we fail-open (proceed) to avoid silently dropping work
+    // due to a transient API error.
+    if work.subject.kind == forza_core::SubjectKind::Issue
+        && let Some(ref gate_label) = config.global.gate_label
+    {
+        match gh
+            .fetch_issue(&work.subject.repo, work.subject.number)
+            .await
+        {
+            Ok(fresh) => {
+                if !fresh.labels.iter().any(|l| l == gate_label) {
+                    info!(
+                        issue = work.subject.number,
+                        gate_label, "gate label removed since discovery, skipping"
+                    );
+                    let mut run = forza_core::Run::new(
+                        forza_core::generate_run_id(),
+                        &work.subject.repo,
+                        work.subject.number,
+                        work.subject.kind,
+                        &work.route_name,
+                        &work.workflow_name,
+                        &work.subject.branch,
+                    );
+                    run.finish(forza_core::RunStatus::Skipped);
+                    return run;
+                }
+            }
+            Err(e) => {
+                warn!(
+                    issue = work.subject.number,
+                    error = %e,
+                    "failed to re-fetch issue for gate label check, proceeding"
+                );
+            }
+        }
+    }
+
     // Resolve the workflow.
     let workflow = match resolve_workflow(config, &work.workflow_name) {
         Some(wf) => wf,
