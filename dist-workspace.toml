@@ -15,6 +15,8 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = true
+# Allow manual additions to release.yml (homebrew publish job)
+allow-dirty = ["ci"]
 
 # Homebrew tap
 [dist.homebrew]
