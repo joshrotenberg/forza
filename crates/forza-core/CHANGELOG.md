@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.3.0...forza-core-v0.4.0) - 2026-03-24
+
+### Added
+
+- *(tools)* externalize allowed_tools per stage closes #380 ([#381](https://github.com/joshrotenberg/forza/pull/381))
+
+### Other
+
+- release v0.3.0 ([#382](https://github.com/joshrotenberg/forza/pull/382))
+
 ## [0.3.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.1.0...forza-core-v0.3.0) - 2026-03-23
 
 ### Added
