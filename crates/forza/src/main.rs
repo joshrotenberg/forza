@@ -287,6 +287,9 @@ struct ExplainArgs {
     /// Output as JSON instead of human-readable text.
     #[arg(long)]
     json: bool,
+    /// Show open plan issues and their execution status.
+    #[arg(long)]
+    plans: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -457,7 +460,7 @@ async fn main() -> ExitCode {
         Command::Clean(args) => cmd_clean(args, &config, &git).await,
         Command::Serve(args) => cmd_serve(args, config, gh, git).await,
         Command::Mcp(args) => cmd_mcp(args, &config, gh, git).await,
-        Command::Explain(args) => cmd_explain(args, &config),
+        Command::Explain(args) => cmd_explain(args, &config, &gh).await,
         Command::Open(args) => cmd_open(args, &config, &git).await,
         Command::Plan(args) => cmd_plan(args, &config, &gh, &git).await,
     }
@@ -2028,7 +2031,11 @@ async fn cmd_watch(
     ExitCode::SUCCESS
 }
 
-fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
+async fn cmd_explain(
+    args: ExplainArgs,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
     if args.json {
         match serde_json::to_string_pretty(config) {
             Ok(json) => {
@@ -2068,6 +2075,95 @@ fn cmd_explain(args: ExplainArgs, config: &forza::RunnerConfig) -> ExitCode {
     // --workflow <name>: show a single workflow's stages in detail.
     if let Some(ref wf_name) = args.workflow {
         return explain_workflow(wf_name, config);
+    }
+
+    // --plans: list open plan issues and their execution status.
+    if args.plans {
+        let repos = config.iter_repos();
+        println!("Plan Issues");
+        println!("{}", "=".repeat(60));
+        let mut found_any = false;
+        for (repo_slug, _repo_dir, _routes) in &repos {
+            if let Some(ref filter) = args.repo
+                && repo_slug != filter
+            {
+                continue;
+            }
+            let plan_issues = match gh.fetch_issues_with_label(repo_slug, "forza:plan").await {
+                Ok(issues) => issues,
+                Err(e) => {
+                    eprintln!("error fetching plan issues for {repo_slug}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            for plan_issue in &plan_issues {
+                found_any = true;
+                let dag = match parse_plan_dag(&plan_issue.body) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        println!(
+                            "  #{:<4} {}  (no dependency graph)",
+                            plan_issue.number, plan_issue.title
+                        );
+                        continue;
+                    }
+                };
+                let total = dag.len();
+                let mut complete = 0usize;
+                let mut open_states: std::collections::HashMap<u64, bool> =
+                    std::collections::HashMap::new();
+                for &issue_num in dag.keys() {
+                    match gh.fetch_issue(repo_slug, issue_num).await {
+                        Ok(issue) => {
+                            let is_closed = issue.state.to_uppercase() == "CLOSED";
+                            open_states.insert(issue_num, !is_closed);
+                            if is_closed {
+                                complete += 1;
+                            }
+                        }
+                        Err(_) => {
+                            open_states.insert(issue_num, true);
+                        }
+                    }
+                }
+                if complete == total {
+                    println!(
+                        "  #{:<4} {}  {}/{} complete",
+                        plan_issue.number, plan_issue.title, complete, total
+                    );
+                } else if complete == 0 {
+                    println!(
+                        "  #{:<4} {}  0/{} complete, not started",
+                        plan_issue.number, plan_issue.title, total
+                    );
+                } else {
+                    let mut blocked = 0usize;
+                    let mut pending = 0usize;
+                    for (&issue_num, &is_open) in &open_states {
+                        if !is_open {
+                            continue;
+                        }
+                        let deps = dag.get(&issue_num).map(|v| v.as_slice()).unwrap_or(&[]);
+                        let dep_open = deps
+                            .iter()
+                            .any(|d| open_states.get(d).copied().unwrap_or(false));
+                        if dep_open {
+                            blocked += 1;
+                        } else {
+                            pending += 1;
+                        }
+                    }
+                    println!(
+                        "  #{:<4} {}  {}/{} complete, {} blocked, {} pending",
+                        plan_issue.number, plan_issue.title, complete, total, blocked, pending
+                    );
+                }
+            }
+        }
+        if !found_any {
+            println!("  (no open plan issues)");
+        }
+        return ExitCode::SUCCESS;
     }
 
     let repos = config.iter_repos();
