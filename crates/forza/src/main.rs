@@ -907,9 +907,11 @@ async fn fetch_plan_issues(
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
     repo: &str,
 ) -> forza::error::Result<Vec<forza::github::IssueCandidate>> {
-    // If a label filter is specified, use it.
+    // If a label filter is specified, use it (apply limit client-side).
     if let Some(ref label) = args.label {
-        return gh.fetch_issues_with_label(repo, label).await;
+        let mut issues = gh.fetch_issues_with_label(repo, label).await?;
+        issues.truncate(args.limit);
+        return Ok(issues);
     }
 
     // If specific issues are given, parse and fetch them.
@@ -1354,6 +1356,15 @@ async fn cmd_issue(
                 return ExitCode::FAILURE;
             }
         };
+
+        // Detect plan issues.
+        if issue.labels.iter().any(|l| l == "forza:plan") {
+            eprintln!(
+                "issue #{} is a plan issue. Use `forza plan --exec {}` to execute it.",
+                issue.number, issue.number
+            );
+            return ExitCode::FAILURE;
+        }
 
         // Match route.
         let (route_name, route) = match forza::RunnerConfig::match_route_in(routes, &issue) {
