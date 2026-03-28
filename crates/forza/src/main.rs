@@ -557,7 +557,7 @@ async fn cmd_plan(
 
     // Build prompt from template.
     let preamble = forza_core::planner::make_preamble(&repo);
-    let prompt = forza_core::planner::PROMPT_TRIAGE
+    let prompt = forza_core::planner::PROMPT_CMD_PLAN
         .replace("{preamble}", &preamble)
         .replace("{repo}", &repo)
         .replace("{routes}", &route_summary)
@@ -751,7 +751,7 @@ async fn cmd_plan_revise(
     };
 
     let preamble = forza_core::planner::make_preamble(repo);
-    let prompt = forza_core::planner::PROMPT_TRIAGE_REVISE
+    let prompt = forza_core::planner::PROMPT_CMD_PLAN_REVISE
         .replace("{preamble}", &preamble)
         .replace("{repo}", repo)
         .replace("{plan_number}", &plan_number.to_string())
