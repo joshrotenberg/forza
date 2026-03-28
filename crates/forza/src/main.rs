@@ -682,14 +682,63 @@ async fn cmd_plan_exec(
     let mut succeeded = 0;
     let mut failed = 0;
     let mut skipped: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    // Track PR numbers created by each issue for merge-gating.
+    let mut prs: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
 
     for issue_number in &order {
+        // Skip if already completed (resume support).
+        if let Ok(issue) = gh.fetch_issue(repo, *issue_number).await
+            && issue.labels.iter().any(|l| l == "forza:complete")
+        {
+            println!("  #{issue_number}: already complete, skipping");
+            succeeded += 1;
+            continue;
+        }
+
         // Skip if a dependency failed.
         if let Some(deps) = dag.get(issue_number)
             && deps.iter().any(|d| skipped.contains(d))
         {
             println!("  Skipping #{issue_number} (dependency failed or skipped)");
             skipped.insert(*issue_number);
+            continue;
+        }
+
+        // Gate on prerequisite PR merges: if any dependency created a PR,
+        // wait for it to be merged before starting this issue.
+        if let Some(deps) = dag.get(issue_number) {
+            for dep in deps {
+                if let Some(&pr_number) = prs.get(dep) {
+                    match wait_for_pr_merge(repo, pr_number, config.global.auto_merge, gh).await {
+                        MergeWaitResult::Merged => {
+                            println!("    PR #{pr_number} (from #{dep}) merged, continuing");
+                        }
+                        MergeWaitResult::NeedsHumanMerge => {
+                            println!(
+                                "\n  Paused: PR #{pr_number} (from #{dep}) needs to be merged before #{issue_number} can start."
+                            );
+                            println!(
+                                "  Merge the PR, then re-run: forza plan --exec {plan_number}"
+                            );
+                            // Count remaining as not-yet-processed.
+                            println!(
+                                "\nPlan #{plan_number} paused: {succeeded} succeeded, {failed} failed, waiting on PR #{pr_number}",
+                            );
+                            return ExitCode::SUCCESS;
+                        }
+                        MergeWaitResult::Failed => {
+                            eprintln!("    PR #{pr_number} (from #{dep}) closed without merging");
+                            skipped.insert(*issue_number);
+                            failed += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        // If this issue was skipped due to a failed PR above, don't process.
+        if skipped.contains(issue_number) {
             continue;
         }
 
@@ -710,18 +759,23 @@ async fn cmd_plan_exec(
         .await
         {
             Ok(run) => {
-                let status = match run.status {
+                match run.status {
                     forza_core::RunStatus::Succeeded => {
                         succeeded += 1;
-                        "succeeded"
+                        // Track PR number for merge-gating.
+                        if let Some(forza_core::Outcome::PrCreated { number })
+                        | Some(forza_core::Outcome::PrMerged { number }) = run.outcome
+                        {
+                            prs.insert(*issue_number, number);
+                        }
+                        println!("    #{issue_number}: succeeded");
                     }
                     _ => {
                         failed += 1;
                         skipped.insert(*issue_number);
-                        "failed"
+                        println!("    #{issue_number}: failed");
                     }
                 };
-                println!("    #{issue_number}: {status}");
             }
             Err(e) => {
                 eprintln!("    #{issue_number}: error: {e}");
@@ -740,6 +794,66 @@ async fn cmd_plan_exec(
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+enum MergeWaitResult {
+    Merged,
+    NeedsHumanMerge,
+    Failed,
+}
+
+/// Wait for a PR to be merged (if auto-merge is enabled) or report that it needs merging.
+async fn wait_for_pr_merge(
+    repo: &str,
+    pr_number: u64,
+    auto_merge: bool,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> MergeWaitResult {
+    // Check current state first.
+    match gh.fetch_pr(repo, pr_number).await {
+        Ok(pr) => {
+            if pr.state == "MERGED" {
+                return MergeWaitResult::Merged;
+            }
+            if pr.state == "CLOSED" {
+                return MergeWaitResult::Failed;
+            }
+        }
+        Err(_) => return MergeWaitResult::Failed,
+    }
+
+    if !auto_merge {
+        return MergeWaitResult::NeedsHumanMerge;
+    }
+
+    // Poll until merged (auto-merge enabled).
+    println!("    Waiting for PR #{pr_number} to be merged (auto-merge)...");
+    let poll_interval = std::time::Duration::from_secs(30);
+    let max_wait = std::time::Duration::from_secs(3600); // 1 hour max
+    let start = std::time::Instant::now();
+
+    loop {
+        tokio::time::sleep(poll_interval).await;
+
+        match gh.fetch_pr(repo, pr_number).await {
+            Ok(pr) => {
+                if pr.state == "MERGED" {
+                    return MergeWaitResult::Merged;
+                }
+                if pr.state == "CLOSED" {
+                    return MergeWaitResult::Failed;
+                }
+            }
+            Err(e) => {
+                tracing::warn!(pr = pr_number, error = %e, "error checking PR state");
+            }
+        }
+
+        if start.elapsed() > max_wait {
+            tracing::warn!(pr = pr_number, "timed out waiting for PR merge");
+            return MergeWaitResult::NeedsHumanMerge;
+        }
     }
 }
 
