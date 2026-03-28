@@ -53,6 +53,8 @@ enum Command {
     Explain(ExplainArgs),
     /// Open a new GitHub issue using agent assistance.
     Open(OpenArgs),
+    /// Triage issues: classify, assess readiness, detect dependencies.
+    Triage(TriageArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -309,6 +311,32 @@ struct OpenArgs {
     model: Option<String>,
 }
 
+#[derive(Debug, Parser)]
+#[command(
+    after_long_help = "Examples:\n  forza triage\n  forza triage 42\n  forza triage 10 20 30\n  forza triage 10..20\n  forza triage --label backlog\n  forza triage --revise 99"
+)]
+struct TriageArgs {
+    /// Issue numbers to triage. Supports single (42), multiple (10 20 30), range (10..20).
+    /// If omitted, triages all open issues.
+    #[arg(value_name = "ISSUES")]
+    issues: Vec<String>,
+    /// Only triage issues with this label.
+    #[arg(long)]
+    label: Option<String>,
+    /// Repository (owner/name). Required when multiple repos configured.
+    #[arg(long)]
+    repo: Option<String>,
+    /// Revise an existing plan issue based on new comments.
+    #[arg(long, value_name = "PLAN_ISSUE")]
+    revise: Option<u64>,
+    /// Override the model (e.g. claude-opus-4-6).
+    #[arg(long)]
+    model: Option<String>,
+    /// Maximum number of issues to fetch when no specific issues are given.
+    #[arg(long, default_value = "50")]
+    limit: usize,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -422,6 +450,7 @@ async fn main() -> ExitCode {
         Command::Mcp(args) => cmd_mcp(args, &config, gh, git).await,
         Command::Explain(args) => cmd_explain(args, &config),
         Command::Open(args) => cmd_open(args, &config, &git).await,
+        Command::Triage(args) => cmd_triage(args, &config, &gh, &git).await,
     }
 }
 
@@ -481,6 +510,282 @@ async fn cmd_open(
     }
 }
 
+async fn cmd_triage(
+    args: TriageArgs,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
+) -> ExitCode {
+    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &None, config, &**git).await {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    // Revise mode: update an existing plan issue.
+    if let Some(plan_number) = args.revise {
+        return cmd_triage_revise(plan_number, &repo, &rd, config, gh).await;
+    }
+
+    // Fetch issues based on selection.
+    let issues = match fetch_triage_issues(&args, gh, &repo).await {
+        Ok(issues) => issues,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if issues.is_empty() {
+        println!("No issues to triage.");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Triaging {} issue(s) in {repo}...", issues.len());
+
+    // Build route summary and issue summaries for the prompt.
+    let route_summary = build_route_summary(routes);
+    let issue_summaries = build_issue_summaries(&issues);
+    let issue_refs = build_issue_refs(&issues);
+
+    // Build prompt from template.
+    let preamble = forza_core::planner::make_preamble(&repo);
+    let prompt = forza_core::planner::PROMPT_TRIAGE
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", &repo)
+        .replace("{routes}", &route_summary)
+        .replace("{issues}", &issue_summaries)
+        .replace("{issue_refs}", &issue_refs);
+
+    let allowed_tools: Vec<String> = vec![
+        "Read".into(),
+        "Glob".into(),
+        "Grep".into(),
+        "Bash(gh *)".into(),
+    ];
+
+    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
+        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
+        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
+    };
+
+    let model = args.model.as_deref().or(config.global.model.as_deref());
+
+    match agent
+        .execute(
+            "triage",
+            &prompt,
+            &rd,
+            model,
+            &[],
+            None,
+            None,
+            &allowed_tools,
+        )
+        .await
+    {
+        Ok(result) => {
+            if !result.output.is_empty() {
+                println!("{}", result.output);
+            }
+            if result.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Revise an existing triage plan issue based on new comments.
+async fn cmd_triage_revise(
+    plan_number: u64,
+    repo: &str,
+    rd: &std::path::Path,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
+    // Fetch the plan issue (body + comments are in IssueCandidate).
+    let plan_issue = match gh.fetch_issue(repo, plan_number).await {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("error fetching plan issue #{plan_number}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    println!("Revising plan issue #{plan_number} in {repo}...");
+
+    let comments_text = if plan_issue.comments.is_empty() {
+        "(no comments)".to_string()
+    } else {
+        plan_issue
+            .comments
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("### Comment {}\n\n{}", i + 1, c))
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n")
+    };
+
+    let preamble = forza_core::planner::make_preamble(repo);
+    let prompt = forza_core::planner::PROMPT_TRIAGE_REVISE
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", repo)
+        .replace("{plan_number}", &plan_number.to_string())
+        .replace("{plan_body}", &plan_issue.body)
+        .replace("{comments}", &comments_text);
+
+    let allowed_tools: Vec<String> = vec![
+        "Read".into(),
+        "Glob".into(),
+        "Grep".into(),
+        "Bash(gh *)".into(),
+    ];
+
+    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
+        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
+        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
+    };
+
+    let model = config.global.model.as_deref();
+
+    match agent
+        .execute(
+            "triage",
+            &prompt,
+            rd,
+            model,
+            &[],
+            None,
+            None,
+            &allowed_tools,
+        )
+        .await
+    {
+        Ok(result) => {
+            if !result.output.is_empty() {
+                println!("{}", result.output);
+            }
+            if result.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Parse issue selectors and fetch issues from GitHub.
+async fn fetch_triage_issues(
+    args: &TriageArgs,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    repo: &str,
+) -> forza::error::Result<Vec<forza::github::IssueCandidate>> {
+    // If a label filter is specified, use it.
+    if let Some(ref label) = args.label {
+        return gh.fetch_issues_with_label(repo, label).await;
+    }
+
+    // If specific issues are given, parse and fetch them.
+    if !args.issues.is_empty() {
+        let numbers = parse_issue_numbers(&args.issues)?;
+        let mut issues = Vec::with_capacity(numbers.len());
+        for num in numbers {
+            issues.push(gh.fetch_issue(repo, num).await?);
+        }
+        return Ok(issues);
+    }
+
+    // Default: fetch all open issues (no label filter).
+    let issues = gh.fetch_eligible_issues(repo, &[], args.limit).await?;
+
+    // Filter out issues with forza lifecycle labels.
+    let lifecycle = ["forza:in-progress", "forza:complete", "forza:needs-human"];
+    Ok(issues
+        .into_iter()
+        .filter(|i| !i.labels.iter().any(|l| lifecycle.contains(&l.as_str())))
+        .collect())
+}
+
+/// Parse issue number arguments: single numbers (42) and ranges (10..20).
+fn parse_issue_numbers(args: &[String]) -> forza::error::Result<Vec<u64>> {
+    let mut numbers = Vec::new();
+    for arg in args {
+        if let Some((start, end)) = arg.split_once("..") {
+            let start: u64 = start.parse().map_err(|_| {
+                forza::error::Error::Triage(format!("invalid range start: {start}"))
+            })?;
+            let end: u64 = end
+                .parse()
+                .map_err(|_| forza::error::Error::Triage(format!("invalid range end: {end}")))?;
+            if start > end {
+                return Err(forza::error::Error::Triage(format!(
+                    "invalid range: {start}..{end} (start > end)"
+                )));
+            }
+            numbers.extend(start..=end);
+        } else {
+            let num: u64 = arg
+                .parse()
+                .map_err(|_| forza::error::Error::Triage(format!("invalid issue number: {arg}")))?;
+            numbers.push(num);
+        }
+    }
+    Ok(numbers)
+}
+
+/// Build a route summary string for the triage prompt.
+fn build_route_summary(routes: &indexmap::IndexMap<String, forza::config::Route>) -> String {
+    routes
+        .iter()
+        .filter(|(_, r)| r.route_type == forza::config::SubjectType::Issue)
+        .map(|(name, r)| {
+            let label = r.label.as_deref().unwrap_or("(none)");
+            let workflow = r.workflow.as_deref().unwrap_or("(default)");
+            format!("- **{name}**: label=`{label}`, workflow=`{workflow}`")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Build issue summaries for the triage prompt.
+fn build_issue_summaries(issues: &[forza::github::IssueCandidate]) -> String {
+    issues
+        .iter()
+        .map(|i| {
+            let labels = if i.labels.is_empty() {
+                "(none)".to_string()
+            } else {
+                i.labels.join(", ")
+            };
+            let body = if i.body.len() > 500 {
+                format!("{}...", &i.body[..500])
+            } else {
+                i.body.clone()
+            };
+            format!(
+                "### Issue #{}: {}\n\n**Labels**: {}\n\n{}\n",
+                i.number, i.title, labels, body
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n---\n\n")
+}
+
+/// Build a short issue reference string for the plan issue title (e.g. "#42, #45, #48").
+fn build_issue_refs(issues: &[forza::github::IssueCandidate]) -> String {
+    let refs: Vec<String> = issues.iter().map(|i| format!("#{}", i.number)).collect();
+    refs.join(", ")
+}
+
 async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitCode {
     // Forza lifecycle labels.
     let labels: &[(&str, &str, &str)] = &[
@@ -509,6 +814,7 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
             "c2e0c6",
             "Retry budget exhausted, needs human review",
         ),
+        ("forza:plan", "5319e7", "Forza triage plan issue"),
     ];
 
     println!("Creating forza labels in {}...", args.repo);
