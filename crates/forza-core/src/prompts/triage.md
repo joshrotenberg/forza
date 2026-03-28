@@ -1,9 +1,9 @@
 {preamble}
 
-You are triaging GitHub issues for **{repo}**.
+You are creating a plan for automated processing of GitHub issues in **{repo}**.
 
 Your job is to analyze the issues below, then create a single **plan issue** that
-organizes them for automated processing by forza.
+organizes them for execution by forza.
 
 ## Steps
 
@@ -20,7 +20,7 @@ organizes them for automated processing by forza.
 
 {routes}
 
-## Issues to triage
+## Issues to plan
 
 {issues}
 
@@ -31,7 +31,7 @@ Create the plan issue using:
 ```
 gh issue create \
   --repo {repo} \
-  --title "forza: triage plan for {issue_refs}" \
+  --title "forza: plan for {issue_refs}" \
   --label forza:plan \
   --body "$(cat <<'PLAN_EOF'
 <plan body>
@@ -39,18 +39,23 @@ PLAN_EOF
 )"
 ```
 
-The plan body must follow this structure:
+The plan body must follow this structure exactly:
 
 ```markdown
-# Triage Plan
+# Plan
 
-Triaged N issues on YYYY-MM-DD.
+Planned N issues on YYYY-MM-DD.
+
+## Dependency Graph
+
+\`\`\`mermaid
+graph TD
+    <node definitions and edges>
+\`\`\`
 
 ## Actionable
 
 Issues ready for automated processing, listed in recommended implementation order.
-Earlier items should be completed before later items when there are dependencies.
-Issues with no dependencies between them can be processed in parallel.
 
 ### 1. #N -- <issue title>
 **Route**: <route name>
@@ -70,10 +75,29 @@ Issues that cannot be processed automatically right now.
 
 ## Skipped
 
-Issues excluded from this triage (already processed, in progress, etc).
+Issues excluded from this plan (already processed, in progress, etc).
 
 - #Y -- <reason>
 ```
+
+## Dependency graph format
+
+The mermaid graph is both human-viewable (GitHub renders it) and machine-parseable
+(forza reads it to determine execution order). Use this exact format:
+
+```mermaid
+graph TD
+    401["#401 CI workflow"] --> 403["#403 auto-fix-ci"]
+    401 --> 404["#404 auto-merge"]
+    402["#402 auto-rebase"]
+```
+
+Rules:
+- Node IDs are the issue number (e.g., `401`)
+- Node labels are `["#N short title"]`
+- Edges go from dependency to dependent: `A --> B` means A must complete before B
+- Issues with no dependencies are standalone nodes (no edges)
+- Only include Actionable issues in the graph (not Blocked or Skipped)
 
 ## Blocked issue handling
 
@@ -85,7 +109,7 @@ For each issue in the Blocked section, also:
 2. Post a comment explaining why:
    ```
    gh issue comment --repo {repo} <number> --body "$(cat <<'COMMENT_EOF'
-   **Triage note**: This issue was reviewed during triage but cannot be processed automatically.
+   **Plan note**: This issue was reviewed but cannot be processed automatically.
 
    **Reason**: <reason>
 
@@ -102,4 +126,4 @@ For each issue in the Blocked section, also:
 - An issue that is too large for a single agent workflow should go in Blocked with
   reason `too-large` and suggestions for how to split it.
 - Do NOT modify actionable issues (no labels, no comments). The plan is the output.
-- Do NOT add route labels to issues. That happens during execution, not triage.
+- Do NOT add route labels to issues. That happens during execution, not planning.
