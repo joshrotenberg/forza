@@ -1000,10 +1000,54 @@ fn build_issue_summaries(issues: &[forza::github::IssueCandidate]) -> String {
         .join("\n---\n\n")
 }
 
-/// Build a short issue reference string for the plan issue title (e.g. "#42, #45, #48").
+/// Build a short issue reference string for the plan issue title.
+///
+/// Under 6 issues: explicit list (`#42, #45, #48`).
+/// 6+: compact ranges with gaps (`#69..#73, #75, #77..#79`).
 fn build_issue_refs(issues: &[forza::github::IssueCandidate]) -> String {
-    let refs: Vec<String> = issues.iter().map(|i| format!("#{}", i.number)).collect();
-    refs.join(", ")
+    let mut numbers: Vec<u64> = issues.iter().map(|i| i.number).collect();
+    numbers.sort();
+
+    if numbers.len() < 6 {
+        return numbers
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
+
+    compact_ranges(&numbers)
+}
+
+/// Compress a sorted list of numbers into range notation: `#69..#73, #75, #77..#79`.
+fn compact_ranges(numbers: &[u64]) -> String {
+    if numbers.is_empty() {
+        return String::new();
+    }
+
+    let mut ranges: Vec<String> = Vec::new();
+    let mut start = numbers[0];
+    let mut end = numbers[0];
+
+    for &n in &numbers[1..] {
+        if n == end + 1 {
+            end = n;
+        } else {
+            ranges.push(format_range(start, end));
+            start = n;
+            end = n;
+        }
+    }
+    ranges.push(format_range(start, end));
+    ranges.join(", ")
+}
+
+fn format_range(start: u64, end: u64) -> String {
+    if start == end {
+        format!("#{start}")
+    } else {
+        format!("#{start}..#{end}")
+    }
 }
 
 async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitCode {
@@ -2826,5 +2870,28 @@ graph TD
     #[test]
     fn parse_issue_numbers_reversed_range() {
         assert!(parse_issue_numbers(&["20..10".into()]).is_err());
+    }
+
+    #[test]
+    fn compact_ranges_contiguous() {
+        assert_eq!(compact_ranges(&[69, 70, 71, 72, 73]), "#69..#73");
+    }
+
+    #[test]
+    fn compact_ranges_with_gaps() {
+        assert_eq!(
+            compact_ranges(&[69, 70, 71, 73, 75, 77, 78, 79]),
+            "#69..#71, #73, #75, #77..#79"
+        );
+    }
+
+    #[test]
+    fn compact_ranges_all_singles() {
+        assert_eq!(compact_ranges(&[10, 20, 30]), "#10, #20, #30");
+    }
+
+    #[test]
+    fn compact_ranges_single_item() {
+        assert_eq!(compact_ranges(&[42]), "#42");
     }
 }
