@@ -313,7 +313,7 @@ struct OpenArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99\n  forza plan --exec 99 --dry-run"
+    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99\n  forza plan --exec 99 --dry-run\n  forza plan --exec 99 --close"
 )]
 struct PlanArgs {
     /// Issue numbers to plan. Supports single (42), multiple (10 20 30), range (10..20).
@@ -335,6 +335,9 @@ struct PlanArgs {
     /// Preview execution order without processing (use with --exec).
     #[arg(long)]
     dry_run: bool,
+    /// Close the plan issue after all items are executed (use with --exec).
+    #[arg(long)]
+    close: bool,
     /// Override the model (e.g. claude-opus-4-6).
     #[arg(long)]
     model: Option<String>,
@@ -529,7 +532,17 @@ async fn cmd_plan(
 
     // Exec mode: execute an existing plan issue.
     if let Some(plan_number) = args.exec {
-        return cmd_plan_exec(plan_number, &repo, &rd, config, gh, git, args.dry_run).await;
+        return cmd_plan_exec(
+            plan_number,
+            &repo,
+            &rd,
+            config,
+            gh,
+            git,
+            args.dry_run,
+            args.close,
+        )
+        .await;
     }
 
     // Revise mode: update an existing plan issue.
@@ -603,6 +616,7 @@ async fn cmd_plan(
 }
 
 /// Execute an existing plan issue: process actionable items in dependency order.
+#[allow(clippy::too_many_arguments)]
 async fn cmd_plan_exec(
     plan_number: u64,
     repo: &str,
@@ -611,6 +625,7 @@ async fn cmd_plan_exec(
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
     git: &std::sync::Arc<dyn forza::git::GitClient>,
     dry_run: bool,
+    close: bool,
 ) -> ExitCode {
     let plan_issue = match gh.fetch_issue(repo, plan_number).await {
         Ok(i) => i,
@@ -789,6 +804,21 @@ async fn cmd_plan_exec(
         "\nPlan #{plan_number} complete: {succeeded} succeeded, {failed} failed, {} skipped",
         skipped.len().saturating_sub(failed)
     );
+
+    if close {
+        let summary = format!(
+            "Plan execution complete: {succeeded} succeeded, {failed} failed, {} skipped.",
+            skipped.len().saturating_sub(failed)
+        );
+        if let Err(e) = gh.comment_on_issue(repo, plan_number, &summary).await {
+            eprintln!("warning: failed to post summary comment on #{plan_number}: {e}");
+        }
+        if let Err(e) = gh.close_issue(repo, plan_number).await {
+            eprintln!("warning: failed to close plan issue #{plan_number}: {e}");
+        } else {
+            println!("Closed plan issue #{plan_number}.");
+        }
+    }
 
     if failed > 0 {
         ExitCode::FAILURE

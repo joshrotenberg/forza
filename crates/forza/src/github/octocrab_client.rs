@@ -265,6 +265,18 @@ impl GitHubClient for OctocrabClient {
         Ok(())
     }
 
+    async fn close_issue(&self, repo: &str, number: u64) -> Result<()> {
+        let (owner, name) = parse_repo(repo)?;
+        self.client
+            .issues(owner, name)
+            .update(number)
+            .state(octocrab::models::IssueState::Closed)
+            .send()
+            .await
+            .map_err(|e| Error::GitHub(format!("close issue #{number}: {e}")))?;
+        Ok(())
+    }
+
     async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64> {
         let (owner, name) = parse_repo(repo)?;
         let issue = self

@@ -70,6 +70,10 @@ impl GitHubClient for GhCliClient {
         super::comment_on_issue(repo, number, body).await
     }
 
+    async fn close_issue(&self, repo: &str, number: u64) -> Result<()> {
+        super::close_issue(repo, number).await
+    }
+
     async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64> {
         super::create_issue(repo, title, body).await
     }
