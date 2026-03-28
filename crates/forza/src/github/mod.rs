@@ -46,6 +46,7 @@ pub trait GitHubClient: Send + Sync {
         description: &str,
     ) -> Result<()>;
     async fn comment_on_issue(&self, repo: &str, number: u64, body: &str) -> Result<()>;
+    async fn close_issue(&self, repo: &str, number: u64) -> Result<()>;
     async fn create_issue(&self, repo: &str, title: &str, body: &str) -> Result<u64>;
 
     // ── Pull Requests ───────────────────────────────────────────────
@@ -977,6 +978,22 @@ pub async fn comment_on_issue(repo: &str, number: u64, body: &str) -> Result<()>
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Error::GitHub(format!("gh issue comment failed: {stderr}")));
+    }
+
+    Ok(())
+}
+
+/// Close an issue via gh CLI.
+pub async fn close_issue(repo: &str, number: u64) -> Result<()> {
+    let output = tokio::process::Command::new("gh")
+        .args(["issue", "close", "--repo", repo, &number.to_string()])
+        .output()
+        .await
+        .map_err(|e| Error::GitHub(format!("gh issue close failed: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::GitHub(format!("gh issue close failed: {stderr}")));
     }
 
     Ok(())
