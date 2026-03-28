@@ -190,6 +190,23 @@ impl GitClient for GixClient {
         Ok(())
     }
 
+    async fn create_branch_from(&self, repo_dir: &Path, branch: &str, base: &str) -> Result<()> {
+        // Use git CLI — gix branch creation is complex.
+        let _ = git_cli(&["fetch", "origin"], repo_dir).await;
+        let already_exists = git_cli(&["rev-parse", "--verify", branch], repo_dir)
+            .await
+            .is_ok_and(|o| o.status.success());
+        if already_exists {
+            return Ok(());
+        }
+        let output = git_cli(&["branch", branch, base], repo_dir).await?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Git(format!("git branch failed: {stderr}")));
+        }
+        Ok(())
+    }
+
     async fn version(&self) -> Result<String> {
         Ok(format!("gix {}", env!("CARGO_PKG_VERSION")))
     }
