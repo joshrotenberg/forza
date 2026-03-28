@@ -313,7 +313,7 @@ struct OpenArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99"
+    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99\n  forza plan --exec 99 --dry-run"
 )]
 struct PlanArgs {
     /// Issue numbers to plan. Supports single (42), multiple (10 20 30), range (10..20).
@@ -332,6 +332,9 @@ struct PlanArgs {
     /// Execute an existing plan issue: process actionable items in dependency order.
     #[arg(long, value_name = "PLAN_ISSUE", conflicts_with = "revise")]
     exec: Option<u64>,
+    /// Preview execution order without processing (use with --exec).
+    #[arg(long)]
+    dry_run: bool,
     /// Override the model (e.g. claude-opus-4-6).
     #[arg(long)]
     model: Option<String>,
@@ -526,7 +529,7 @@ async fn cmd_plan(
 
     // Exec mode: execute an existing plan issue.
     if let Some(plan_number) = args.exec {
-        return cmd_plan_exec(plan_number, &repo, &rd, config, gh, git).await;
+        return cmd_plan_exec(plan_number, &repo, &rd, config, gh, git, args.dry_run).await;
     }
 
     // Revise mode: update an existing plan issue.
@@ -607,6 +610,7 @@ async fn cmd_plan_exec(
     config: &forza::RunnerConfig,
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
     git: &std::sync::Arc<dyn forza::git::GitClient>,
+    dry_run: bool,
 ) -> ExitCode {
     let plan_issue = match gh.fetch_issue(repo, plan_number).await {
         Ok(i) => i,
@@ -650,6 +654,25 @@ async fn cmd_plan_exec(
         Ok((_, _, routes)) => routes.clone(),
         Err(code) => return code,
     };
+
+    if dry_run {
+        println!(
+            "Plan #{plan_number}: {} issues in dependency order\n",
+            order.len()
+        );
+        println!("Execution order:");
+        for (i, issue_number) in order.iter().enumerate() {
+            let deps = dag.get(issue_number).cloned().unwrap_or_default();
+            let dep_str = if deps.is_empty() {
+                "(no dependencies)".to_string()
+            } else {
+                let refs: Vec<String> = deps.iter().map(|d| format!("#{d}")).collect();
+                format!("depends on {}", refs.join(", "))
+            };
+            println!("  {}. #{issue_number} -- {dep_str}", i + 1);
+        }
+        return ExitCode::SUCCESS;
+    }
 
     println!(
         "Executing plan #{plan_number}: {} issues in dependency order",
