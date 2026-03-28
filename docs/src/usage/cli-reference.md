@@ -216,6 +216,32 @@ forza open [--repo <owner/name>] [--prompt <text>] [--label <label>] [--ready] [
 | `--ready` | Also add the `forza:ready` label to the created issue |
 | `--model <model>` | Override the model (e.g. `claude-opus-4-6`) |
 
+### forza plan
+
+Create, revise, or execute a plan for a set of issues:
+
+```
+forza plan [ISSUES...] [--label <label>] [--repo <owner/name>] [--revise <N>] [--exec <N>] [--model <model>] [--limit <N>] [--config <path>]
+```
+
+| Flag | Description |
+|------|-------------|
+| `[ISSUES...]` | Issue numbers to plan. Supports single (`42`), multiple (`10 20 30`), range (`10..20`). Omit to plan all open issues. |
+| `--label <label>` | Only plan issues with this label |
+| `--repo <owner/name>` | Repository (required when multiple repos are configured) |
+| `--revise <N>` | Revise an existing plan issue based on new comments |
+| `--exec <N>` | Execute a plan issue: process actionable items in dependency order |
+| `--model <model>` | Override the model (e.g. `claude-opus-4-6`) |
+| `--limit <N>` | Maximum issues to fetch when no specific issues are given (default: 50) |
+
+**Three modes:**
+
+- **Create** (default) — Analyzes the selected issues and creates a plan issue with a mermaid dependency graph, actionable issues in order, blocked issues with reasons, and skipped issues. Blocked issues get `forza:needs-human` labels and explanatory comments.
+
+- **Revise** (`--revise <N>`) — Reads the plan issue and its comments, then updates the plan based on human feedback. Adjusts ordering, moves issues between sections, and updates `forza:needs-human` labels as needed.
+
+- **Execute** (`--exec <N>`) — Parses the mermaid dependency graph from the plan issue, topologically sorts it, and processes each actionable issue through its normal workflow pipeline. If an issue fails, dependent issues are skipped.
+
 ## Global flags
 
 | Flag | Description |

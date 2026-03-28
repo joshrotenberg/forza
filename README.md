@@ -29,6 +29,26 @@ forza issue 123
 forza watch --interval 60
 ```
 
+## Planning
+
+`forza plan` analyzes a set of issues and creates a plan issue with a dependency graph, implementation order, and readiness assessment.
+
+```bash
+# Plan all open issues
+forza plan
+
+# Plan specific issues
+forza plan 42 45 48
+
+# Revise a plan based on human feedback
+forza plan --revise 99
+
+# Execute a plan in dependency order
+forza plan --exec 99
+```
+
+The plan issue includes a mermaid dependency graph (rendered by GitHub), actionable issues in order, blocked issues with reasons, and skipped issues. Blocked issues get `forza:needs-human` labels and explanatory comments.
+
 Minimal `forza.toml`:
 
 ```toml
