@@ -527,6 +527,81 @@ pub fn generate_run_id() -> String {
     format!("run-{timestamp}-{suffix:08x}")
 }
 
+/// Execution status of a single issue within a plan execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanIssueStatus {
+    Succeeded,
+    Failed,
+    Skipped,
+}
+
+/// Per-issue record within a plan execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanIssueEntry {
+    /// Issue number.
+    pub issue_number: u64,
+    /// Final status of this issue.
+    pub status: PlanIssueStatus,
+    /// PR number if created or merged.
+    pub pr_number: Option<u64>,
+    /// Whether the PR was merged.
+    pub pr_merged: bool,
+    /// Name of the stage that failed, if any.
+    pub failed_stage: Option<String>,
+}
+
+/// A persisted record of a plan execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanExecRecord {
+    /// The plan issue number.
+    pub plan_number: u64,
+    /// Repository.
+    pub repo: String,
+    /// When execution started.
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    /// Per-issue results.
+    pub issues: Vec<PlanIssueEntry>,
+}
+
+/// Save a plan execution record to disk.
+pub fn save_plan_exec(
+    record: &PlanExecRecord,
+    state_dir: &std::path::Path,
+) -> crate::error::Result<()> {
+    std::fs::create_dir_all(state_dir)?;
+    let final_path = state_dir.join(format!("plan_{}.json", record.plan_number));
+    let tmp_path = state_dir.join(format!("plan_{}.json.tmp", record.plan_number));
+    let json = serde_json::to_string_pretty(record)?;
+    std::fs::write(&tmp_path, &json)?;
+    std::fs::rename(&tmp_path, &final_path)?;
+    Ok(())
+}
+
+/// Load all plan execution records from the state directory, sorted by `started_at` descending.
+pub fn load_all_plan_execs(state_dir: &std::path::Path) -> Vec<PlanExecRecord> {
+    let entries = match std::fs::read_dir(state_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut records: Vec<PlanExecRecord> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("plan_") && n.ends_with(".json"))
+                .unwrap_or(false)
+        })
+        .filter_map(|e| {
+            let content = std::fs::read_to_string(e.path()).ok()?;
+            serde_json::from_str(&content).ok()
+        })
+        .collect();
+    records.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    records
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

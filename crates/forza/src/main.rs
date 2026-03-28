@@ -711,6 +711,13 @@ async fn cmd_plan_exec(
     // Track PR numbers created by each issue for merge-gating.
     let mut prs: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
 
+    let mut plan_exec = forza::state::PlanExecRecord {
+        plan_number,
+        repo: repo.to_string(),
+        started_at: chrono::Utc::now(),
+        issues: Vec::new(),
+    };
+
     let max_concurrency = config.global.max_concurrency;
 
     'levels: for (level_idx, level) in levels.iter().enumerate() {
@@ -734,8 +741,16 @@ async fn cmd_plan_exec(
         for issue_number in level {
             if !runnable.contains(issue_number) {
                 skipped.insert(*issue_number);
+                plan_exec.issues.push(forza::state::PlanIssueEntry {
+                    issue_number: *issue_number,
+                    status: forza::state::PlanIssueStatus::Skipped,
+                    pr_number: None,
+                    pr_merged: false,
+                    failed_stage: None,
+                });
             }
         }
+        let _ = forza::state::save_plan_exec(&plan_exec, &sd);
 
         if runnable.is_empty() {
             continue;
@@ -795,6 +810,14 @@ async fn cmd_plan_exec(
                     Ok(issue) if issue.labels.iter().any(|l| l == "forza:complete") => {
                         println!("    #{issue_number}: already complete, skipping");
                         succeeded += 1;
+                        plan_exec.issues.push(forza::state::PlanIssueEntry {
+                            issue_number,
+                            status: forza::state::PlanIssueStatus::Succeeded,
+                            pr_number: None,
+                            pr_merged: false,
+                            failed_stage: None,
+                        });
+                        let _ = forza::state::save_plan_exec(&plan_exec, &sd);
                         continue;
                     }
                     _ => {}
@@ -831,16 +854,43 @@ async fn cmd_plan_exec(
                     Ok((issue_number, Ok(run))) => match run.status {
                         forza_core::RunStatus::Succeeded => {
                             succeeded += 1;
+                            let (pr_number, pr_merged) = match run.outcome.as_ref() {
+                                Some(forza_core::Outcome::PrCreated { number }) => {
+                                    (Some(*number), false)
+                                }
+                                Some(forza_core::Outcome::PrMerged { number }) => {
+                                    (Some(*number), true)
+                                }
+                                _ => (None, false),
+                            };
                             if let Some(forza_core::Outcome::PrCreated { number })
                             | Some(forza_core::Outcome::PrMerged { number }) = run.outcome
                             {
                                 prs.insert(issue_number, number);
                             }
+                            plan_exec.issues.push(forza::state::PlanIssueEntry {
+                                issue_number,
+                                status: forza::state::PlanIssueStatus::Succeeded,
+                                pr_number,
+                                pr_merged,
+                                failed_stage: None,
+                            });
+                            let _ = forza::state::save_plan_exec(&plan_exec, &sd);
                             println!("    #{issue_number}: succeeded");
                         }
                         _ => {
                             failed += 1;
                             skipped.insert(issue_number);
+                            let failed_stage =
+                                run.failed_stage().map(|s| s.kind_name().to_string());
+                            plan_exec.issues.push(forza::state::PlanIssueEntry {
+                                issue_number,
+                                status: forza::state::PlanIssueStatus::Failed,
+                                pr_number: None,
+                                pr_merged: false,
+                                failed_stage,
+                            });
+                            let _ = forza::state::save_plan_exec(&plan_exec, &sd);
                             println!("    #{issue_number}: failed");
                         }
                     },
@@ -848,6 +898,14 @@ async fn cmd_plan_exec(
                         eprintln!("    #{issue_number}: error: {e}");
                         failed += 1;
                         skipped.insert(issue_number);
+                        plan_exec.issues.push(forza::state::PlanIssueEntry {
+                            issue_number,
+                            status: forza::state::PlanIssueStatus::Failed,
+                            pr_number: None,
+                            pr_merged: false,
+                            failed_stage: None,
+                        });
+                        let _ = forza::state::save_plan_exec(&plan_exec, &sd);
                     }
                     Err(e) => {
                         eprintln!("    task join error: {e}");
@@ -2403,6 +2461,63 @@ fn print_status_dashboard(sd: &std::path::Path, workflow_filter: Option<&str>) -
                 "  {prefix} #{} {} → {}     {ago}",
                 r.issue_number, r.workflow, outcome
             );
+        }
+    }
+
+    // Plan Executions
+    let plan_execs = forza::state::load_all_plan_execs(sd);
+    if !plan_execs.is_empty() {
+        use forza::state::PlanIssueStatus;
+        println!();
+        println!("Plan Executions:");
+        for plan in &plan_execs {
+            let n_succeeded = plan
+                .issues
+                .iter()
+                .filter(|i| i.status == PlanIssueStatus::Succeeded)
+                .count();
+            let n_failed = plan
+                .issues
+                .iter()
+                .filter(|i| i.status == PlanIssueStatus::Failed)
+                .count();
+            let n_skipped = plan
+                .issues
+                .iter()
+                .filter(|i| i.status == PlanIssueStatus::Skipped)
+                .count();
+            let ago = format_time_ago(plan.started_at);
+            println!(
+                "  Plan #{} ({}) — {} issue(s): {}✓ {}✗ {}- ({ago})",
+                plan.plan_number,
+                plan.repo,
+                plan.issues.len(),
+                n_succeeded,
+                n_failed,
+                n_skipped,
+            );
+            for entry in &plan.issues {
+                let (prefix, detail) = match entry.status {
+                    PlanIssueStatus::Succeeded => {
+                        let pr_info = match (entry.pr_number, entry.pr_merged) {
+                            (Some(n), true) => format!("  PR #{n} (merged)"),
+                            (Some(n), false) => format!("  PR #{n}"),
+                            (None, _) => String::new(),
+                        };
+                        ("✓", format!("succeeded{pr_info}"))
+                    }
+                    PlanIssueStatus::Failed => {
+                        let stage_info = entry
+                            .failed_stage
+                            .as_deref()
+                            .map(|s| format!("  stage: {s}"))
+                            .unwrap_or_default();
+                        ("✗", format!("failed{stage_info}"))
+                    }
+                    PlanIssueStatus::Skipped => ("-", "skipped".to_string()),
+                };
+                println!("    {prefix} #{:<6}  {detail}", entry.issue_number);
+            }
         }
     }
 
