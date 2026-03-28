@@ -69,6 +69,64 @@ pub fn extract_node_id(s: &str) -> Option<u64> {
     id_part.trim().parse().ok()
 }
 
+/// Group the DAG into parallel execution levels using Kahn's algorithm.
+///
+/// Level 0 contains root issues (no dependencies). Level N contains issues whose
+/// dependencies are all satisfied by levels 0..N-1. Issues within the same level
+/// have no dependencies on each other and can run concurrently.
+///
+/// DAG format: `dag[node] = [dependencies]` — the issues that `node` depends on.
+pub fn topological_levels(dag: &HashMap<u64, Vec<u64>>) -> Result<Vec<Vec<u64>>, String> {
+    let mut in_degree: HashMap<u64, usize> =
+        dag.iter().map(|(node, deps)| (*node, deps.len())).collect();
+
+    for deps in dag.values() {
+        for dep in deps {
+            in_degree.entry(*dep).or_insert(0);
+        }
+    }
+
+    let mut levels: Vec<Vec<u64>> = Vec::new();
+    let mut resolved: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+    loop {
+        let mut level: Vec<u64> = in_degree
+            .iter()
+            .filter(|(node, deg)| **deg == 0 && !resolved.contains(*node))
+            .map(|(node, _)| *node)
+            .collect();
+
+        if level.is_empty() {
+            break;
+        }
+
+        level.sort();
+        for &node in &level {
+            resolved.insert(node);
+        }
+
+        // Decrement in-degree for dependents of nodes in this level.
+        for &node in &level {
+            for (dependent, deps) in dag {
+                if deps.contains(&node)
+                    && let Some(deg) = in_degree.get_mut(dependent)
+                {
+                    *deg = deg.saturating_sub(1);
+                }
+            }
+        }
+
+        levels.push(level);
+    }
+
+    let total: usize = levels.iter().map(|l| l.len()).sum();
+    if total != in_degree.len() {
+        return Err("circular dependency detected in plan".to_string());
+    }
+
+    Ok(levels)
+}
+
 /// Topological sort of the dependency DAG. Returns issue numbers in execution order.
 ///
 /// DAG format: `dag[node] = [dependencies]` — the issues that `node` depends on.
