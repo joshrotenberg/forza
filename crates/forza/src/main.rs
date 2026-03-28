@@ -3,7 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use forza::plan::{
-    build_issue_refs, build_issue_summaries, build_route_summary, parse_plan_dag, topological_sort,
+    build_issue_refs, build_issue_summaries, build_route_summary, parse_plan_dag,
+    topological_levels,
 };
 use tracing::info;
 
@@ -661,14 +662,16 @@ async fn cmd_plan_exec(
         return ExitCode::SUCCESS;
     }
 
-    // Topological sort: process issues in dependency order.
-    let order = match topological_sort(&dag) {
-        Ok(order) => order,
+    // Group issues into parallel execution levels.
+    let levels = match topological_levels(&dag) {
+        Ok(levels) => levels,
         Err(e) => {
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
     };
+
+    let total_issues: usize = levels.iter().map(|l| l.len()).sum();
 
     let sd = state_dir();
     let routes = match resolve_repo(None, &None, config, &**git).await {
@@ -678,26 +681,28 @@ async fn cmd_plan_exec(
 
     if dry_run {
         println!(
-            "Plan #{plan_number}: {} issues in dependency order\n",
-            order.len()
+            "Plan #{plan_number}: {total_issues} issues across {} level(s)\n",
+            levels.len()
         );
-        println!("Execution order:");
-        for (i, issue_number) in order.iter().enumerate() {
-            let deps = dag.get(issue_number).cloned().unwrap_or_default();
-            let dep_str = if deps.is_empty() {
-                "(no dependencies)".to_string()
-            } else {
-                let refs: Vec<String> = deps.iter().map(|d| format!("#{d}")).collect();
-                format!("depends on {}", refs.join(", "))
-            };
-            println!("  {}. #{issue_number} -- {dep_str}", i + 1);
+        for (level_idx, level) in levels.iter().enumerate() {
+            println!("Level {} ({} concurrent):", level_idx + 1, level.len());
+            for issue_number in level {
+                let deps = dag.get(issue_number).cloned().unwrap_or_default();
+                let dep_str = if deps.is_empty() {
+                    "(no dependencies)".to_string()
+                } else {
+                    let refs: Vec<String> = deps.iter().map(|d| format!("#{d}")).collect();
+                    format!("depends on {}", refs.join(", "))
+                };
+                println!("  #{issue_number} -- {dep_str}");
+            }
         }
         return ExitCode::SUCCESS;
     }
 
     println!(
-        "Executing plan #{plan_number}: {} issues in dependency order",
-        order.len()
+        "Executing plan #{plan_number}: {total_issues} issues across {} level(s)",
+        levels.len()
     );
 
     let mut succeeded = 0;
@@ -706,102 +711,148 @@ async fn cmd_plan_exec(
     // Track PR numbers created by each issue for merge-gating.
     let mut prs: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
 
-    for issue_number in &order {
-        // Skip if already completed (resume support).
-        if let Ok(issue) = gh.fetch_issue(repo, *issue_number).await
-            && issue.labels.iter().any(|l| l == "forza:complete")
-        {
-            println!("  #{issue_number}: already complete, skipping");
-            succeeded += 1;
+    let max_concurrency = config.global.max_concurrency;
+
+    'levels: for (level_idx, level) in levels.iter().enumerate() {
+        // Skip issues in this level whose dependencies failed.
+        let runnable: Vec<u64> = level
+            .iter()
+            .filter(|issue_number| {
+                if let Some(deps) = dag.get(issue_number)
+                    && deps.iter().any(|d| skipped.contains(d))
+                {
+                    println!("  Skipping #{issue_number} (dependency failed or skipped)");
+                    false
+                } else {
+                    true
+                }
+            })
+            .copied()
+            .collect();
+
+        // Mark non-runnable issues as skipped.
+        for issue_number in level {
+            if !runnable.contains(issue_number) {
+                skipped.insert(*issue_number);
+            }
+        }
+
+        if runnable.is_empty() {
             continue;
         }
 
-        // Skip if a dependency failed.
-        if let Some(deps) = dag.get(issue_number)
-            && deps.iter().any(|d| skipped.contains(d))
-        {
-            println!("  Skipping #{issue_number} (dependency failed or skipped)");
-            skipped.insert(*issue_number);
-            continue;
-        }
-
-        // Gate on prerequisite PR merges: if any dependency created a PR,
-        // wait for it to be merged before starting this issue.
-        if let Some(deps) = dag.get(issue_number) {
-            for dep in deps {
-                if let Some(&pr_number) = prs.get(dep) {
-                    match wait_for_pr_merge(repo, pr_number, config.global.auto_merge, gh).await {
-                        MergeWaitResult::Merged => {
-                            println!("    PR #{pr_number} (from #{dep}) merged, continuing");
-                        }
-                        MergeWaitResult::NeedsHumanMerge => {
-                            println!(
-                                "\n  Paused: PR #{pr_number} (from #{dep}) needs to be merged before #{issue_number} can start."
-                            );
-                            println!(
-                                "  Merge the PR, then re-run: forza plan --exec {plan_number}"
-                            );
-                            // Count remaining as not-yet-processed.
-                            println!(
-                                "\nPlan #{plan_number} paused: {succeeded} succeeded, {failed} failed, waiting on PR #{pr_number}",
-                            );
-                            return ExitCode::SUCCESS;
-                        }
-                        MergeWaitResult::Failed => {
-                            eprintln!("    PR #{pr_number} (from #{dep}) closed without merging");
-                            skipped.insert(*issue_number);
-                            failed += 1;
-                            continue;
+        // Gate on prerequisite PR merges from previous levels before starting this level.
+        for issue_number in &runnable {
+            if let Some(deps) = dag.get(issue_number) {
+                for dep in deps {
+                    if let Some(&pr_number) = prs.get(dep) {
+                        match wait_for_pr_merge(repo, pr_number, config.global.auto_merge, gh).await
+                        {
+                            MergeWaitResult::Merged => {
+                                println!("    PR #{pr_number} (from #{dep}) merged, continuing");
+                            }
+                            MergeWaitResult::NeedsHumanMerge => {
+                                println!(
+                                    "\n  Paused: PR #{pr_number} (from #{dep}) needs to be merged before level {} can start.",
+                                    level_idx + 1
+                                );
+                                println!(
+                                    "  Merge the PR, then re-run: forza plan --exec {plan_number}"
+                                );
+                                println!(
+                                    "\nPlan #{plan_number} paused: {succeeded} succeeded, {failed} failed, waiting on PR #{pr_number}",
+                                );
+                                return ExitCode::SUCCESS;
+                            }
+                            MergeWaitResult::Failed => {
+                                eprintln!(
+                                    "    PR #{pr_number} (from #{dep}) closed without merging"
+                                );
+                                skipped.insert(*issue_number);
+                                failed += 1;
+                                continue 'levels;
+                            }
                         }
                     }
                 }
             }
         }
 
-        // If this issue was skipped due to a failed PR above, don't process.
-        if skipped.contains(issue_number) {
-            continue;
-        }
+        println!(
+            "  Level {}: processing {} issue(s) concurrently",
+            level_idx + 1,
+            runnable.len()
+        );
 
-        println!("  Processing #{issue_number}...");
+        // Process issues in this level concurrently, capped at max_concurrency.
+        let mut join_set: tokio::task::JoinSet<(u64, forza_core::Result<forza_core::Run>)> =
+            tokio::task::JoinSet::new();
 
-        match forza::runner::process_issue(
-            *issue_number,
-            repo,
-            config,
-            &routes,
-            &sd,
-            rd,
-            gh.clone(),
-            git.clone(),
-            None,
-            vec![],
-        )
-        .await
-        {
-            Ok(run) => {
-                match run.status {
-                    forza_core::RunStatus::Succeeded => {
+        for chunk in runnable.chunks(max_concurrency) {
+            for &issue_number in chunk {
+                // Skip if already completed (resume support).
+                match gh.fetch_issue(repo, issue_number).await {
+                    Ok(issue) if issue.labels.iter().any(|l| l == "forza:complete") => {
+                        println!("    #{issue_number}: already complete, skipping");
                         succeeded += 1;
-                        // Track PR number for merge-gating.
-                        if let Some(forza_core::Outcome::PrCreated { number })
-                        | Some(forza_core::Outcome::PrMerged { number }) = run.outcome
-                        {
-                            prs.insert(*issue_number, number);
-                        }
-                        println!("    #{issue_number}: succeeded");
+                        continue;
                     }
-                    _ => {
-                        failed += 1;
-                        skipped.insert(*issue_number);
-                        println!("    #{issue_number}: failed");
-                    }
-                };
+                    _ => {}
+                }
+
+                let config_clone = config.clone();
+                let routes_clone = routes.clone();
+                let sd_clone = sd.clone();
+                let rd_owned = rd.to_path_buf();
+                let gh_clone = gh.clone();
+                let git_clone = git.clone();
+                let repo_owned = repo.to_string();
+
+                join_set.spawn(async move {
+                    let result = forza::runner::process_issue(
+                        issue_number,
+                        &repo_owned,
+                        &config_clone,
+                        &routes_clone,
+                        &sd_clone,
+                        &rd_owned,
+                        gh_clone,
+                        git_clone,
+                        None,
+                        vec![],
+                    )
+                    .await;
+                    (issue_number, result)
+                });
             }
-            Err(e) => {
-                eprintln!("    #{issue_number}: error: {e}");
-                failed += 1;
-                skipped.insert(*issue_number);
+
+            while let Some(join_result) = join_set.join_next().await {
+                match join_result {
+                    Ok((issue_number, Ok(run))) => match run.status {
+                        forza_core::RunStatus::Succeeded => {
+                            succeeded += 1;
+                            if let Some(forza_core::Outcome::PrCreated { number })
+                            | Some(forza_core::Outcome::PrMerged { number }) = run.outcome
+                            {
+                                prs.insert(issue_number, number);
+                            }
+                            println!("    #{issue_number}: succeeded");
+                        }
+                        _ => {
+                            failed += 1;
+                            skipped.insert(issue_number);
+                            println!("    #{issue_number}: failed");
+                        }
+                    },
+                    Ok((issue_number, Err(e))) => {
+                        eprintln!("    #{issue_number}: error: {e}");
+                        failed += 1;
+                        skipped.insert(issue_number);
+                    }
+                    Err(e) => {
+                        eprintln!("    task join error: {e}");
+                    }
+                }
             }
         }
     }
@@ -2833,7 +2884,7 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forza::plan::compact_ranges;
+    use forza::plan::{compact_ranges, topological_sort};
 
     #[test]
     fn parse_plan_dag_extracts_edges_and_standalone_nodes() {
