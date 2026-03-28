@@ -905,16 +905,20 @@ fn topological_sort(dag: &std::collections::HashMap<u64, Vec<u64>>) -> Result<Ve
     while let Some(node) = queue.pop_front() {
         result.push(node);
         // Decrement in-degree for all nodes that depend on this one.
+        // Collect newly-ready nodes and sort for deterministic order.
+        let mut newly_ready = Vec::new();
         for (dependent, deps) in dag {
             if deps.contains(&node)
                 && let Some(deg) = in_degree.get_mut(dependent)
             {
                 *deg = deg.saturating_sub(1);
                 if *deg == 0 {
-                    queue.push_back(*dependent);
+                    newly_ready.push(*dependent);
                 }
             }
         }
+        newly_ready.sort();
+        queue.extend(newly_ready);
     }
 
     if result.len() != in_degree.len() {
@@ -2867,6 +2871,26 @@ graph TD
 
         // All standalone, should be sorted numerically.
         assert_eq!(order, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn topological_sort_fan_out_deterministic() {
+        // #69 is the root, #70-#76 all depend on #69.
+        // After #69, the rest should appear in numeric order.
+        let body = r##"
+```mermaid
+graph TD
+    69["#69 root"] --> 75["#75 E"]
+    69 --> 72["#72 B"]
+    69 --> 76["#76 F"]
+    69 --> 70["#70 A"]
+    69 --> 73["#73 C"]
+```
+"##;
+        let dag = parse_plan_dag(body).unwrap();
+        let order = topological_sort(&dag).unwrap();
+
+        assert_eq!(order, vec![69, 70, 72, 73, 75, 76]);
     }
 
     #[test]
