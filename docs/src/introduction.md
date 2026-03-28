@@ -43,3 +43,5 @@ Adding decision-making to the framework — adaptive prompting, automatic workfl
 **CI maintenance** — configure condition routes (`ci_failing_or_conflicts`, `approved_and_green`) so forza watches your forza-owned PRs and fixes failures, rebases stale branches, and merges when green — without anyone having to manually re-trigger CI or click merge.
 
 **Research and exploration** — use a `research` route with the `research -> comment` workflow. Forza investigates a question (API compatibility, migration path, alternative approaches) and posts findings directly on the issue as a comment. No code changes, no PR.
+
+**Batch planning** — use `forza plan` to analyze a set of issues at once. The agent reads the codebase, classifies issues, detects dependencies, and creates a plan issue with a mermaid dependency graph and implementation order. Review the plan, comment to adjust, then `forza plan --exec` processes them in dependency order.

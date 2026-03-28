@@ -158,7 +158,14 @@ forza fix           Re-run failed stages
 forza clean         Clean worktrees and state
 forza serve         REST API server
 forza mcp           MCP server (stdio)
+forza plan          Create, revise, or execute a plan
 ```
 
 `forza explain` supports filters: `--issues`, `--prs`, `--conditions`, `--route <name>`,
 `--workflows`, `--workflow <name>`, `-v` (verbose), `--json`.
+
+`forza plan` modes:
+- `forza plan [issues]` — analyze issues, create a plan issue with mermaid dependency graph
+- `forza plan --revise <N>` — revise plan issue #N based on human comments
+- `forza plan --exec <N>` — execute plan issue #N in dependency order
+- `--label`, `--limit`, `--model` flags for filtering and configuration

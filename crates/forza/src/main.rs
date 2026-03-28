@@ -53,6 +53,8 @@ enum Command {
     Explain(ExplainArgs),
     /// Open a new GitHub issue using agent assistance.
     Open(OpenArgs),
+    /// Create or execute a plan: analyze issues, build a dependency graph, coordinate work.
+    Plan(PlanArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -309,6 +311,38 @@ struct OpenArgs {
     model: Option<String>,
 }
 
+#[derive(Debug, Parser)]
+#[command(
+    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99\n  forza plan --exec 99 --dry-run"
+)]
+struct PlanArgs {
+    /// Issue numbers to plan. Supports single (42), multiple (10 20 30), range (10..20).
+    /// If omitted, plans all open issues.
+    #[arg(value_name = "ISSUES")]
+    issues: Vec<String>,
+    /// Only plan issues with this label.
+    #[arg(long)]
+    label: Option<String>,
+    /// Repository (owner/name). Required when multiple repos configured.
+    #[arg(long)]
+    repo: Option<String>,
+    /// Revise an existing plan issue based on new comments.
+    #[arg(long, value_name = "PLAN_ISSUE", conflicts_with = "exec")]
+    revise: Option<u64>,
+    /// Execute an existing plan issue: process actionable items in dependency order.
+    #[arg(long, value_name = "PLAN_ISSUE", conflicts_with = "revise")]
+    exec: Option<u64>,
+    /// Preview execution order without processing (use with --exec).
+    #[arg(long)]
+    dry_run: bool,
+    /// Override the model (e.g. claude-opus-4-6).
+    #[arg(long)]
+    model: Option<String>,
+    /// Maximum number of issues to fetch when no specific issues are given.
+    #[arg(long, default_value = "50")]
+    limit: usize,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -422,6 +456,7 @@ async fn main() -> ExitCode {
         Command::Mcp(args) => cmd_mcp(args, &config, gh, git).await,
         Command::Explain(args) => cmd_explain(args, &config),
         Command::Open(args) => cmd_open(args, &config, &git).await,
+        Command::Plan(args) => cmd_plan(args, &config, &gh, &git).await,
     }
 }
 
@@ -481,6 +516,563 @@ async fn cmd_open(
     }
 }
 
+async fn cmd_plan(
+    args: PlanArgs,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
+) -> ExitCode {
+    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &None, config, &**git).await {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    // Exec mode: execute an existing plan issue.
+    if let Some(plan_number) = args.exec {
+        return cmd_plan_exec(plan_number, &repo, &rd, config, gh, git, args.dry_run).await;
+    }
+
+    // Revise mode: update an existing plan issue.
+    if let Some(plan_number) = args.revise {
+        return cmd_plan_revise(plan_number, &repo, &rd, config, gh).await;
+    }
+
+    // Fetch issues based on selection.
+    let issues = match fetch_plan_issues(&args, gh, &repo).await {
+        Ok(issues) => issues,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if issues.is_empty() {
+        println!("No issues to plan.");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Planning {} issue(s) in {repo}...", issues.len());
+
+    // Build route summary and issue summaries for the prompt.
+    let route_summary = build_route_summary(routes);
+    let issue_summaries = build_issue_summaries(&issues);
+    let issue_refs = build_issue_refs(&issues);
+
+    // Build prompt from template.
+    let preamble = forza_core::planner::make_preamble(&repo);
+    let prompt = forza_core::planner::PROMPT_CMD_PLAN
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", &repo)
+        .replace("{routes}", &route_summary)
+        .replace("{issues}", &issue_summaries)
+        .replace("{issue_refs}", &issue_refs);
+
+    let allowed_tools: Vec<String> = vec![
+        "Read".into(),
+        "Glob".into(),
+        "Grep".into(),
+        "Bash(gh *)".into(),
+    ];
+
+    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
+        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
+        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
+    };
+
+    let model = args.model.as_deref().or(config.global.model.as_deref());
+
+    match agent
+        .execute("plan", &prompt, &rd, model, &[], None, None, &allowed_tools)
+        .await
+    {
+        Ok(result) => {
+            if !result.output.is_empty() {
+                println!("{}", result.output);
+            }
+            if result.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Execute an existing plan issue: process actionable items in dependency order.
+async fn cmd_plan_exec(
+    plan_number: u64,
+    repo: &str,
+    rd: &std::path::Path,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
+    dry_run: bool,
+) -> ExitCode {
+    let plan_issue = match gh.fetch_issue(repo, plan_number).await {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("error fetching plan issue #{plan_number}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    // Verify this is a plan issue.
+    if !plan_issue.labels.iter().any(|l| l == "forza:plan") {
+        eprintln!("error: issue #{plan_number} is not a plan issue (missing forza:plan label)");
+        return ExitCode::FAILURE;
+    }
+
+    // Parse the mermaid dependency graph from the plan body.
+    let dag = match parse_plan_dag(&plan_issue.body) {
+        Ok(dag) => dag,
+        Err(e) => {
+            eprintln!("error parsing plan: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if dag.is_empty() {
+        println!("No actionable issues found in plan #{plan_number}.");
+        return ExitCode::SUCCESS;
+    }
+
+    // Topological sort: process issues in dependency order.
+    let order = match topological_sort(&dag) {
+        Ok(order) => order,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let sd = state_dir();
+    let routes = match resolve_repo(None, &None, config, &**git).await {
+        Ok((_, _, routes)) => routes.clone(),
+        Err(code) => return code,
+    };
+
+    if dry_run {
+        println!(
+            "Plan #{plan_number}: {} issues in dependency order\n",
+            order.len()
+        );
+        println!("Execution order:");
+        for (i, issue_number) in order.iter().enumerate() {
+            let deps = dag.get(issue_number).cloned().unwrap_or_default();
+            let dep_str = if deps.is_empty() {
+                "(no dependencies)".to_string()
+            } else {
+                let refs: Vec<String> = deps.iter().map(|d| format!("#{d}")).collect();
+                format!("depends on {}", refs.join(", "))
+            };
+            println!("  {}. #{issue_number} -- {dep_str}", i + 1);
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    println!(
+        "Executing plan #{plan_number}: {} issues in dependency order",
+        order.len()
+    );
+
+    let mut succeeded = 0;
+    let mut failed = 0;
+    let mut skipped: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+    for issue_number in &order {
+        // Skip if a dependency failed.
+        if let Some(deps) = dag.get(issue_number)
+            && deps.iter().any(|d| skipped.contains(d))
+        {
+            println!("  Skipping #{issue_number} (dependency failed or skipped)");
+            skipped.insert(*issue_number);
+            continue;
+        }
+
+        println!("  Processing #{issue_number}...");
+
+        match forza::runner::process_issue(
+            *issue_number,
+            repo,
+            config,
+            &routes,
+            &sd,
+            rd,
+            gh.clone(),
+            git.clone(),
+            None,
+            vec![],
+        )
+        .await
+        {
+            Ok(run) => {
+                let status = match run.status {
+                    forza_core::RunStatus::Succeeded => {
+                        succeeded += 1;
+                        "succeeded"
+                    }
+                    _ => {
+                        failed += 1;
+                        skipped.insert(*issue_number);
+                        "failed"
+                    }
+                };
+                println!("    #{issue_number}: {status}");
+            }
+            Err(e) => {
+                eprintln!("    #{issue_number}: error: {e}");
+                failed += 1;
+                skipped.insert(*issue_number);
+            }
+        }
+    }
+
+    println!(
+        "\nPlan #{plan_number} complete: {succeeded} succeeded, {failed} failed, {} skipped",
+        skipped.len().saturating_sub(failed)
+    );
+
+    if failed > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Revise an existing plan issue based on new comments.
+async fn cmd_plan_revise(
+    plan_number: u64,
+    repo: &str,
+    rd: &std::path::Path,
+    config: &forza::RunnerConfig,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+) -> ExitCode {
+    let plan_issue = match gh.fetch_issue(repo, plan_number).await {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("error fetching plan issue #{plan_number}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    println!("Revising plan issue #{plan_number} in {repo}...");
+
+    let comments_text = if plan_issue.comments.is_empty() {
+        "(no comments)".to_string()
+    } else {
+        plan_issue
+            .comments
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("### Comment {}\n\n{}", i + 1, c))
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n")
+    };
+
+    let preamble = forza_core::planner::make_preamble(repo);
+    let prompt = forza_core::planner::PROMPT_CMD_PLAN_REVISE
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", repo)
+        .replace("{plan_number}", &plan_number.to_string())
+        .replace("{plan_body}", &plan_issue.body)
+        .replace("{comments}", &comments_text);
+
+    let allowed_tools: Vec<String> = vec![
+        "Read".into(),
+        "Glob".into(),
+        "Grep".into(),
+        "Bash(gh *)".into(),
+    ];
+
+    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
+        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
+        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
+    };
+
+    let model = config.global.model.as_deref();
+
+    match agent
+        .execute("plan", &prompt, rd, model, &[], None, None, &allowed_tools)
+        .await
+    {
+        Ok(result) => {
+            if !result.output.is_empty() {
+                println!("{}", result.output);
+            }
+            if result.success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Parse the mermaid dependency graph from a plan issue body.
+///
+/// Expects a mermaid block like:
+/// ```mermaid
+/// graph TD
+///     401["#401 CI workflow"] --> 403["#403 auto-fix-ci"]
+///     402["#402 auto-rebase"]
+/// ```
+///
+/// Returns a map of issue_number -> Vec<dependency_numbers>.
+/// An issue with no dependencies has an empty vec.
+fn parse_plan_dag(body: &str) -> Result<std::collections::HashMap<u64, Vec<u64>>, String> {
+    let mut dag: std::collections::HashMap<u64, Vec<u64>> = std::collections::HashMap::new();
+
+    // Find the mermaid block.
+    let mermaid_start = body
+        .find("```mermaid")
+        .ok_or("no mermaid dependency graph found in plan issue")?;
+    let mermaid_body = &body[mermaid_start + "```mermaid".len()..];
+    let mermaid_end = mermaid_body
+        .find("```")
+        .ok_or("unterminated mermaid block")?;
+    let mermaid = &mermaid_body[..mermaid_end];
+
+    for line in mermaid.lines() {
+        let line = line.trim();
+
+        // Parse edges: 401["..."] --> 403["..."]
+        if line.contains("-->") {
+            let parts: Vec<&str> = line.split("-->").collect();
+            if parts.len() == 2
+                && let (Some(from), Some(to)) =
+                    (extract_node_id(parts[0]), extract_node_id(parts[1]))
+            {
+                dag.entry(to).or_default().push(from);
+                dag.entry(from).or_default();
+            }
+        } else if line.contains('[')
+            && let Some(id) = extract_node_id(line)
+        {
+            dag.entry(id).or_default();
+        }
+    }
+
+    Ok(dag)
+}
+
+/// Extract the numeric node ID from a mermaid node like `401["#401 CI workflow"]`.
+fn extract_node_id(s: &str) -> Option<u64> {
+    let s = s.trim();
+    // The node ID is the number before the bracket.
+    let id_part = if let Some(bracket) = s.find('[') {
+        &s[..bracket]
+    } else {
+        s
+    };
+    id_part.trim().parse().ok()
+}
+
+/// Topological sort of the dependency DAG. Returns issue numbers in execution order.
+///
+/// DAG format: `dag[node] = [dependencies]` — the issues that `node` depends on.
+/// Kahn's algorithm: process nodes with zero unresolved dependencies first.
+fn topological_sort(dag: &std::collections::HashMap<u64, Vec<u64>>) -> Result<Vec<u64>, String> {
+    // in_degree[node] = number of unprocessed dependencies.
+    let mut in_degree: std::collections::HashMap<u64, usize> =
+        dag.iter().map(|(node, deps)| (*node, deps.len())).collect();
+
+    // Ensure dependency-only nodes (not keys in dag) are tracked.
+    for deps in dag.values() {
+        for dep in deps {
+            in_degree.entry(*dep).or_insert(0);
+        }
+    }
+
+    // Seed the queue with nodes that have no dependencies.
+    let mut ready: Vec<u64> = in_degree
+        .iter()
+        .filter(|(_, deg)| **deg == 0)
+        .map(|(node, _)| *node)
+        .collect();
+    ready.sort(); // Deterministic order.
+
+    let mut queue = std::collections::VecDeque::from(ready);
+    let mut result = Vec::new();
+
+    while let Some(node) = queue.pop_front() {
+        result.push(node);
+        // Decrement in-degree for all nodes that depend on this one.
+        for (dependent, deps) in dag {
+            if deps.contains(&node)
+                && let Some(deg) = in_degree.get_mut(dependent)
+            {
+                *deg = deg.saturating_sub(1);
+                if *deg == 0 {
+                    queue.push_back(*dependent);
+                }
+            }
+        }
+    }
+
+    if result.len() != in_degree.len() {
+        return Err("circular dependency detected in plan".to_string());
+    }
+
+    Ok(result)
+}
+
+/// Parse issue selectors and fetch issues from GitHub.
+async fn fetch_plan_issues(
+    args: &PlanArgs,
+    gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    repo: &str,
+) -> forza::error::Result<Vec<forza::github::IssueCandidate>> {
+    // If a label filter is specified, use it (apply limit client-side).
+    if let Some(ref label) = args.label {
+        let mut issues = gh.fetch_issues_with_label(repo, label).await?;
+        issues.truncate(args.limit);
+        return Ok(issues);
+    }
+
+    // If specific issues are given, parse and fetch them.
+    if !args.issues.is_empty() {
+        let numbers = parse_issue_numbers(&args.issues)?;
+        let mut issues = Vec::with_capacity(numbers.len());
+        for num in numbers {
+            issues.push(gh.fetch_issue(repo, num).await?);
+        }
+        return Ok(issues);
+    }
+
+    // Default: fetch all open issues (no label filter).
+    let issues = gh.fetch_eligible_issues(repo, &[], args.limit).await?;
+
+    // Filter out issues with forza lifecycle labels.
+    let lifecycle = ["forza:in-progress", "forza:complete", "forza:needs-human"];
+    Ok(issues
+        .into_iter()
+        .filter(|i| !i.labels.iter().any(|l| lifecycle.contains(&l.as_str())))
+        .collect())
+}
+
+/// Parse issue number arguments: single numbers (42) and ranges (10..20).
+fn parse_issue_numbers(args: &[String]) -> forza::error::Result<Vec<u64>> {
+    let mut numbers = Vec::new();
+    for arg in args {
+        if let Some((start, end)) = arg.split_once("..") {
+            let start: u64 = start.parse().map_err(|_| {
+                forza::error::Error::Triage(format!("invalid range start: {start}"))
+            })?;
+            let end: u64 = end
+                .parse()
+                .map_err(|_| forza::error::Error::Triage(format!("invalid range end: {end}")))?;
+            if start > end {
+                return Err(forza::error::Error::Triage(format!(
+                    "invalid range: {start}..{end} (start > end)"
+                )));
+            }
+            numbers.extend(start..=end);
+        } else {
+            let num: u64 = arg
+                .parse()
+                .map_err(|_| forza::error::Error::Triage(format!("invalid issue number: {arg}")))?;
+            numbers.push(num);
+        }
+    }
+    Ok(numbers)
+}
+
+/// Build a route summary string for the triage prompt.
+fn build_route_summary(routes: &indexmap::IndexMap<String, forza::config::Route>) -> String {
+    routes
+        .iter()
+        .filter(|(_, r)| r.route_type == forza::config::SubjectType::Issue)
+        .map(|(name, r)| {
+            let label = r.label.as_deref().unwrap_or("(none)");
+            let workflow = r.workflow.as_deref().unwrap_or("(default)");
+            format!("- **{name}**: label=`{label}`, workflow=`{workflow}`")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Build issue summaries for the triage prompt.
+fn build_issue_summaries(issues: &[forza::github::IssueCandidate]) -> String {
+    issues
+        .iter()
+        .map(|i| {
+            let labels = if i.labels.is_empty() {
+                "(none)".to_string()
+            } else {
+                i.labels.join(", ")
+            };
+            let body = if i.body.len() > 500 {
+                format!("{}...", &i.body[..500])
+            } else {
+                i.body.clone()
+            };
+            format!(
+                "### Issue #{}: {}\n\n**Labels**: {}\n\n{}\n",
+                i.number, i.title, labels, body
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n---\n\n")
+}
+
+/// Build a short issue reference string for the plan issue title.
+///
+/// Under 6 issues: explicit list (`#42, #45, #48`).
+/// 6+: compact ranges with gaps (`#69..#73, #75, #77..#79`).
+fn build_issue_refs(issues: &[forza::github::IssueCandidate]) -> String {
+    let mut numbers: Vec<u64> = issues.iter().map(|i| i.number).collect();
+    numbers.sort();
+
+    if numbers.len() < 6 {
+        return numbers
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
+
+    compact_ranges(&numbers)
+}
+
+/// Compress a sorted list of numbers into range notation: `#69..#73, #75, #77..#79`.
+fn compact_ranges(numbers: &[u64]) -> String {
+    if numbers.is_empty() {
+        return String::new();
+    }
+
+    let mut ranges: Vec<String> = Vec::new();
+    let mut start = numbers[0];
+    let mut end = numbers[0];
+
+    for &n in &numbers[1..] {
+        if n == end + 1 {
+            end = n;
+        } else {
+            ranges.push(format_range(start, end));
+            start = n;
+            end = n;
+        }
+    }
+    ranges.push(format_range(start, end));
+    ranges.join(", ")
+}
+
+fn format_range(start: u64, end: u64) -> String {
+    if start == end {
+        format!("#{start}")
+    } else {
+        format!("#{start}..#{end}")
+    }
+}
+
 async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitCode {
     // Forza lifecycle labels.
     let labels: &[(&str, &str, &str)] = &[
@@ -509,6 +1101,7 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
             "c2e0c6",
             "Retry budget exhausted, needs human review",
         ),
+        ("forza:plan", "5319e7", "Forza plan issue"),
     ];
 
     println!("Creating forza labels in {}...", args.repo);
@@ -831,6 +1424,15 @@ async fn cmd_issue(
             }
         };
 
+        // Detect plan issues.
+        if issue.labels.iter().any(|l| l == "forza:plan") {
+            eprintln!(
+                "issue #{} is a plan issue. Use `forza plan --exec {}` to execute it.",
+                issue.number, issue.number
+            );
+            return ExitCode::FAILURE;
+        }
+
         // Match route.
         let (route_name, route) = match forza::RunnerConfig::match_route_in(routes, &issue) {
             Some(r) => r,
@@ -880,6 +1482,17 @@ async fn cmd_issue(
             );
         }
         return ExitCode::SUCCESS;
+    }
+
+    // Check for plan issues before processing.
+    if let Ok(issue) = gh.fetch_issue(&repo, args.number).await
+        && issue.labels.iter().any(|l| l == "forza:plan")
+    {
+        eprintln!(
+            "issue #{} is a plan issue. Use `forza plan --exec {}` to execute it.",
+            args.number, args.number
+        );
+        return ExitCode::FAILURE;
     }
 
     match forza::runner::process_issue(
@@ -2167,5 +2780,152 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_plan_dag_extracts_edges_and_standalone_nodes() {
+        let body = r##"
+# Plan
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    401["#401 CI workflow"] --> 403["#403 auto-fix-ci"]
+    401 --> 404["#404 auto-merge"]
+    401 --> 407["#407 scenario scripts"]
+    402["#402 auto-rebase"]
+    405["#405 concurrent issues"]
+    406["#406 validation failure"]
+```
+
+## Actionable
+"##;
+        let dag = parse_plan_dag(body).unwrap();
+
+        // 401 has no dependencies (it's a root).
+        assert_eq!(dag.get(&401).unwrap(), &Vec::<u64>::new());
+
+        // 403 depends on 401.
+        assert_eq!(dag.get(&403).unwrap(), &vec![401]);
+
+        // 404 depends on 401.
+        assert_eq!(dag.get(&404).unwrap(), &vec![401]);
+
+        // 407 depends on 401.
+        assert_eq!(dag.get(&407).unwrap(), &vec![401]);
+
+        // Standalone nodes.
+        assert_eq!(dag.get(&402).unwrap(), &Vec::<u64>::new());
+        assert_eq!(dag.get(&405).unwrap(), &Vec::<u64>::new());
+        assert_eq!(dag.get(&406).unwrap(), &Vec::<u64>::new());
+
+        assert_eq!(dag.len(), 7);
+    }
+
+    #[test]
+    fn topological_sort_respects_dependencies() {
+        let body = r##"
+```mermaid
+graph TD
+    1["#1 base"] --> 2["#2 depends on 1"]
+    1 --> 3["#3 depends on 1"]
+    2 --> 4["#4 depends on 2"]
+```
+"##;
+        let dag = parse_plan_dag(body).unwrap();
+        let order = topological_sort(&dag).unwrap();
+
+        let pos = |n: u64| order.iter().position(|&x| x == n).unwrap();
+
+        // 1 must come before 2, 3, and 4.
+        assert!(pos(1) < pos(2));
+        assert!(pos(1) < pos(3));
+        assert!(pos(1) < pos(4));
+
+        // 2 must come before 4.
+        assert!(pos(2) < pos(4));
+    }
+
+    #[test]
+    fn topological_sort_standalone_nodes_sorted_by_number() {
+        let body = r##"
+```mermaid
+graph TD
+    30["#30 standalone"]
+    10["#10 standalone"]
+    20["#20 standalone"]
+```
+"##;
+        let dag = parse_plan_dag(body).unwrap();
+        let order = topological_sort(&dag).unwrap();
+
+        // All standalone, should be sorted numerically.
+        assert_eq!(order, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn parse_plan_dag_no_mermaid_block() {
+        let body = "# Plan\n\nNo graph here.";
+        assert!(parse_plan_dag(body).is_err());
+    }
+
+    #[test]
+    fn parse_issue_numbers_single() {
+        assert_eq!(parse_issue_numbers(&["42".into()]).unwrap(), vec![42]);
+    }
+
+    #[test]
+    fn parse_issue_numbers_range() {
+        assert_eq!(
+            parse_issue_numbers(&["10..13".into()]).unwrap(),
+            vec![10, 11, 12, 13]
+        );
+    }
+
+    #[test]
+    fn parse_issue_numbers_mixed() {
+        assert_eq!(
+            parse_issue_numbers(&["5".into(), "10..12".into(), "20".into()]).unwrap(),
+            vec![5, 10, 11, 12, 20]
+        );
+    }
+
+    #[test]
+    fn parse_issue_numbers_invalid() {
+        assert!(parse_issue_numbers(&["abc".into()]).is_err());
+    }
+
+    #[test]
+    fn parse_issue_numbers_reversed_range() {
+        assert!(parse_issue_numbers(&["20..10".into()]).is_err());
+    }
+
+    #[test]
+    fn compact_ranges_contiguous() {
+        assert_eq!(compact_ranges(&[69, 70, 71, 72, 73]), "#69..#73");
+    }
+
+    #[test]
+    fn compact_ranges_with_gaps() {
+        assert_eq!(
+            compact_ranges(&[69, 70, 71, 73, 75, 77, 78, 79]),
+            "#69..#71, #73, #75, #77..#79"
+        );
+    }
+
+    #[test]
+    fn compact_ranges_all_singles() {
+        assert_eq!(compact_ranges(&[10, 20, 30]), "#10, #20, #30");
+    }
+
+    #[test]
+    fn compact_ranges_single_item() {
+        assert_eq!(compact_ranges(&[42]), "#42");
     }
 }

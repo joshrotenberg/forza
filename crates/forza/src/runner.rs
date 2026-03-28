@@ -59,6 +59,13 @@ async fn discover(
             }
             info!(repo, count = issues.len(), "found eligible issues");
             for issue in &issues {
+                if issue.labels.iter().any(|l| l == "forza:plan") {
+                    info!(
+                        issue = issue.number,
+                        "skipping plan issue (use `forza plan --exec {}`)", issue.number
+                    );
+                    continue;
+                }
                 if let Some((route_name, route)) = RunnerConfig::match_route_in(routes, issue) {
                     let wf_name = route.workflow.as_deref().unwrap_or("");
                     if config.resolve_workflow(wf_name).is_some() {

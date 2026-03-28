@@ -23,7 +23,8 @@ forza:in-progress
 | `forza:in-progress` | Forza has picked up the subject and is working on it |
 | `forza:complete` | The run completed successfully |
 | `forza:failed` | The run failed; retry is possible |
-| `forza:needs-human` | Retries exhausted; manual intervention required |
+| `forza:needs-human` | Retries exhausted or blocked during planning; manual intervention required |
+| `forza:plan` | A plan issue created by `forza plan` |
 
 ## Gate label
 
