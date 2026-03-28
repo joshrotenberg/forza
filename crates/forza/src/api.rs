@@ -296,6 +296,7 @@ async fn trigger_issue(
             git,
             None,
             vec![],
+            None,
         )
         .await
         {
@@ -847,6 +848,7 @@ async fn exec_plan(
                 git.clone(),
                 None,
                 vec![],
+                None,
             )
             .await
             {
@@ -1012,6 +1014,9 @@ mod tests {
             unimplemented!()
         }
         async fn push_force(&self, _: &Path, _: &str) -> crate::error::Result<()> {
+            unimplemented!()
+        }
+        async fn create_branch_from(&self, _: &Path, _: &str, _: &str) -> crate::error::Result<()> {
             unimplemented!()
         }
         async fn version(&self) -> crate::error::Result<String> {

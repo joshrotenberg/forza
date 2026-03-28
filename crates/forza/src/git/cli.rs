@@ -184,6 +184,20 @@ impl GitClient for GitCliClient {
         Ok(())
     }
 
+    async fn create_branch_from(&self, repo_dir: &Path, branch: &str, base: &str) -> Result<()> {
+        if let Err(e) = git(&["fetch", "origin"], repo_dir).await {
+            warn!(error = %e, "fetch origin failed (non-fatal)");
+        }
+        let already_exists = git(&["rev-parse", "--verify", branch], repo_dir)
+            .await
+            .is_ok_and(|o| o.status.success());
+        if already_exists {
+            return Ok(());
+        }
+        git_ok(&["branch", branch, base], repo_dir).await?;
+        Ok(())
+    }
+
     async fn version(&self) -> Result<String> {
         let output = tokio::process::Command::new("git")
             .args(["--version"])

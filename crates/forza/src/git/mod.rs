@@ -78,6 +78,10 @@ pub trait GitClient: Send + Sync {
     /// Push a branch to origin with --force-with-lease.
     async fn push_force(&self, work_dir: &Path, branch: &str) -> Result<()>;
 
+    /// Create a branch from a base ref (e.g. `origin/main`).
+    /// Fetches from origin first, then creates the branch if it does not exist.
+    async fn create_branch_from(&self, repo_dir: &Path, branch: &str, base: &str) -> Result<()>;
+
     /// Check if git is available and return version string.
     async fn version(&self) -> Result<String>;
 }

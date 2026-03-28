@@ -351,6 +351,10 @@ struct PlanArgs {
     /// Maximum number of issues to fetch when no specific issues are given.
     #[arg(long, default_value = "50")]
     limit: usize,
+    /// Create and target a plan branch for all PRs (e.g. `plan/my-feature`).
+    /// The branch is created from `origin/main` before execution begins.
+    #[arg(long, value_name = "BRANCH")]
+    branch: Option<String>,
 }
 
 fn state_dir() -> PathBuf {
@@ -548,6 +552,7 @@ async fn cmd_plan(
             git,
             args.dry_run,
             args.close,
+            args.branch,
         )
         .await;
     }
@@ -633,6 +638,7 @@ async fn cmd_plan_exec(
     git: &std::sync::Arc<dyn forza::git::GitClient>,
     dry_run: bool,
     close: bool,
+    branch_override: Option<String>,
 ) -> ExitCode {
     let plan_issue = match gh.fetch_issue(repo, plan_number).await {
         Ok(i) => i,
@@ -678,6 +684,15 @@ async fn cmd_plan_exec(
         Ok((_, _, routes)) => routes.clone(),
         Err(code) => return code,
     };
+
+    // Create the plan branch from origin/main if requested.
+    if !dry_run
+        && let Some(ref branch) = branch_override
+        && let Err(e) = git.create_branch_from(rd, branch, "origin/main").await
+    {
+        eprintln!("error: failed to create plan branch '{branch}': {e}");
+        return ExitCode::FAILURE;
+    }
 
     if dry_run {
         println!(
@@ -830,6 +845,7 @@ async fn cmd_plan_exec(
                 let gh_clone = gh.clone();
                 let git_clone = git.clone();
                 let repo_owned = repo.to_string();
+                let branch_override_clone = branch_override.clone();
 
                 join_set.spawn(async move {
                     let result = forza::runner::process_issue(
@@ -843,6 +859,7 @@ async fn cmd_plan_exec(
                         git_clone,
                         None,
                         vec![],
+                        branch_override_clone,
                     )
                     .await;
                     (issue_number, result)
@@ -919,6 +936,10 @@ async fn cmd_plan_exec(
         "\nPlan #{plan_number} complete: {succeeded} succeeded, {failed} failed, {} skipped",
         skipped.len().saturating_sub(failed)
     );
+
+    if let Some(ref branch) = branch_override {
+        println!("Plan branch ready: {branch}");
+    }
 
     if close {
         let summary = format!(
@@ -1569,6 +1590,7 @@ async fn cmd_issue(
         git.clone(),
         args.model,
         args.skill,
+        None,
     )
     .await
     {
@@ -2677,6 +2699,7 @@ async fn cmd_fix(
         git.clone(),
         None,
         vec![],
+        None,
     )
     .await
     {

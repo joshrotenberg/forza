@@ -742,6 +742,7 @@ pub async fn process_issue(
     git: Arc<dyn crate::git::GitClient>,
     model_override: Option<String>,
     skill_overrides: Vec<String>,
+    base_branch_override: Option<String>,
 ) -> forza_core::Result<Run> {
     tracing::info!(number, repo, "processing issue");
     let issue = gh.fetch_issue(repo, number).await.map_err(|e| match e {
@@ -764,7 +765,11 @@ pub async fn process_issue(
         route_name,
         route.label.as_deref(),
     );
-    let subject = adapters::issue_to_subject(&issue, &branch);
+    let mut subject = adapters::issue_to_subject(&issue, &branch);
+
+    if let Some(ref base) = base_branch_override {
+        subject.base_branch = Some(base.clone());
+    }
 
     let mut matched = MatchedWork {
         subject,
