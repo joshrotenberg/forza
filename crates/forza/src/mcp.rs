@@ -1,6 +1,6 @@
 //! MCP server — exposes forza capabilities over the Model Context Protocol.
 //!
-//! Three tool groups share an [`AppState`] holding the loaded config and the
+//! Four tool groups share an [`AppState`] holding the loaded config and the
 //! run-state directory:
 //!
 //! - **Runner** (`issue_run`, `pr_run`, `run_batch`, `dry_run_issue`): single-shot
@@ -9,6 +9,9 @@
 //!   `status_find_issue`): read persisted run records from disk.
 //! - **Config** (`config_show`, `config_validate`): inspect or validate
 //!   configuration.
+//! - **Plan** (`plan_create`, `plan_list`, `plan_revise`, `plan_exec`,
+//!   `plan_exec_dry_run`, `plan_status`): create, list, revise, and execute
+//!   plan issues.
 
 use std::path::PathBuf;
 
@@ -94,6 +97,60 @@ struct StatusFindIssueInput {
 struct ConfigValidateInput {
     /// Path to the config file to validate.
     path: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanCreateInput {
+    /// Explicit issue numbers to include in the plan. Mutually exclusive with `label`.
+    issues: Option<Vec<String>>,
+    /// Label to filter issues by. Mutually exclusive with `issues`.
+    label: Option<String>,
+    /// Maximum number of issues to include (default 20).
+    limit: Option<usize>,
+    /// Model override for the plan agent.
+    model: Option<String>,
+    /// Repository (owner/name). Required when multiple repos are configured.
+    repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanListInput {
+    /// Repository (owner/name). Required when multiple repos are configured.
+    repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanReviseInput {
+    /// Plan issue number to revise.
+    plan_issue: u64,
+    /// Repository (owner/name). Required when multiple repos are configured.
+    repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanExecInput {
+    /// Plan issue number to execute.
+    plan_issue: u64,
+    /// Repository (owner/name). Required when multiple repos are configured.
+    repo: Option<String>,
+    /// Close the plan issue after execution completes.
+    close: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanExecDryRunInput {
+    /// Plan issue number to preview.
+    plan_issue: u64,
+    /// Repository (owner/name). Required when multiple repos are configured.
+    repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanStatusInput {
+    /// Plan issue number to check status for.
+    plan_issue: u64,
+    /// Repository (owner/name). Required when multiple repos are configured.
+    repo: Option<String>,
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -453,13 +510,521 @@ pub fn build_router(state: AppState) -> McpRouter {
         )
         .build();
 
+    // ── Plan: plan_create ─────────────────────────────────────────────────────
+    let plan_create = ToolBuilder::new("plan_create")
+        .description("Analyze open issues and create a plan issue with a dependency graph")
+        .extractor_handler(
+            s.clone(),
+            |State(app): State<Arc<AppState>>, Json(input): Json<PlanCreateInput>| async move {
+                let (repo, explicit_dir, routes) =
+                    match resolve_repo(&app.config, input.repo.as_deref()) {
+                        Ok(r) => r,
+                        Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                    };
+                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir, &*app.git)
+                    .await
+                {
+                    Ok(p) => p,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let issues: Vec<crate::github::IssueCandidate> = if let Some(label) = &input.label {
+                    let mut issues = match app.gh.fetch_issues_with_label(&repo, label).await {
+                        Ok(v) => v,
+                        Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                    };
+                    issues.truncate(input.limit.unwrap_or(20));
+                    issues
+                } else if let Some(issue_refs) = &input.issues {
+                    let mut result = Vec::new();
+                    for r in issue_refs {
+                        let n: u64 = match r.parse() {
+                            Ok(n) => n,
+                            Err(_) => {
+                                return Ok(CallToolResult::text(format!(
+                                    "error: invalid issue number: {r}"
+                                )));
+                            }
+                        };
+                        match app.gh.fetch_issue(&repo, n).await {
+                            Ok(issue) => result.push(issue),
+                            Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                        }
+                    }
+                    result
+                } else {
+                    let limit = input.limit.unwrap_or(20);
+                    let issues = match app.gh.fetch_eligible_issues(&repo, &[], limit).await {
+                        Ok(v) => v,
+                        Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                    };
+                    let lifecycle = ["forza:in-progress", "forza:complete", "forza:needs-human"];
+                    issues
+                        .into_iter()
+                        .filter(|i| !i.labels.iter().any(|l| lifecycle.contains(&l.as_str())))
+                        .collect()
+                };
+
+                if issues.is_empty() {
+                    return Ok(CallToolResult::text("error: no issues to plan".to_string()));
+                }
+
+                let route_summary = crate::plan::build_route_summary(&routes);
+                let issue_summaries = crate::plan::build_issue_summaries(&issues);
+                let issue_refs_str = crate::plan::build_issue_refs(&issues);
+
+                let preamble = forza_core::planner::make_preamble(&repo);
+                let prompt = forza_core::planner::PROMPT_CMD_PLAN
+                    .replace("{preamble}", &preamble)
+                    .replace("{repo}", &repo)
+                    .replace("{routes}", &route_summary)
+                    .replace("{issues}", &issue_summaries)
+                    .replace("{issue_refs}", &issue_refs_str);
+
+                let model = input
+                    .model
+                    .clone()
+                    .or_else(|| app.config.global.model.clone());
+
+                let agent: std::sync::Arc<dyn forza_core::AgentExecutor> =
+                    match app.config.global.agent.as_str() {
+                        "codex" => std::sync::Arc::new(crate::adapters::CodexAgentAdapter),
+                        _ => std::sync::Arc::new(crate::adapters::ClaudeAgentAdapter),
+                    };
+                let allowed_tools: Vec<String> = vec![
+                    "Read".into(),
+                    "Glob".into(),
+                    "Grep".into(),
+                    "Bash(gh *)".into(),
+                ];
+                match agent
+                    .execute(
+                        "plan",
+                        &prompt,
+                        &rd,
+                        model.as_deref(),
+                        &[],
+                        None,
+                        None,
+                        &allowed_tools,
+                    )
+                    .await
+                {
+                    Ok(_) => Ok(CallToolResult::text(format!(
+                        "plan creation completed for repo {repo}"
+                    ))),
+                    Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
+                }
+            },
+        )
+        .build();
+
+    // ── Plan: plan_list ───────────────────────────────────────────────────────
+    let plan_list = ToolBuilder::new("plan_list")
+        .description("List open plan issues for the configured repository")
+        .extractor_handler(
+            s.clone(),
+            |State(app): State<Arc<AppState>>, Json(input): Json<PlanListInput>| async move {
+                let (repo, _, _) = match resolve_repo(&app.config, input.repo.as_deref()) {
+                    Ok(r) => r,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let plan_issues = match app.gh.fetch_issues_with_label(&repo, "forza:plan").await {
+                    Ok(v) => v,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                #[derive(Serialize)]
+                struct PlanSummary {
+                    number: u64,
+                    title: String,
+                    item_count: usize,
+                }
+
+                let summaries: Vec<PlanSummary> = plan_issues
+                    .into_iter()
+                    .map(|issue| {
+                        let item_count = crate::plan::parse_plan_dag(&issue.body)
+                            .map(|dag| dag.len())
+                            .unwrap_or(0);
+                        PlanSummary {
+                            number: issue.number,
+                            title: issue.title,
+                            item_count,
+                        }
+                    })
+                    .collect();
+
+                Ok(CallToolResult::text(
+                    serde_json::to_string_pretty(&summaries).unwrap_or_default(),
+                ))
+            },
+        )
+        .build();
+
+    // ── Plan: plan_revise ─────────────────────────────────────────────────────
+    let plan_revise = ToolBuilder::new("plan_revise")
+        .description("Revise a plan issue based on its comments")
+        .extractor_handler(
+            s.clone(),
+            |State(app): State<Arc<AppState>>, Json(input): Json<PlanReviseInput>| async move {
+                let (repo, explicit_dir, _) = match resolve_repo(&app.config, input.repo.as_deref())
+                {
+                    Ok(r) => r,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir, &*app.git)
+                    .await
+                {
+                    Ok(p) => p,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let plan_issue = match app.gh.fetch_issue(&repo, input.plan_issue).await {
+                    Ok(i) => i,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                if !plan_issue.labels.iter().any(|l| l == "forza:plan") {
+                    return Ok(CallToolResult::text(format!(
+                        "error: issue #{} is not a plan issue (missing forza:plan label)",
+                        input.plan_issue
+                    )));
+                }
+
+                let comments_text = if plan_issue.comments.is_empty() {
+                    "(no comments)".to_string()
+                } else {
+                    plan_issue
+                        .comments
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| format!("### Comment {}\n\n{}", i + 1, c))
+                        .collect::<Vec<_>>()
+                        .join("\n\n---\n\n")
+                };
+
+                let preamble = forza_core::planner::make_preamble(&repo);
+                let prompt = forza_core::planner::PROMPT_CMD_PLAN_REVISE
+                    .replace("{preamble}", &preamble)
+                    .replace("{repo}", &repo)
+                    .replace("{plan_number}", &input.plan_issue.to_string())
+                    .replace("{plan_body}", &plan_issue.body)
+                    .replace("{comments}", &comments_text);
+
+                let agent: std::sync::Arc<dyn forza_core::AgentExecutor> =
+                    match app.config.global.agent.as_str() {
+                        "codex" => std::sync::Arc::new(crate::adapters::CodexAgentAdapter),
+                        _ => std::sync::Arc::new(crate::adapters::ClaudeAgentAdapter),
+                    };
+                let allowed_tools: Vec<String> = vec![
+                    "Read".into(),
+                    "Glob".into(),
+                    "Grep".into(),
+                    "Bash(gh *)".into(),
+                ];
+                match agent
+                    .execute(
+                        "plan",
+                        &prompt,
+                        &rd,
+                        app.config.global.model.as_deref(),
+                        &[],
+                        None,
+                        None,
+                        &allowed_tools,
+                    )
+                    .await
+                {
+                    Ok(_) => Ok(CallToolResult::text(format!(
+                        "plan revision completed for plan #{}",
+                        input.plan_issue
+                    ))),
+                    Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
+                }
+            },
+        )
+        .build();
+
+    // ── Plan: plan_exec ───────────────────────────────────────────────────────
+    let plan_exec = ToolBuilder::new("plan_exec")
+        .description("Execute a plan issue in dependency order")
+        .extractor_handler(
+            s.clone(),
+            |State(app): State<Arc<AppState>>, Json(input): Json<PlanExecInput>| async move {
+                let (repo, explicit_dir, routes) =
+                    match resolve_repo(&app.config, input.repo.as_deref()) {
+                        Ok(r) => r,
+                        Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                    };
+                let rd = match crate::isolation::find_or_clone_repo(&repo, explicit_dir, &*app.git)
+                    .await
+                {
+                    Ok(p) => p,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let plan_issue = match app.gh.fetch_issue(&repo, input.plan_issue).await {
+                    Ok(i) => i,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                if !plan_issue.labels.iter().any(|l| l == "forza:plan") {
+                    return Ok(CallToolResult::text(format!(
+                        "error: issue #{} is not a plan issue (missing forza:plan label)",
+                        input.plan_issue
+                    )));
+                }
+
+                let dag = match crate::plan::parse_plan_dag(&plan_issue.body) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Ok(CallToolResult::text(format!(
+                            "error: could not parse plan DAG: {e}"
+                        )))
+                    }
+                };
+
+                let order = match crate::plan::topological_sort(&dag) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        return Ok(CallToolResult::text(format!(
+                            "error: dependency sort failed: {e}"
+                        )))
+                    }
+                };
+
+                let close = input.close.unwrap_or(false);
+                let mut succeeded = 0u64;
+                let mut failed = 0u64;
+                let mut skipped: std::collections::HashSet<u64> =
+                    std::collections::HashSet::new();
+
+                for issue_number in &order {
+                    if let Some(deps) = dag.get(issue_number)
+                        && deps.iter().any(|d| skipped.contains(d))
+                    {
+                        skipped.insert(*issue_number);
+                        continue;
+                    }
+
+                    match crate::runner::process_issue(
+                        *issue_number,
+                        &repo,
+                        &app.config,
+                        &routes,
+                        &app.state_dir,
+                        &rd,
+                        app.gh.clone(),
+                        app.git.clone(),
+                        None,
+                        vec![],
+                    )
+                    .await
+                    {
+                        Ok(run) => {
+                            if run.status == forza_core::RunStatus::Succeeded {
+                                succeeded += 1;
+                            } else {
+                                failed += 1;
+                                skipped.insert(*issue_number);
+                            }
+                        }
+                        Err(e) => {
+                            failed += 1;
+                            skipped.insert(*issue_number);
+                            tracing::error!(error = ?e, issue = issue_number, "plan exec issue failed");
+                        }
+                    }
+                }
+
+                if close {
+                    let summary = format!(
+                        "Plan execution complete: {succeeded} succeeded, {failed} failed, {} skipped.",
+                        skipped.len().saturating_sub(failed as usize)
+                    );
+                    if let Err(e) = app.gh.comment_on_issue(&repo, input.plan_issue, &summary).await {
+                        tracing::error!(error = ?e, plan = input.plan_issue, "failed to post plan summary comment");
+                    }
+                    if let Err(e) = app.gh.close_issue(&repo, input.plan_issue).await {
+                        tracing::error!(error = ?e, plan = input.plan_issue, "failed to close plan issue");
+                    }
+                }
+
+                Ok(CallToolResult::text(format!(
+                    "plan exec completed: {succeeded} succeeded, {failed} failed, {} skipped",
+                    skipped.len().saturating_sub(failed as usize)
+                )))
+            },
+        )
+        .build();
+
+    // ── Plan: plan_exec_dry_run ───────────────────────────────────────────────
+    let plan_exec_dry_run = ToolBuilder::new("plan_exec_dry_run")
+        .description(
+            "Show the topological execution order for a plan issue without processing any issues",
+        )
+        .extractor_handler(
+            s.clone(),
+            |State(app): State<Arc<AppState>>, Json(input): Json<PlanExecDryRunInput>| async move {
+                let (repo, _, _) = match resolve_repo(&app.config, input.repo.as_deref()) {
+                    Ok(r) => r,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let plan_issue = match app.gh.fetch_issue(&repo, input.plan_issue).await {
+                    Ok(i) => i,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let dag = match crate::plan::parse_plan_dag(&plan_issue.body) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Ok(CallToolResult::text(format!(
+                            "error: could not parse plan DAG: {e}"
+                        )));
+                    }
+                };
+
+                let order = match crate::plan::topological_sort(&dag) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        return Ok(CallToolResult::text(format!(
+                            "error: dependency sort failed: {e}"
+                        )));
+                    }
+                };
+
+                #[derive(Serialize)]
+                struct PlanExecItem {
+                    issue_number: u64,
+                    deps: Vec<u64>,
+                }
+
+                #[derive(Serialize)]
+                struct PlanExecDryRunResponse {
+                    plan_number: u64,
+                    order: Vec<PlanExecItem>,
+                }
+
+                let items = order
+                    .into_iter()
+                    .map(|n| PlanExecItem {
+                        issue_number: n,
+                        deps: dag.get(&n).cloned().unwrap_or_default(),
+                    })
+                    .collect();
+
+                Ok(CallToolResult::text(
+                    serde_json::to_string_pretty(&PlanExecDryRunResponse {
+                        plan_number: input.plan_issue,
+                        order: items,
+                    })
+                    .unwrap_or_default(),
+                ))
+            },
+        )
+        .build();
+
+    // ── Plan: plan_status ─────────────────────────────────────────────────────
+    let plan_status = ToolBuilder::new("plan_status")
+        .description("Check the execution status of each issue in a plan")
+        .extractor_handler(
+            s.clone(),
+            |State(app): State<Arc<AppState>>, Json(input): Json<PlanStatusInput>| async move {
+                let (repo, _, _) = match resolve_repo(&app.config, input.repo.as_deref()) {
+                    Ok(r) => r,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let plan_issue = match app.gh.fetch_issue(&repo, input.plan_issue).await {
+                    Ok(i) => i,
+                    Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
+                };
+
+                let dag = match crate::plan::parse_plan_dag(&plan_issue.body) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Ok(CallToolResult::text(format!(
+                            "error: could not parse plan DAG: {e}"
+                        )));
+                    }
+                };
+
+                let order = match crate::plan::topological_sort(&dag) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        return Ok(CallToolResult::text(format!(
+                            "error: dependency sort failed: {e}"
+                        )));
+                    }
+                };
+
+                #[derive(Serialize)]
+                struct PlanIssueStatus {
+                    issue_number: u64,
+                    github_state: String,
+                    status: String,
+                }
+
+                let all_runs = crate::state::load_all_runs(&app.state_dir);
+                let mut failed_issues: std::collections::HashSet<u64> =
+                    std::collections::HashSet::new();
+                let mut statuses = Vec::new();
+
+                for issue_number in &order {
+                    let github_state = app
+                        .gh
+                        .fetch_issue_state(&repo, *issue_number)
+                        .await
+                        .unwrap_or_else(|_| "unknown".to_string());
+
+                    let issue_labels = app
+                        .gh
+                        .fetch_issue(&repo, *issue_number)
+                        .await
+                        .map(|i| i.labels)
+                        .unwrap_or_default();
+
+                    let status = if issue_labels.iter().any(|l| l == "forza:complete") {
+                        "complete".to_string()
+                    } else if all_runs.iter().any(|r| {
+                        r.issue_number == *issue_number
+                            && r.status == crate::state::RunStatus::Failed
+                    }) {
+                        failed_issues.insert(*issue_number);
+                        "failed".to_string()
+                    } else if let Some(deps) = dag.get(issue_number)
+                        && deps.iter().any(|d| failed_issues.contains(d))
+                    {
+                        "blocked".to_string()
+                    } else {
+                        "pending".to_string()
+                    };
+
+                    statuses.push(PlanIssueStatus {
+                        issue_number: *issue_number,
+                        github_state,
+                        status,
+                    });
+                }
+
+                Ok(CallToolResult::text(
+                    serde_json::to_string_pretty(&statuses).unwrap_or_default(),
+                ))
+            },
+        )
+        .build();
+
     McpRouter::new()
         .server_info("forza", env!("CARGO_PKG_VERSION"))
         .instructions(
             "Forza autonomous GitHub issue runner. \
              Use runner tools to process issues/PRs, \
              status tools to query run history, \
-             and config tools to inspect or validate configuration.",
+             config tools to inspect or validate configuration, \
+             and plan tools to create, list, revise, and execute plan issues.",
         )
         .tool(issue_run)
         .tool(pr_run)
@@ -472,6 +1037,12 @@ pub fn build_router(state: AppState) -> McpRouter {
         .tool(status_find_issue)
         .tool(config_show)
         .tool(config_validate)
+        .tool(plan_create)
+        .tool(plan_list)
+        .tool(plan_revise)
+        .tool(plan_exec)
+        .tool(plan_exec_dry_run)
+        .tool(plan_status)
 }
 
 /// Start the MCP server on stdio transport.
