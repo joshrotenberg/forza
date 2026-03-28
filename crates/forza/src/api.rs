@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::config::{Route, RunnerConfig};
+use crate::plan::{
+    build_issue_refs, build_issue_summaries, build_route_summary, parse_plan_dag, topological_sort,
+};
 use crate::state::RunRecord;
 
 /// Shared application state injected into every handler.
@@ -179,6 +182,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/runs/pr/{number}", post(trigger_pr))
         // Config group
         .route("/config", get(get_config))
+        // Plan group
+        .route("/plans", post(create_plan))
+        .route("/plans", get(list_plans))
+        .route("/plans/{number}", get(get_plan))
+        .route("/plans/{number}/revise", post(revise_plan))
+        .route("/plans/{number}/exec", post(exec_plan))
+        .route("/plans/{number}/exec/status", get(plan_exec_status))
         .with_state(state)
 }
 
@@ -440,6 +450,516 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
         }),
     )
         .into_response())
+}
+
+// --- Plan types ---
+
+/// Request body for `POST /plans`.
+#[derive(Deserialize)]
+struct PlanCreateRequest {
+    issues: Option<Vec<String>>,
+    label: Option<String>,
+    limit: Option<usize>,
+    model: Option<String>,
+    repo: Option<String>,
+}
+
+/// A single plan issue summary returned by `GET /plans`.
+#[derive(Serialize)]
+struct PlanSummary {
+    number: u64,
+    title: String,
+    item_count: usize,
+}
+
+/// A single node in the plan DAG.
+#[derive(Serialize)]
+struct PlanNode {
+    issue_number: u64,
+    deps: Vec<u64>,
+}
+
+/// Response for `GET /plans/{number}`.
+#[derive(Serialize)]
+struct PlanDetailResponse {
+    number: u64,
+    title: String,
+    body: String,
+    nodes: Vec<PlanNode>,
+}
+
+/// Request body for `POST /plans/{number}/exec`.
+#[derive(Deserialize, Default)]
+struct PlanExecRequest {
+    dry_run: Option<bool>,
+    close: Option<bool>,
+}
+
+/// One item in a dry-run exec response.
+#[derive(Serialize)]
+struct PlanExecItem {
+    issue_number: u64,
+    deps: Vec<u64>,
+}
+
+/// Response for `POST /plans/{number}/exec` when `dry_run` is true.
+#[derive(Serialize)]
+struct PlanExecDryRunResponse {
+    plan_number: u64,
+    order: Vec<PlanExecItem>,
+}
+
+/// Per-issue status entry for `GET /plans/{number}/exec/status`.
+#[derive(Serialize)]
+struct PlanIssueStatus {
+    issue_number: u64,
+    github_state: String,
+    status: String,
+}
+
+// --- Plan handlers ---
+
+async fn create_plan(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PlanCreateRequest>,
+) -> Result<Response, ApiError> {
+    let (repo, rd, routes) =
+        resolve_repo_for_api(body.repo.as_deref(), &state.config, &*state.git).await?;
+
+    // Fetch issues for the plan.
+    let issues: Vec<crate::github::IssueCandidate> = if let Some(label) = &body.label {
+        let mut issues = state
+            .gh
+            .fetch_issues_with_label(&repo, label)
+            .await
+            .map_err(|e| ApiError::Internal(e.to_string()))?;
+        let limit = body.limit.unwrap_or(20);
+        issues.truncate(limit);
+        issues
+    } else if let Some(issue_refs) = &body.issues {
+        let mut result = Vec::new();
+        for r in issue_refs {
+            let n: u64 = r
+                .parse()
+                .map_err(|_| ApiError::BadRequest(format!("invalid issue number: {r}")))?;
+            let issue = state
+                .gh
+                .fetch_issue(&repo, n)
+                .await
+                .map_err(|e| ApiError::Internal(e.to_string()))?;
+            result.push(issue);
+        }
+        result
+    } else {
+        let limit = body.limit.unwrap_or(20);
+        let issues = state
+            .gh
+            .fetch_eligible_issues(&repo, &[], limit)
+            .await
+            .map_err(|e| ApiError::Internal(e.to_string()))?;
+        let lifecycle = ["forza:in-progress", "forza:complete", "forza:needs-human"];
+        issues
+            .into_iter()
+            .filter(|i| !i.labels.iter().any(|l| lifecycle.contains(&l.as_str())))
+            .collect()
+    };
+
+    if issues.is_empty() {
+        return Err(ApiError::BadRequest("no issues to plan".into()));
+    }
+
+    let route_summary = build_route_summary(&routes);
+    let issue_summaries = build_issue_summaries(&issues);
+    let issue_refs_str = build_issue_refs(&issues);
+
+    let preamble = forza_core::planner::make_preamble(&repo);
+    let prompt = forza_core::planner::PROMPT_CMD_PLAN
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", &repo)
+        .replace("{routes}", &route_summary)
+        .replace("{issues}", &issue_summaries)
+        .replace("{issue_refs}", &issue_refs_str);
+
+    let model = body
+        .model
+        .clone()
+        .or_else(|| state.config.global.model.clone());
+    let config = state.config.clone();
+
+    tokio::spawn(async move {
+        let agent: std::sync::Arc<dyn forza_core::AgentExecutor> =
+            match config.global.agent.as_str() {
+                "codex" => std::sync::Arc::new(crate::adapters::CodexAgentAdapter),
+                _ => std::sync::Arc::new(crate::adapters::ClaudeAgentAdapter),
+            };
+        let allowed_tools: Vec<String> = vec![
+            "Read".into(),
+            "Glob".into(),
+            "Grep".into(),
+            "Bash(gh *)".into(),
+        ];
+        match agent
+            .execute(
+                "plan",
+                &prompt,
+                &rd,
+                model.as_deref(),
+                &[],
+                None,
+                None,
+                &allowed_tools,
+            )
+            .await
+        {
+            Ok(_) => info!(repo = repo, "background plan creation completed"),
+            Err(e) => error!(error = ?e, repo = repo, "background plan creation failed"),
+        }
+    });
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(AcceptedResponse {
+            status: "accepted",
+            message: "plan creation queued",
+        }),
+    )
+        .into_response())
+}
+
+async fn list_plans(
+    Query(query): Query<TriggerQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<PlanSummary>>, ApiError> {
+    let (repo, _, _) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
+
+    let plan_issues = state
+        .gh
+        .fetch_issues_with_label(&repo, "forza:plan")
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let summaries = plan_issues
+        .into_iter()
+        .map(|issue| {
+            let item_count = parse_plan_dag(&issue.body)
+                .map(|dag| dag.len())
+                .unwrap_or(0);
+            PlanSummary {
+                number: issue.number,
+                title: issue.title,
+                item_count,
+            }
+        })
+        .collect();
+
+    Ok(Json(summaries))
+}
+
+async fn get_plan(
+    Path(number): Path<u64>,
+    Query(query): Query<TriggerQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<PlanDetailResponse>, ApiError> {
+    let (repo, _, _) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
+
+    let issue = state
+        .gh
+        .fetch_issue(&repo, number)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let dag = parse_plan_dag(&issue.body)
+        .map_err(|e| ApiError::BadRequest(format!("could not parse plan DAG: {e}")))?;
+
+    let order = topological_sort(&dag)
+        .map_err(|e| ApiError::Internal(format!("dependency sort failed: {e}")))?;
+
+    let nodes = order
+        .into_iter()
+        .map(|n| PlanNode {
+            issue_number: n,
+            deps: dag.get(&n).cloned().unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(Json(PlanDetailResponse {
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        nodes,
+    }))
+}
+
+async fn revise_plan(
+    Path(number): Path<u64>,
+    Query(query): Query<TriggerQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Response, ApiError> {
+    let (repo, rd, _) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
+
+    let plan_issue = state
+        .gh
+        .fetch_issue(&repo, number)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    if !plan_issue.labels.iter().any(|l| l == "forza:plan") {
+        return Err(ApiError::BadRequest(format!(
+            "issue #{number} is not a plan issue (missing forza:plan label)"
+        )));
+    }
+
+    let comments_text = if plan_issue.comments.is_empty() {
+        "(no comments)".to_string()
+    } else {
+        plan_issue
+            .comments
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("### Comment {}\n\n{}", i + 1, c))
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n")
+    };
+
+    let preamble = forza_core::planner::make_preamble(&repo);
+    let prompt = forza_core::planner::PROMPT_CMD_PLAN_REVISE
+        .replace("{preamble}", &preamble)
+        .replace("{repo}", &repo)
+        .replace("{plan_number}", &number.to_string())
+        .replace("{plan_body}", &plan_issue.body)
+        .replace("{comments}", &comments_text);
+
+    let config = state.config.clone();
+
+    tokio::spawn(async move {
+        let agent: std::sync::Arc<dyn forza_core::AgentExecutor> =
+            match config.global.agent.as_str() {
+                "codex" => std::sync::Arc::new(crate::adapters::CodexAgentAdapter),
+                _ => std::sync::Arc::new(crate::adapters::ClaudeAgentAdapter),
+            };
+        let allowed_tools: Vec<String> = vec![
+            "Read".into(),
+            "Glob".into(),
+            "Grep".into(),
+            "Bash(gh *)".into(),
+        ];
+        match agent
+            .execute(
+                "plan",
+                &prompt,
+                &rd,
+                config.global.model.as_deref(),
+                &[],
+                None,
+                None,
+                &allowed_tools,
+            )
+            .await
+        {
+            Ok(_) => info!(plan = number, "background plan revision completed"),
+            Err(e) => error!(error = ?e, plan = number, "background plan revision failed"),
+        }
+    });
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(AcceptedResponse {
+            status: "accepted",
+            message: "plan revision queued",
+        }),
+    )
+        .into_response())
+}
+
+async fn exec_plan(
+    Path(number): Path<u64>,
+    Query(query): Query<TriggerQuery>,
+    State(state): State<Arc<AppState>>,
+    body: Option<Json<PlanExecRequest>>,
+) -> Result<Response, ApiError> {
+    let req = body.map(|b| b.0).unwrap_or_default();
+    let (repo, rd, routes) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
+
+    let plan_issue = state
+        .gh
+        .fetch_issue(&repo, number)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    if !plan_issue.labels.iter().any(|l| l == "forza:plan") {
+        return Err(ApiError::BadRequest(format!(
+            "issue #{number} is not a plan issue (missing forza:plan label)"
+        )));
+    }
+
+    let dag = parse_plan_dag(&plan_issue.body)
+        .map_err(|e| ApiError::BadRequest(format!("could not parse plan DAG: {e}")))?;
+
+    let order = topological_sort(&dag)
+        .map_err(|e| ApiError::Internal(format!("dependency sort failed: {e}")))?;
+
+    if req.dry_run.unwrap_or(false) {
+        let items = order
+            .into_iter()
+            .map(|n| PlanExecItem {
+                issue_number: n,
+                deps: dag.get(&n).cloned().unwrap_or_default(),
+            })
+            .collect();
+        return Ok(Json(PlanExecDryRunResponse {
+            plan_number: number,
+            order: items,
+        })
+        .into_response());
+    }
+
+    let config = state.config.clone();
+    let state_dir = state.state_dir.clone();
+    let gh = state.gh.clone();
+    let git = state.git.clone();
+    let close = req.close.unwrap_or(false);
+
+    tokio::spawn(async move {
+        let mut succeeded = 0u64;
+        let mut failed = 0u64;
+        let mut skipped: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+        for issue_number in &order {
+            if let Some(deps) = dag.get(issue_number)
+                && deps.iter().any(|d| skipped.contains(d))
+            {
+                skipped.insert(*issue_number);
+                continue;
+            }
+
+            match crate::runner::process_issue(
+                *issue_number,
+                &repo,
+                &config,
+                &routes,
+                &state_dir,
+                &rd,
+                gh.clone(),
+                git.clone(),
+                None,
+                vec![],
+            )
+            .await
+            {
+                Ok(run) => {
+                    if run.status == forza_core::RunStatus::Succeeded {
+                        succeeded += 1;
+                    } else {
+                        failed += 1;
+                        skipped.insert(*issue_number);
+                    }
+                }
+                Err(e) => {
+                    error!(error = ?e, issue = issue_number, "plan exec issue failed");
+                    failed += 1;
+                    skipped.insert(*issue_number);
+                }
+            }
+        }
+
+        info!(
+            plan = number,
+            succeeded = succeeded,
+            failed = failed,
+            "background plan exec completed"
+        );
+
+        if close {
+            let summary = format!(
+                "Plan execution complete: {succeeded} succeeded, {failed} failed, {} skipped.",
+                skipped.len().saturating_sub(failed as usize)
+            );
+            if let Err(e) = gh.comment_on_issue(&repo, number, &summary).await {
+                error!(error = ?e, plan = number, "failed to post plan summary comment");
+            }
+            if let Err(e) = gh.close_issue(&repo, number).await {
+                error!(error = ?e, plan = number, "failed to close plan issue");
+            }
+        }
+    });
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(AcceptedResponse {
+            status: "accepted",
+            message: "plan execution queued",
+        }),
+    )
+        .into_response())
+}
+
+async fn plan_exec_status(
+    Path(number): Path<u64>,
+    Query(query): Query<TriggerQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<PlanIssueStatus>>, ApiError> {
+    let (repo, _, _) =
+        resolve_repo_for_api(query.repo.as_deref(), &state.config, &*state.git).await?;
+
+    let plan_issue = state
+        .gh
+        .fetch_issue(&repo, number)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let dag = parse_plan_dag(&plan_issue.body)
+        .map_err(|e| ApiError::BadRequest(format!("could not parse plan DAG: {e}")))?;
+
+    let order = topological_sort(&dag)
+        .map_err(|e| ApiError::Internal(format!("dependency sort failed: {e}")))?;
+
+    let all_runs = crate::state::load_all_runs(&state.state_dir);
+    let mut failed_issues: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut statuses = Vec::new();
+
+    for issue_number in &order {
+        let github_state = state
+            .gh
+            .fetch_issue_state(&repo, *issue_number)
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        // Check if issue has forza:complete label.
+        let issue_labels = state
+            .gh
+            .fetch_issue(&repo, *issue_number)
+            .await
+            .map(|i| i.labels)
+            .unwrap_or_default();
+
+        let status = if issue_labels.iter().any(|l| l == "forza:complete") {
+            "complete".to_string()
+        } else if all_runs
+            .iter()
+            .any(|r| r.issue_number == *issue_number && r.status == crate::state::RunStatus::Failed)
+        {
+            failed_issues.insert(*issue_number);
+            "failed".to_string()
+        } else if let Some(deps) = dag.get(issue_number)
+            && deps.iter().any(|d| failed_issues.contains(d))
+        {
+            "blocked".to_string()
+        } else {
+            "pending".to_string()
+        };
+
+        statuses.push(PlanIssueStatus {
+            issue_number: *issue_number,
+            github_state,
+            status,
+        });
+    }
+
+    Ok(Json(statuses))
 }
 
 #[cfg(test)]

@@ -33,6 +33,7 @@ pub mod github;
 pub mod isolation;
 pub mod mcp;
 pub mod notifications;
+pub mod plan;
 pub mod planner;
 pub mod runner;
 pub mod state;
