@@ -1461,6 +1461,17 @@ async fn cmd_issue(
         return ExitCode::SUCCESS;
     }
 
+    // Check for plan issues before processing.
+    if let Ok(issue) = gh.fetch_issue(&repo, args.number).await
+        && issue.labels.iter().any(|l| l == "forza:plan")
+    {
+        eprintln!(
+            "issue #{} is a plan issue. Use `forza plan --exec {}` to execute it.",
+            args.number, args.number
+        );
+        return ExitCode::FAILURE;
+    }
+
     match forza::runner::process_issue(
         args.number,
         &repo,
