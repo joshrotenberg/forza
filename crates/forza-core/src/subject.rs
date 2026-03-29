@@ -96,6 +96,7 @@ impl Subject {
             ("FORZA_REPO", self.repo.clone()),
             ("FORZA_SUBJECT_TYPE", self.kind.as_str().to_string()),
             ("FORZA_SUBJECT_NUMBER", self.number.to_string()),
+            ("FORZA_SUBJECT_TITLE", self.title.clone()),
             ("FORZA_BRANCH", self.branch.clone()),
             ("FORZA_RUN_ID", run_id.to_string()),
             ("FORZA_ROUTE", route.to_string()),
@@ -182,6 +183,7 @@ mod tests {
         assert_eq!(map["FORZA_REPO"], "owner/repo");
         assert_eq!(map["FORZA_SUBJECT_TYPE"], "issue");
         assert_eq!(map["FORZA_SUBJECT_NUMBER"], "42");
+        assert_eq!(map["FORZA_SUBJECT_TITLE"], "Fix the bug");
         assert_eq!(map["FORZA_ISSUE_NUMBER"], "42");
         assert_eq!(map["FORZA_BRANCH"], "automation/42-fix-the-bug");
         assert_eq!(map["FORZA_RUN_ID"], "run-123");
