@@ -8,6 +8,7 @@ license.workspace = true
 description = "Configurable workflow orchestrator for agent driven software development"
 repository.workspace = true
 homepage = "https://github.com/joshrotenberg/forza"
+readme = "../../README.md"
 keywords = ["github", "automation", "issues", "pull-requests", "ci"]
 categories = ["command-line-utilities", "development-tools"]
 
