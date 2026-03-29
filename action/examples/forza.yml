@@ -40,9 +40,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Claude Code
-        run: curl -fsSL https://claude.ai/install.sh | bash
-
       - uses: joshrotenberg/forza/action@main
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

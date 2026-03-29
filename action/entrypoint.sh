@@ -5,7 +5,6 @@
 # For explicit commands, passes through directly.
 set -euo pipefail
 
-CONFIG="--config ${FORZA_CONFIG}"
 COMMAND="${FORZA_COMMAND}"
 ARGS="${FORZA_ARGS}"
 
@@ -51,10 +50,13 @@ if [ "$COMMAND" = "auto" ]; then
   esac
 fi
 
-echo "Running: forza ${COMMAND} ${CONFIG} ${ARGS}"
+# Build the full command. Config flag goes after args since positional args
+# (like issue number) must come right after the subcommand.
+CMD="forza ${COMMAND} ${ARGS} --config ${FORZA_CONFIG}"
+echo "Running: ${CMD}"
 
 # Capture output for action outputs.
-OUTPUT=$(forza ${COMMAND} ${CONFIG} ${ARGS} 2>&1) || EXIT_CODE=$?
+OUTPUT=$(eval "${CMD}" 2>&1) || EXIT_CODE=$?
 EXIT_CODE=${EXIT_CODE:-0}
 
 echo "$OUTPUT"

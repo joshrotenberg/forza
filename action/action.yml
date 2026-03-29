@@ -4,8 +4,11 @@ author: "Josh Rotenberg"
 
 inputs:
   version:
-    description: "forza version to install (e.g. '0.3.0', 'latest', 'source')"
+    description: "forza version to install (e.g. '0.5.0', 'latest', 'source', 'skip')"
     default: "latest"
+  agent:
+    description: "Agent to install and use: 'claude' (default) or 'codex'"
+    default: "claude"
   config:
     description: "Path to forza config file"
     default: "forza.toml"
@@ -34,12 +37,44 @@ branding:
 runs:
   using: "composite"
   steps:
+    - name: Install agent
+      shell: bash
+      env:
+        FORZA_AGENT: ${{ inputs.agent }}
+      run: |
+        set -euo pipefail
+        case "$FORZA_AGENT" in
+          claude)
+            echo "Installing Claude Code..."
+            curl -fsSL https://claude.ai/install.sh | bash
+            claude --version || echo "Claude Code installed"
+            ;;
+          codex)
+            echo "Installing Codex CLI..."
+            npm install -g @openai/codex
+            codex --version || echo "Codex CLI installed"
+            ;;
+          skip)
+            echo "Skipping agent install (pre-installed)"
+            ;;
+          *)
+            echo "Unknown agent: $FORZA_AGENT"
+            exit 1
+            ;;
+        esac
+
     - name: Install forza
       shell: bash
       env:
         FORZA_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
+
+        if [ "$FORZA_VERSION" = "skip" ]; then
+          echo "Skipping forza install (pre-installed)"
+          forza --version
+          exit 0
+        fi
 
         if [ "$FORZA_VERSION" = "source" ]; then
           echo "Installing forza from source (cargo install)"
