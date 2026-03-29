@@ -63,6 +63,10 @@ struct IssueRunInput {
     number: u64,
     /// Repository (owner/name). Required when multiple repos are configured.
     repo: Option<String>,
+    /// Override the workflow template, skipping route matching (e.g. "feature", "bug").
+    workflow: Option<String>,
+    /// Override the model for every stage (e.g. "claude-opus-4-6").
+    model: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -71,6 +75,10 @@ struct PrRunInput {
     number: u64,
     /// Repository (owner/name). Required when multiple repos are configured.
     repo: Option<String>,
+    /// Override the workflow template, skipping route matching (e.g. "pr-fix", "pr-rebase").
+    workflow: Option<String>,
+    /// Override the model for every stage (e.g. "claude-opus-4-6").
+    model: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -214,10 +222,10 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &rd,
                     app.gh.clone(),
                     app.git.clone(),
-                    None,
+                    input.model,
                     vec![],
                     None,
-                    None,
+                    input.workflow,
                 )
                 .await
                 {
@@ -256,10 +264,10 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &rd,
                     app.gh.clone(),
                     app.git.clone(),
-                    None,
+                    input.model,
                     vec![],
                     None,
-                    None,
+                    input.workflow,
                 )
                 .await
                 {
