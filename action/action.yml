@@ -98,7 +98,7 @@ runs:
 
         URL="https://github.com/joshrotenberg/forza/releases/download/forza-v${FORZA_VERSION}/forza-${ARCH}-unknown-${OS}-gnu.tar.xz"
         echo "Installing forza v${FORZA_VERSION} from ${URL}"
-        curl -sL "$URL" | tar xJ -C /usr/local/bin forza
+        curl -sL "$URL" | tar xJ --strip-components=1 -C /usr/local/bin
 
         forza --version
 
