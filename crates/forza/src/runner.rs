@@ -743,6 +743,7 @@ pub async fn process_issue(
     model_override: Option<String>,
     skill_overrides: Vec<String>,
     base_branch_override: Option<String>,
+    workflow_override: Option<String>,
 ) -> forza_core::Result<Run> {
     tracing::info!(number, repo, "processing issue");
     let issue = gh.fetch_issue(repo, number).await.map_err(|e| match e {
@@ -750,40 +751,80 @@ pub async fn process_issue(
         _ => forza_core::Error::GitHub(e.to_string()),
     })?;
 
-    let (route_name, route) = RunnerConfig::match_route_in(routes, &issue).ok_or_else(|| {
-        forza_core::Error::NoMatchingRoute(format!(
-            "no route matches issue #{number} (labels: {:?})",
-            issue.labels
-        ))
-    })?;
+    let mut matched = if let Some(wf_name) = workflow_override {
+        // Workflow override: skip route matching, build a synthetic route.
+        let branch = generate_branch(
+            &config.global.branch_pattern,
+            number,
+            &issue.title,
+            "direct",
+            None,
+        );
+        let mut subject = adapters::issue_to_subject(&issue, &branch);
+        if let Some(ref base) = base_branch_override {
+            subject.base_branch = Some(base.clone());
+        }
+        MatchedWork {
+            subject,
+            route_name: "direct".to_string(),
+            route: forza_core::Route {
+                subject_type: SubjectKind::Issue,
+                trigger: forza_core::Trigger::Label(String::new()),
+                workflow: wf_name.clone(),
+                scope: forza_core::Scope::All,
+                concurrency: 1,
+                poll_interval: 300,
+                max_retries: None,
+                model: model_override.clone(),
+                skills: if skill_overrides.is_empty() {
+                    None
+                } else {
+                    Some(skill_overrides.clone())
+                },
+                mcp_config: None,
+                validation_commands: None,
+            },
+            workflow_name: wf_name,
+        }
+    } else {
+        let (route_name, route) =
+            RunnerConfig::match_route_in(routes, &issue).ok_or_else(|| {
+                forza_core::Error::NoMatchingRoute(format!(
+                    "no route matches issue #{number} (labels: {:?})",
+                    issue.labels
+                ))
+            })?;
 
-    let wf_name = route.workflow.as_deref().unwrap_or("");
-    let branch = generate_branch(
-        config.effective_branch_pattern(route),
-        number,
-        &issue.title,
-        route_name,
-        route.label.as_deref(),
-    );
-    let mut subject = adapters::issue_to_subject(&issue, &branch);
+        let wf_name = route.workflow.as_deref().unwrap_or("");
+        let branch = generate_branch(
+            config.effective_branch_pattern(route),
+            number,
+            &issue.title,
+            route_name,
+            route.label.as_deref(),
+        );
+        let mut subject = adapters::issue_to_subject(&issue, &branch);
 
-    if let Some(ref base) = base_branch_override {
-        subject.base_branch = Some(base.clone());
-    }
+        if let Some(ref base) = base_branch_override {
+            subject.base_branch = Some(base.clone());
+        }
 
-    let mut matched = MatchedWork {
-        subject,
-        route_name: route_name.to_string(),
-        route: to_core_route(route),
-        workflow_name: wf_name.to_string(),
+        MatchedWork {
+            subject,
+            route_name: route_name.to_string(),
+            route: to_core_route(route),
+            workflow_name: wf_name.to_string(),
+        }
     };
 
-    // Apply CLI overrides.
-    if let Some(m) = model_override {
-        matched.route.model = Some(m);
-    }
-    if !skill_overrides.is_empty() {
-        matched.route.skills = Some(skill_overrides);
+    // Apply CLI overrides (for the route-matched path; workflow override path sets these above).
+    if matched.route_name != "direct" {
+        if let Some(m) = model_override {
+            matched.route.model = Some(m);
+        }
+        if !skill_overrides.is_empty() {
+            matched.route.skills = Some(skill_overrides);
+        }
     }
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
@@ -816,6 +857,7 @@ pub async fn process_pr(
     model_override: Option<String>,
     skill_overrides: Vec<String>,
     route_override: Option<String>,
+    workflow_override: Option<String>,
 ) -> forza_core::Result<Run> {
     tracing::info!(number, repo, "processing PR");
     let pr = gh.fetch_pr(repo, number).await.map_err(|e| match e {
@@ -823,35 +865,65 @@ pub async fn process_pr(
         _ => forza_core::Error::GitHub(e.to_string()),
     })?;
 
-    // Use route override if provided (from condition routes), otherwise match by labels.
-    let (route_name, route) = if let Some(ref rn) = route_override
-        && let Some(r) = routes.get(rn)
-    {
-        (rn.as_str(), r)
+    let mut matched = if let Some(wf_name) = workflow_override {
+        // Workflow override: skip route matching, build a synthetic route.
+        let subject = adapters::pr_to_subject(&pr);
+        MatchedWork {
+            subject,
+            route_name: "direct".to_string(),
+            route: forza_core::Route {
+                subject_type: SubjectKind::Pr,
+                trigger: forza_core::Trigger::Label(String::new()),
+                workflow: wf_name.clone(),
+                scope: forza_core::Scope::All,
+                concurrency: 1,
+                poll_interval: 300,
+                max_retries: None,
+                model: model_override.clone(),
+                skills: if skill_overrides.is_empty() {
+                    None
+                } else {
+                    Some(skill_overrides.clone())
+                },
+                mcp_config: None,
+                validation_commands: None,
+            },
+            workflow_name: wf_name,
+        }
     } else {
-        RunnerConfig::match_pr_route_in(routes, &pr).ok_or_else(|| {
-            forza_core::Error::NoMatchingRoute(format!(
-                "no route matches PR #{number} (labels: {:?})",
-                pr.labels
-            ))
-        })?
+        // Use route override if provided (from condition routes), otherwise match by labels.
+        let (route_name, route) = if let Some(ref rn) = route_override
+            && let Some(r) = routes.get(rn)
+        {
+            (rn.as_str(), r)
+        } else {
+            RunnerConfig::match_pr_route_in(routes, &pr).ok_or_else(|| {
+                forza_core::Error::NoMatchingRoute(format!(
+                    "no route matches PR #{number} (labels: {:?})",
+                    pr.labels
+                ))
+            })?
+        };
+
+        let wf_name = route.workflow.as_deref().unwrap_or("");
+        let subject = adapters::pr_to_subject(&pr);
+
+        MatchedWork {
+            subject,
+            route_name: route_name.to_string(),
+            route: to_core_route(route),
+            workflow_name: wf_name.to_string(),
+        }
     };
 
-    let wf_name = route.workflow.as_deref().unwrap_or("");
-    let subject = adapters::pr_to_subject(&pr);
-
-    let mut matched = MatchedWork {
-        subject,
-        route_name: route_name.to_string(),
-        route: to_core_route(route),
-        workflow_name: wf_name.to_string(),
-    };
-
-    if let Some(m) = model_override {
-        matched.route.model = Some(m);
-    }
-    if !skill_overrides.is_empty() {
-        matched.route.skills = Some(skill_overrides);
+    // Apply CLI overrides (for the route-matched path; workflow override path sets these above).
+    if matched.route_name != "direct" {
+        if let Some(m) = model_override {
+            matched.route.model = Some(m);
+        }
+        if !skill_overrides.is_empty() {
+            matched.route.skills = Some(skill_overrides);
+        }
     }
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));

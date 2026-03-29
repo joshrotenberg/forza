@@ -156,6 +156,7 @@ async fn issue_workflow_creates_run_record() {
         None,
         vec![],
         None,
+        None,
     )
     .await;
 
@@ -210,6 +211,7 @@ async fn worktree_cleaned_up_after_run() {
         git,
         None,
         vec![],
+        None,
         None,
     )
     .await;
