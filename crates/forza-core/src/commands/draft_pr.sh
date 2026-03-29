@@ -8,7 +8,7 @@
 git commit --allow-empty -m "wip: $FORZA_SUBJECT_TITLE (#$FORZA_SUBJECT_NUMBER) [skip ci]" 2>/dev/null
 
 # Push the branch.
-git push origin HEAD 2>/dev/null || true
+git push origin HEAD 2>&1 || echo "warning: git push failed" >&2
 
 # Read the plan breadcrumb for the PR body.
 if [ -f .plan_breadcrumb.md ]; then
@@ -21,4 +21,4 @@ fi
 gh pr create --draft \
     --title "[WIP] $FORZA_SUBJECT_TITLE (#$FORZA_SUBJECT_NUMBER)" \
     --body "$BODY" \
-    2>/dev/null || true
+    2>&1 || echo "warning: gh pr create failed" >&2
