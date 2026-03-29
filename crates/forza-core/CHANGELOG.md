@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.4.0...forza-core-v0.5.0) - 2026-03-29
+
+### Added
+
+- GitHub Action for event-driven forza execution ([#470](https://github.com/joshrotenberg/forza/pull/470))
+- *(pipeline)* enrich agent context — comments, route/workflow name, configless plan ([#469](https://github.com/joshrotenberg/forza/pull/469))
+- *(pipeline)* include issue title in draft PR title closes #449 ([#450](https://github.com/joshrotenberg/forza/pull/450))
+- *(cli)* add forza plan command ([#417](https://github.com/joshrotenberg/forza/pull/417))
+
 ## [0.4.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.3.0...forza-core-v0.4.0) - 2026-03-24
 
 ### Added
