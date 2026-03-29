@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/joshrotenberg/forza/compare/forza-core-v0.5.0...forza-core-v0.5.1) - 2026-03-29
+
+### Other
+
+- rationalize builtin workflows ([#481](https://github.com/joshrotenberg/forza/pull/481)) ([#483](https://github.com/joshrotenberg/forza/pull/483))
+- release ([#398](https://github.com/joshrotenberg/forza/pull/398))
+
 ## [0.5.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.4.0...forza-core-v0.5.0) - 2026-03-29
 
 ### Added
