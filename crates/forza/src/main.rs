@@ -421,7 +421,7 @@ fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> 
 ///
 /// - Explicit `--config PATH`: load it (error if missing).
 /// - No flag, `forza.toml` exists: load it.
-/// - No flag, `forza.toml` absent, command is `issue`/`pr`: return a default config.
+/// - No flag, `forza.toml` absent, command is `issue`/`pr`/`explain`: return a default config.
 /// - No flag, `forza.toml` absent, other commands: error with a hint.
 fn resolve_config(
     config_flag: &Option<PathBuf>,
@@ -434,7 +434,10 @@ fn resolve_config(
     if default_path.exists() {
         return load_config(&default_path);
     }
-    if matches!(command, Command::Issue(_) | Command::Pr(_)) {
+    if matches!(
+        command,
+        Command::Issue(_) | Command::Pr(_) | Command::Explain(_)
+    ) {
         return Ok(forza::RunnerConfig::default());
     }
     eprintln!("error: forza.toml not found");
@@ -2190,6 +2193,34 @@ async fn cmd_explain(
                 return ExitCode::FAILURE;
             }
         }
+    }
+
+    // No config file: show builtin defaults and return early.
+    if config.repos.is_empty() && config.global.repo.is_none() {
+        println!("No forza.toml found. Showing builtin defaults.");
+        println!("{}", "=".repeat(60));
+        println!();
+        println!("Agents:  claude, codex");
+        println!();
+        println!("Default labels:");
+        println!("  in-progress: forza:in-progress");
+        println!("  complete:    forza:complete");
+        println!("  failed:      forza:failed");
+        println!();
+        println!("Builtin Workflows");
+        println!("{}", "-".repeat(60));
+        for wf in forza_core::Workflow::builtins() {
+            let stages: Vec<&str> = wf.stages.iter().map(|s| s.kind.name()).collect();
+            let wt = if wf.needs_worktree {
+                ""
+            } else {
+                " (no worktree)"
+            };
+            println!("  {:<16} {}{wt}", wf.name, stages.join(" -> "));
+        }
+        println!();
+        println!("No routes configured.");
+        return ExitCode::SUCCESS;
     }
 
     // --workflows: list all workflow templates.
