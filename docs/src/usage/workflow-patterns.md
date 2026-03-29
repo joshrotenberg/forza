@@ -1,133 +1,133 @@
 # Workflow Patterns
 
-Practical patterns for using forza day-to-day. Not prescriptive — here's how it tends to work well in practice.
+Practical patterns for using forza day-to-day.
 
-## Background worker + foreground agent
+## Quick one-off
 
-The primary pattern. Run `forza watch` in one terminal while you work with an agent (Claude Code, Codex) in another. The agent files issues, you label them ready, forza works them in the background.
+Got an idea? Let forza handle it.
 
+```bash
+forza issue 42 --workflow quick
 ```
-Terminal 1: forza watch --config forza.toml
-Terminal 2: claude  (your interactive session)
+
+No config needed. Forza reads the issue, implements a fix, runs tests, opens a PR. Review and merge. Done.
+
+For bigger work that needs planning:
+
+```bash
+forza issue 42 --workflow feature
+```
+
+This adds a plan stage (analyzes the codebase before implementing) and a review stage (the agent reviews its own work before opening the PR).
+
+## Background worker
+
+Run forza continuously while you work on other things:
+
+```bash
+forza run --watch
 ```
 
 The flow:
 
-1. You're working on a feature or talking through a design with your agent
-2. The agent identifies something that needs code changes — it files a GitHub issue
-3. You review the issue, add acceptance criteria if needed, apply `forza:ready`
-4. Forza picks it up on the next poll, runs the workflow, opens a PR
-5. You review the PR; if the agent missed something, you update the issue description and re-apply `forza:ready`
+1. Create issues with clear acceptance criteria
+2. Label them `forza:ready`
+3. Forza picks them up, runs the workflow, opens PRs
+4. Review PRs as they come in
 
-Failures are expected and fine. When a run fails, forza posts a comment on the issue explaining what went wrong. Read the comment, adjust the issue if the description was unclear, and re-mark it ready. Use `forza fix` to re-run with the failure as context if the problem was transient.
-
-If you want to expose the REST API to your agent (for triggering runs directly or querying status):
-
-```
-forza watch --serve-api
-```
-
-## Targeted single runs
-
-When you know exactly what needs to happen, skip the label dance and point forza directly at an issue.
+For one-off batches instead of continuous polling:
 
 ```bash
-# Preview: see which route matches and what stages will run
-forza issue 42 --dry-run
-
-# Do the work
-forza issue 42
-```
-
-Good for:
-
-- Verifying your config is right before setting up watch mode
-- Re-running a specific issue after you've edited its description
-- One-off automation where continuous polling isn't needed
-
-The `--dry-run` flag is especially useful when introducing a new route — you can confirm the match and planned stages before committing to execution.
-
-## Batch processing
-
-File a set of issues, label a wave, let forza work through them. Label the next wave when the first batch merges.
-
-```bash
-# Phase 1: label the first set
-gh issue edit 10 --add-label forza:ready
-gh issue edit 11 --add-label forza:ready
-gh issue edit 12 --add-label forza:ready
-
-# forza watch picks them up; wait for PRs to merge
-
-# Phase 2: label the next set
-gh issue edit 20 --add-label forza:ready
-gh issue edit 21 --add-label forza:ready
-```
-
-Waves work well because forza creates a worktree per issue. Running too many in parallel against the same files can produce conflicting PRs. A conservative approach: label 2–4 issues at a time, wait for PRs to land, then label the next group.
-
-For a cron-driven setup instead of continuous watch:
-
-```bash
-# Run one batch cycle from a cron job or CI
 forza run
 ```
 
-## New project bootstrap
+## Batch planning
 
-Use `forza init` to set up config, then have your agent turn a design doc into issues, and process them in waves.
+Have a backlog of issues? Plan them first:
 
 ```bash
-# Create labels and generate a starter config
-forza init --repo owner/name
+# Create issues
+forza open --prompt "add retry backoff to API calls"
+forza open --prompt "fix null pointer in runner"
+forza open --prompt "update README with new commands"
 
-# Optional: guided init walks you through config setup interactively
-forza init --guided
+# Plan them
+forza plan 42 43 44
+
+# Review the plan issue — it has a mermaid dependency graph
+# Comment to adjust ordering, move things around
+
+# Execute in dependency order
+forza plan --exec 45
 ```
 
-The guided init asks about your repo, preferred agent, and security settings, then writes a `forza.toml`. It also offers to create a test issue so you can verify the setup works end-to-end before committing to real work.
+The plan issue is the contract. You review it, comment on it, revise it. Forza executes what you approved.
 
-From there:
+## Work branch pattern
 
-1. Hand your agent a design doc or list of requirements
-2. Agent creates GitHub issues for each discrete chunk of work
-3. You review and scope the issues (narrow ones produce better PRs)
-4. Apply `forza:ready` to the first wave
-5. Review PRs as they come in; label the next wave
+Keep agent work off main until you've reviewed it:
 
-The key is keeping issues small and focused. One issue, one PR. Forza runs each issue end-to-end in its own worktree — a tightly scoped issue produces a focused, reviewable PR.
+```bash
+forza plan --exec 99 --branch work/sprint-42
+```
+
+All PRs from the plan target `work/sprint-42` instead of main. At the end of the day, review the branch diff and merge to main in one shot. All the speed of automation without unreviewed code on main.
+
+## PR maintenance
+
+Set up condition routes to keep PRs healthy automatically:
+
+```toml
+[repos."owner/name".routes.auto-rebase]
+type = "pr"
+condition = "has_conflicts"
+workflow = "pr-rebase"
+scope = "forza_owned"
+
+[repos."owner/name".routes.auto-fix-ci]
+type = "pr"
+condition = "ci_failing"
+workflow = "pr-fix-ci"
+scope = "forza_owned"
+```
+
+With `forza run --watch`, these routes continuously monitor your PRs and fix conflicts, rebase stale branches, and fix CI failures — without anyone clicking buttons.
+
+For one-off fixes without routes:
+
+```bash
+forza pr 84 --workflow pr-fix
+```
+
+## Research and exploration
+
+Investigate a question without making code changes:
+
+```bash
+forza issue 50 --workflow research
+```
+
+The agent reads the codebase, investigates the question posed in the issue, and posts findings as a comment. No branch, no PR, no code changes.
+
+Good for: API compatibility analysis, migration paths, architecture decisions, dependency evaluation.
 
 ## Multi-repo management
 
-Configure multiple repos in one `forza.toml` and run a single watch process to handle all of them.
+One config, multiple repos:
 
 ```toml
-[global]
-agent = "claude"
-model = "claude-sonnet-4-6"
-
-[repos."org/service-a"]
 [repos."org/service-a".routes.bugfix]
 type = "issue"
 label = "bug"
-workflow = "bug"
+workflow = "quick"
 
-[repos."org/service-b"]
-[repos."org/service-b".routes.chore]
+[repos."org/service-b".routes.features]
 type = "issue"
-label = "chore"
-workflow = "chore"
-
-[repos."org/service-b".routes.auto-rebase]
-type = "pr"
-condition = "has_conflicts"
-scope = "forza_owned"
-workflow = "pr-rebase"
+label = "enhancement"
+workflow = "feature"
 ```
 
-One `forza watch` handles all configured repos. Routes are per-repo, so different repos can have different workflows, gate labels, and PR handling.
-
-Use `forza explain` to verify routing across repos before running:
+One `forza run --watch` handles all configured repos. Use `forza explain` to verify routing:
 
 ```bash
 forza explain --issues     # show all issue routes
@@ -136,27 +136,40 @@ forza explain --prs        # show all PR routes
 
 ## Handling failures
 
-Failures are part of the workflow, not exceptions to it.
+When a run fails, forza posts a comment on the issue explaining what went wrong. The usual fixes:
 
-When a run fails:
-
-1. Forza posts a comment on the issue with the failure reason and which stage failed
-2. Check the comment — usually it's a missing acceptance criterion, an ambiguous description, or a validation failure
-3. Edit the issue to clarify, then re-apply `forza:ready`
-
-For transient failures (flaky tests, network hiccups):
+1. **Unclear issue** — edit the description, add acceptance criteria, re-run
+2. **Transient failure** — re-run with error context: `forza issue 42 --fix`
+3. **Persistent failure** — check `forza status` for patterns, narrow the issue scope
 
 ```bash
-# Re-run the failed run with the error as context
-forza fix --run-id <id>
-
-# Or just re-label the issue
+forza status                 # recent runs
+forza issue 42 --fix         # retry with error context
 ```
 
-For persistent failures, `forza status` shows recent run history with outcomes:
+A run that fails the same stage repeatedly usually means the issue needs more specificity.
 
-```bash
-forza status --limit 20
+## GitHub Action
+
+Automate everything with a workflow file:
+
+```yaml
+name: forza
+on:
+  issues:
+    types: [labeled]
+  check_suite:
+    types: [completed]
+
+jobs:
+  forza:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: joshrotenberg/forza/action@main
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-A run that fails the same stage repeatedly usually means the issue description needs more specificity, or the relevant acceptance criteria are missing.
+Label an issue, the action fires on GitHub's infrastructure. No laptop, no polling.
