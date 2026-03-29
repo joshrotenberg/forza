@@ -1,0 +1,33 @@
+# Configless forza — no forza.toml needed
+#
+# Processes issues when labeled with a specific workflow.
+# Good for repos that don't need full route configuration.
+
+name: forza
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  forza:
+    runs-on: ubuntu-latest
+    # Only run when the 'forza:ready' label is added
+    if: github.event.label.name == 'forza:ready'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/setup-claude-code@v1
+
+      - uses: joshrotenberg/forza/action@main
+        with:
+          command: issue
+          args: "${{ github.event.issue.number }} --workflow feature"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
