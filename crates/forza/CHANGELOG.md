@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/joshrotenberg/forza/compare/forza-v0.5.0...forza-v0.5.1) - 2026-03-29
+
+### Added
+
+- *(cli)* add --base-branch and --target-branch flags ([#484](https://github.com/joshrotenberg/forza/pull/484)) ([#485](https://github.com/joshrotenberg/forza/pull/485))
+
+### Other
+
+- rationalize builtin workflows ([#481](https://github.com/joshrotenberg/forza/pull/481)) ([#483](https://github.com/joshrotenberg/forza/pull/483))
+
 ## [0.5.0](https://github.com/joshrotenberg/forza/compare/forza-v0.3.0...forza-v0.5.0) - 2026-03-29
 
 ### Added
