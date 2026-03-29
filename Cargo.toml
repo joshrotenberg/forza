@@ -24,7 +24,7 @@ tokio = { version = "1", features = ["process", "fs"] }
 tempfile = "3"
 # forza
 
-forza-core = { path = "crates/forza-core" }
+forza-core = { path = "crates/forza-core", version = "0.5.0" }
 
 tower-mcp = { version = "0.9", features = ["http"] }
 schemars = "1"
