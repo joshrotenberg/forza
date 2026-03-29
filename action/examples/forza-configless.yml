@@ -22,7 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: anthropics/setup-claude-code@v1
+      - name: Install Claude Code
+        run: curl -fsSL https://claude.ai/install.sh | bash
 
       - uses: joshrotenberg/forza/action@main
         with:
