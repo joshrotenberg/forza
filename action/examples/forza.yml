@@ -1,0 +1,46 @@
+# Example GitHub Actions workflow for forza
+#
+# Drop this in .github/workflows/forza.yml in any repo with a forza.toml.
+# A single workflow handles all event types — forza's auto mode maps each
+# event to the right command.
+#
+# Required secrets:
+#   ANTHROPIC_API_KEY — your Anthropic API key
+
+name: forza
+
+on:
+  # Process issues when labeled (e.g. forza:ready, bug, enhancement)
+  issues:
+    types: [labeled]
+
+  # Process PRs when labeled or updated
+  pull_request:
+    types: [labeled, synchronize]
+
+  # Re-evaluate condition routes when CI completes
+  check_suite:
+    types: [completed]
+
+  # Optional: periodic discovery (every 15 minutes)
+  # schedule:
+  #   - cron: "*/15 * * * *"
+
+  # Optional: manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  forza:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: joshrotenberg/forza/action@main
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
