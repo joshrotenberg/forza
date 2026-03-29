@@ -127,6 +127,12 @@ struct IssueArgs {
     /// Re-run the latest failed run for this issue.
     #[arg(long)]
     fix: bool,
+    /// Branch to create worktree from (default: repo default branch).
+    #[arg(long)]
+    base_branch: Option<String>,
+    /// Branch to target PRs to (default: repo default branch).
+    #[arg(long)]
+    target_branch: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -157,6 +163,9 @@ struct PrArgs {
     /// Re-run the latest failed run for this PR.
     #[arg(long)]
     fix: bool,
+    /// Branch to target PRs to (default: repo default branch).
+    #[arg(long)]
+    target_branch: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -1752,7 +1761,7 @@ async fn cmd_issue(
         git.clone(),
         args.model,
         args.skill,
-        None,
+        args.base_branch,
         args.workflow,
     )
     .await
