@@ -39,13 +39,15 @@ enum Command {
     Issue(IssueArgs),
     /// Process a single PR by number.
     Pr(PrArgs),
-    /// Run once — poll for eligible issues and process them.
+    /// Run once — poll for eligible issues and process them. Use --watch for continuous mode.
     Run(RunArgs),
-    /// Watch mode — continuously poll and process issues.
+    /// Watch mode — continuously poll and process issues (deprecated: use `run --watch`).
+    #[command(hide = true)]
     Watch(WatchArgs),
     /// Show run history and status.
     Status(StatusArgs),
-    /// Re-run failed stages with error context.
+    /// Re-run failed stages with error context (deprecated: use `issue --fix` or `pr --fix`).
+    #[command(hide = true)]
     Fix(FixArgs),
     /// Remove worktrees or run state.
     Clean(CleanArgs),
@@ -98,7 +100,7 @@ struct FixArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza issue 42\n  forza issue 42 --dry-run --model claude-opus-4-6\n  forza issue 42 --skill ./skills/extra.md"
+    after_long_help = "Examples:\n  forza issue 42\n  forza issue 42 --dry-run --model claude-opus-4-6\n  forza issue 42 --skill ./skills/extra.md\n  forza issue 42 --workflow feature\n  forza issue 42 --fix"
 )]
 struct IssueArgs {
     /// Issue number to process.
@@ -118,11 +120,17 @@ struct IssueArgs {
     /// Add a skill file for every stage in this run (repeatable).
     #[arg(long, action = clap::ArgAction::Append)]
     skill: Vec<String>,
+    /// Override the workflow template, skipping route matching (e.g. feature, bug, chore).
+    #[arg(long)]
+    workflow: Option<String>,
+    /// Re-run the latest failed run for this issue.
+    #[arg(long)]
+    fix: bool,
 }
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --route fix-pr\n  forza pr 123 --dry-run"
+    after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --route fix-pr\n  forza pr 123 --dry-run\n  forza pr 123 --workflow pr-fix\n  forza pr 123 --fix"
 )]
 struct PrArgs {
     /// PR number to process.
@@ -145,11 +153,17 @@ struct PrArgs {
     /// Force a specific route by name, bypassing label-based matching.
     #[arg(long)]
     route: Option<String>,
+    /// Override the workflow template, skipping route matching (e.g. pr-fix, pr-rebase).
+    #[arg(long)]
+    workflow: Option<String>,
+    /// Re-run the latest failed run for this PR.
+    #[arg(long)]
+    fix: bool,
 }
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate\n  forza run --route bugfix"
+    after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate\n  forza run --route bugfix\n  forza run --watch\n  forza run --watch --interval 30 --serve-api"
 )]
 struct RunArgs {
     /// Repository directory (default: current directory).
@@ -161,6 +175,21 @@ struct RunArgs {
     /// Bypass the gate_label requirement and process all matching issues immediately.
     #[arg(long, default_value = "false")]
     no_gate: bool,
+    /// Watch mode — continuously poll and process issues.
+    #[arg(long, default_value = "false")]
+    watch: bool,
+    /// Override poll interval in seconds (watch mode only).
+    #[arg(long)]
+    interval: Option<u64>,
+    /// Also start the REST API server alongside the watch loop (watch mode only).
+    #[arg(long, default_value = "false")]
+    serve_api: bool,
+    /// Host address for the REST API server (watch mode only, default: 127.0.0.1).
+    #[arg(long)]
+    api_host: Option<String>,
+    /// Port for the REST API server (watch mode only, default: 8080).
+    #[arg(long)]
+    api_port: Option<u16>,
 }
 
 #[derive(Debug, Parser)]
@@ -863,6 +892,7 @@ async fn cmd_plan_exec(
                         None,
                         vec![],
                         branch_override_clone,
+                        None,
                     )
                     .await;
                     (issue_number, result)
@@ -1582,6 +1612,45 @@ async fn cmd_issue(
         return ExitCode::FAILURE;
     }
 
+    // --fix: find latest failed run and re-process.
+    if args.fix {
+        let record = forza::state::find_latest_run_for_issue(args.number, &sd)
+            .filter(|r| r.status == forza::state::RunStatus::Failed);
+        let record = match record {
+            Some(r) => r,
+            None => {
+                eprintln!("error: no failed run found for issue #{}", args.number);
+                return ExitCode::FAILURE;
+            }
+        };
+        println!(
+            "Fixing run {} (issue #{})",
+            record.run_id, record.issue_number
+        );
+        match forza::runner::process_issue(
+            args.number,
+            &repo,
+            config,
+            routes,
+            &sd,
+            &rd,
+            gh.clone(),
+            git.clone(),
+            args.model,
+            args.skill,
+            None,
+            args.workflow,
+        )
+        .await
+        {
+            Ok(run) => return print_core_run(&run),
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     match forza::runner::process_issue(
         args.number,
         &repo,
@@ -1594,6 +1663,7 @@ async fn cmd_issue(
         args.model,
         args.skill,
         None,
+        args.workflow,
     )
     .await
     {
@@ -1681,6 +1751,45 @@ async fn cmd_pr(
         return ExitCode::SUCCESS;
     }
 
+    // --fix: find latest failed run for this PR and re-process.
+    if args.fix {
+        let record = forza::state::load_all_runs(&sd).into_iter().find(|r| {
+            r.issue_number == args.number
+                && r.subject_kind == forza::state::SubjectKind::Pr
+                && r.status == forza::state::RunStatus::Failed
+        });
+        let record = match record {
+            Some(r) => r,
+            None => {
+                eprintln!("error: no failed run found for PR #{}", args.number);
+                return ExitCode::FAILURE;
+            }
+        };
+        println!("Fixing run {} (PR #{})", record.run_id, record.issue_number);
+        match forza::runner::process_pr(
+            args.number,
+            &repo,
+            config,
+            routes,
+            &sd,
+            &rd,
+            gh.clone(),
+            git.clone(),
+            args.model,
+            args.skill,
+            args.route,
+            args.workflow,
+        )
+        .await
+        {
+            Ok(run) => return print_core_run(&run),
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     match forza::runner::process_pr(
         args.number,
         &repo,
@@ -1693,6 +1802,7 @@ async fn cmd_pr(
         args.model,
         args.skill,
         args.route,
+        args.workflow,
     )
     .await
     {
@@ -1714,6 +1824,20 @@ async fn cmd_run(
     gh: std::sync::Arc<dyn forza::github::GitHubClient>,
     git: std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
+    // Delegate to watch mode when --watch is set.
+    if args.watch {
+        let watch_args = WatchArgs {
+            interval: args.interval,
+            route: args.route,
+            repo_dir: args.repo_dir,
+            serve_api: args.serve_api,
+            api_host: args.api_host,
+            api_port: args.api_port,
+            no_gate: args.no_gate,
+        };
+        return cmd_watch(watch_args, config, gh, git).await;
+    }
+
     let mut config = config.clone();
     if args.no_gate {
         config.global.gate_label = None;
@@ -2708,6 +2832,7 @@ async fn cmd_fix(
         git.clone(),
         None,
         vec![],
+        None,
         None,
     )
     .await

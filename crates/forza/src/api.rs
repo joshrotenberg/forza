@@ -297,6 +297,7 @@ async fn trigger_issue(
             None,
             vec![],
             None,
+            None,
         )
         .await
         {
@@ -381,6 +382,7 @@ async fn trigger_pr(
             git,
             None,
             vec![],
+            None,
             None,
         )
         .await
@@ -848,6 +850,7 @@ async fn exec_plan(
                 git.clone(),
                 None,
                 vec![],
+                None,
                 None,
             )
             .await
