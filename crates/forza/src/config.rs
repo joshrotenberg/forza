@@ -68,6 +68,50 @@ pub struct RunnerConfig {
     pub prompt_templates: HashMap<String, String>,
 }
 
+impl Default for GlobalConfig {
+    fn default() -> Self {
+        Self {
+            repo: None,
+            repo_dir: None,
+            max_concurrency: default_max_concurrency(),
+            max_cost_per_issue: None,
+            max_cost_per_hour: None,
+            agent: default_agent(),
+            model: None,
+            gate_label: None,
+            in_progress_label: default_in_progress_label(),
+            complete_label: default_complete_label(),
+            failed_label: default_failed_label(),
+            branch_pattern: default_branch_pattern(),
+            stale_lease_timeout: default_stale_lease_timeout(),
+            stale_worktree_days: default_stale_worktree_days(),
+            default_workflow: None,
+            auto_merge: false,
+            draft_pr: false,
+            notifications: None,
+            github_backend: default_github_backend(),
+            git_backend: default_git_backend(),
+            issue_order: IssueOrder::default(),
+        }
+    }
+}
+
+impl Default for RunnerConfig {
+    fn default() -> Self {
+        Self {
+            global: GlobalConfig::default(),
+            repos: IndexMap::new(),
+            security: SecurityConfig::default(),
+            validation: ValidationConfig::default(),
+            routes: IndexMap::new(),
+            workflow_templates: Vec::new(),
+            agent_config: AgentConfig::default(),
+            stage_hooks: HashMap::new(),
+            prompt_templates: HashMap::new(),
+        }
+    }
+}
+
 /// Processing order for eligible issues discovered each cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
