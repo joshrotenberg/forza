@@ -121,6 +121,10 @@ impl From<crate::state::WorkflowSummary> for WorkflowSummaryResponse {
 struct TriggerQuery {
     repo: Option<String>,
     dry_run: Option<bool>,
+    /// Override the workflow template, skipping route matching.
+    workflow: Option<String>,
+    /// Override the model for every stage.
+    model: Option<String>,
 }
 
 // --- Repo resolution ---
@@ -280,6 +284,8 @@ async fn trigger_issue(
         .into_response());
     }
 
+    let model_override = query.model.clone();
+    let workflow_override = query.workflow.clone();
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
     let gh = state.gh.clone();
@@ -294,10 +300,10 @@ async fn trigger_issue(
             &rd,
             gh,
             git,
-            None,
+            model_override,
             vec![],
             None,
-            None,
+            workflow_override,
         )
         .await
         {
@@ -366,6 +372,8 @@ async fn trigger_pr(
         .into_response());
     }
 
+    let model_override = query.model.clone();
+    let workflow_override = query.workflow.clone();
     let config = state.config.clone();
     let state_dir = state.state_dir.clone();
     let gh = state.gh.clone();
@@ -380,10 +388,10 @@ async fn trigger_pr(
             &rd,
             gh,
             git,
-            None,
+            model_override,
             vec![],
             None,
-            None,
+            workflow_override,
         )
         .await
         {
