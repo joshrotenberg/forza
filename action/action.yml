@@ -84,7 +84,7 @@ runs:
         fi
 
         if [ "$FORZA_VERSION" = "latest" ]; then
-          FORZA_VERSION=$(curl -sL https://api.github.com/repos/joshrotenberg/forza/releases/latest | jq -r .tag_name | sed 's/^v//')
+          FORZA_VERSION=$(curl -sL https://api.github.com/repos/joshrotenberg/forza/releases/latest | jq -r .tag_name | sed 's/^forza-v//')
         fi
 
         ARCH=$(uname -m)
@@ -96,9 +96,9 @@ runs:
 
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 
-        URL="https://github.com/joshrotenberg/forza/releases/download/v${FORZA_VERSION}/forza-${ARCH}-unknown-${OS}-gnu.tar.gz"
+        URL="https://github.com/joshrotenberg/forza/releases/download/forza-v${FORZA_VERSION}/forza-${ARCH}-unknown-${OS}-gnu.tar.xz"
         echo "Installing forza v${FORZA_VERSION} from ${URL}"
-        curl -sL "$URL" | tar xz -C /usr/local/bin forza
+        curl -sL "$URL" | tar xJ -C /usr/local/bin forza
 
         forza --version
 
