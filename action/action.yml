@@ -63,10 +63,30 @@ runs:
             ;;
         esac
 
-    - name: Install forza
+    - name: Resolve forza version
+      id: resolve-version
       shell: bash
       env:
         FORZA_VERSION: ${{ inputs.version }}
+      run: |
+        if [ "$FORZA_VERSION" = "latest" ]; then
+          FORZA_VERSION=$(curl -sL https://api.github.com/repos/joshrotenberg/forza/releases/latest | jq -r .tag_name | sed 's/^forza-v//')
+        fi
+        echo "version=$FORZA_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Cache forza binary
+      if: inputs.version != 'skip' && inputs.version != 'source'
+      id: cache-forza
+      uses: actions/cache@v4
+      with:
+        path: /usr/local/bin/forza
+        key: forza-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve-version.outputs.version }}
+
+    - name: Install forza
+      if: steps.cache-forza.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        FORZA_VERSION: ${{ steps.resolve-version.outputs.version }}
       run: |
         set -euo pipefail
 
@@ -83,10 +103,6 @@ runs:
           exit 0
         fi
 
-        if [ "$FORZA_VERSION" = "latest" ]; then
-          FORZA_VERSION=$(curl -sL https://api.github.com/repos/joshrotenberg/forza/releases/latest | jq -r .tag_name | sed 's/^forza-v//')
-        fi
-
         ARCH=$(uname -m)
         case "$ARCH" in
           x86_64) ARCH="x86_64" ;;
@@ -100,7 +116,10 @@ runs:
         echo "Installing forza v${FORZA_VERSION} from ${URL}"
         curl -sL "$URL" | tar xJ --strip-components=1 -C /usr/local/bin
 
-        forza --version
+    - name: Verify forza
+      if: inputs.version != 'skip'
+      shell: bash
+      run: forza --version
 
     - name: Set API key
       if: inputs.anthropic_api_key != ''
