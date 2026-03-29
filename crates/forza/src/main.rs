@@ -62,6 +62,8 @@ enum Command {
     Open(OpenArgs),
     /// Create or execute a plan: analyze issues, build a dependency graph, coordinate work.
     Plan(PlanArgs),
+    /// Check dependencies and environment health.
+    Doctor(DoctorArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -396,6 +398,14 @@ struct PlanArgs {
     branch: Option<String>,
 }
 
+#[derive(Debug, Parser)]
+#[command(after_long_help = "Examples:\n  forza doctor")]
+struct DoctorArgs {
+    /// Repository to check (owner/name). Uses config if omitted.
+    #[arg(long)]
+    repo: Option<String>,
+}
+
 fn state_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -447,6 +457,7 @@ fn resolve_config(
             | Command::Plan(_)
             | Command::Open(_)
             | Command::Explain(_)
+            | Command::Doctor(_)
     ) {
         return Ok(forza::RunnerConfig::default());
     }
@@ -524,6 +535,7 @@ async fn main() -> ExitCode {
             | Command::Serve(_)
             | Command::Mcp(_)
             | Command::Explain(_)
+            | Command::Doctor(_)
     ) && let Err(e) = forza::deps::validate_dependencies(&config.global.agent, &*git).await
     {
         eprintln!("error: {e}");
@@ -544,6 +556,51 @@ async fn main() -> ExitCode {
         Command::Explain(args) => cmd_explain(args, &config, &gh).await,
         Command::Open(args) => cmd_open(args, &config, &git).await,
         Command::Plan(args) => cmd_plan(args, &config, &gh, &git).await,
+        Command::Doctor(args) => cmd_doctor(args, &config, &git).await,
+    }
+}
+
+async fn cmd_doctor(
+    args: DoctorArgs,
+    config: &forza::RunnerConfig,
+    git: &std::sync::Arc<dyn forza::git::GitClient>,
+) -> ExitCode {
+    // Determine repo from --repo flag or first configured repo.
+    let repo = args
+        .repo
+        .as_deref()
+        .or_else(|| config.repos.keys().next().map(|s| s.as_str()));
+
+    // Check if config was actually loaded (not default empty).
+    let has_config = !config.repos.is_empty();
+    let repo_for_checks = if has_config { repo } else { None };
+
+    let results = forza::deps::doctor_checks(&config.global.agent, &**git, repo_for_checks).await;
+
+    // Calculate column widths for aligned output.
+    let name_width = results.iter().map(|r| r.name.len()).max().unwrap_or(0);
+    let detail_width = results.iter().map(|r| r.detail.len()).max().unwrap_or(0);
+
+    println!();
+    for result in &results {
+        let status = if result.ok { "ok" } else { "FAIL" };
+        println!(
+            "  {:<name_width$}  {:<detail_width$}  {status}",
+            format!("{}:", result.name),
+            result.detail,
+            name_width = name_width + 1,
+            detail_width = detail_width,
+        );
+    }
+    println!();
+
+    let failed = results.iter().filter(|r| !r.ok).count();
+    if failed == 0 {
+        println!("All checks passed.");
+        ExitCode::SUCCESS
+    } else {
+        println!("{failed} check(s) failed.");
+        ExitCode::FAILURE
     }
 }
 
