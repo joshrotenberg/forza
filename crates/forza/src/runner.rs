@@ -434,6 +434,8 @@ async fn execute_work(
         &preamble,
         config.global.agent.as_str(),
         prompts_dir_opt,
+        &work.route_name,
+        &work.workflow_name,
     );
 
     // Execute.

@@ -433,7 +433,11 @@ fn resolve_config(
     }
     if matches!(
         command,
-        Command::Issue(_) | Command::Pr(_) | Command::Explain(_)
+        Command::Issue(_)
+            | Command::Pr(_)
+            | Command::Plan(_)
+            | Command::Open(_)
+            | Command::Explain(_)
     ) {
         return Ok(forza::RunnerConfig::default());
     }
