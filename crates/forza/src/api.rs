@@ -1022,6 +1022,9 @@ mod tests {
         async fn create_branch_from(&self, _: &Path, _: &str, _: &str) -> crate::error::Result<()> {
             unimplemented!()
         }
+        async fn default_branch(&self, _: &Path) -> crate::error::Result<String> {
+            unimplemented!()
+        }
         async fn version(&self) -> crate::error::Result<String> {
             unimplemented!()
         }
