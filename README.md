@@ -11,22 +11,18 @@ Autonomous GitHub issue runner. Turns issues into pull requests through configur
 GitHub Issue  ->  Route Match  ->  Workflow  ->  Stages  ->  Pull Request
 ```
 
-Label an issue `forza:ready`, configure a route, and forza plans, implements, tests, reviews, and opens a PR — then merges when CI is green.
-
 ## Quick start
 
 ```bash
 # Install
 cargo install forza
 
-# Initialize a repo (creates labels and starter config)
+# Process a single issue (no config needed)
+forza issue 42 --workflow feature
+
+# With a config file for automated workflows
 forza init --repo owner/name
-
-# Process a single issue
-forza issue 123
-
-# Continuous polling loop
-forza watch --interval 60
+forza run --watch
 ```
 
 ## Planning
@@ -43,19 +39,24 @@ forza plan 42 45 48
 # Revise a plan based on human feedback
 forza plan --revise 99
 
+# Preview execution order
+forza plan --exec 99 --dry-run
+
 # Execute a plan in dependency order
 forza plan --exec 99
 ```
 
 The plan issue includes a mermaid dependency graph (rendered by GitHub), actionable issues in order, blocked issues with reasons, and skipped issues. Blocked issues get `forza:needs-human` labels and explanatory comments.
 
+## Configuration
+
+forza works without configuration for direct commands (`issue`, `pr`). Add a `forza.toml` when you want automated discovery via `forza run`.
+
 Minimal `forza.toml`:
 
 ```toml
 [global]
 model = "claude-sonnet-4-6"
-
-[repos."owner/name"]
 
 [repos."owner/name".routes.bugfix]
 type = "issue"

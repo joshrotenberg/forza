@@ -148,24 +148,24 @@ cargo doc --no-deps --all-features
 
 ```
 forza init          Create labels and generate starter config
-forza issue <N>     Process a single issue
-forza pr <N>        Process a single PR
-forza run           Single batch cycle (discover + process)
-forza watch         Continuous polling loop
-forza status        View run history
-forza explain       Visualize config, routes, and workflows
-forza fix           Re-run failed stages
+forza issue <N>     Process a single issue (--workflow for configless, --fix to retry)
+forza pr <N>        Process a single PR (--workflow for configless, --fix to retry)
+forza run           Single batch cycle (--watch for continuous polling)
+forza plan          Create, revise, or execute a plan
+forza open          Open a new issue with agent assistance
+forza status        View run history and plan execution tracking
+forza explain       Visualize config, routes, workflows (--plans for plan issues)
 forza clean         Clean worktrees and state
 forza serve         REST API server
 forza mcp           MCP server (stdio)
-forza plan          Create, revise, or execute a plan
 ```
 
-`forza explain` supports filters: `--issues`, `--prs`, `--conditions`, `--route <name>`,
-`--workflows`, `--workflow <name>`, `-v` (verbose), `--json`.
+`forza issue` and `forza pr` work without `forza.toml` when `--workflow` is provided.
+Config is only required for automated discovery via `forza run`.
 
 `forza plan` modes:
 - `forza plan [issues]` — analyze issues, create a plan issue with mermaid dependency graph
 - `forza plan --revise <N>` — revise plan issue #N based on human comments
 - `forza plan --exec <N>` — execute plan issue #N in dependency order
-- `--label`, `--limit`, `--model` flags for filtering and configuration
+- `forza plan --exec <N> --dry-run` — preview execution order
+- `--branch`, `--close`, `--label`, `--limit`, `--model` for additional control
