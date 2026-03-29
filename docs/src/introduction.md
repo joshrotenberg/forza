@@ -14,7 +14,7 @@ GitHub Issue  ->  Route Match  ->  Workflow  ->  Stages  ->  Pull Request  ->  A
 
 When an issue is labeled (or a PR enters a matching state), forza:
 
-1. **Picks it up** — the watch loop finds issues with `forza:ready` or PRs matching a condition route
+1. **Picks it up** — the polling loop finds issues with `forza:ready` or PRs matching a condition route
 2. **Matches a route** — compares the label or PR state against your configured routes to select a workflow
 3. **Executes stages** — runs each stage in order (e.g., plan → implement → test → review → open_pr), with validation commands between stages and breadcrumbs carrying context forward
 4. **Opens a PR** — commits the work to an isolated git worktree and opens a PR against your branch
@@ -36,12 +36,14 @@ Adding decision-making to the framework — adaptive prompting, automatic workfl
 
 ## When to use forza
 
-**Solo developer** — label a backlog issue `forza:ready` and let forza open a PR while you work on something else. Good for bug fixes, dependency updates, documentation PRs, and chores that follow a clear pattern.
+**Quick one-off** — process a single issue with no configuration: `forza issue 42 --workflow feature`. Forza plans, implements, tests, reviews, and opens a PR. Good for bug fixes, chores, and anything with a clear spec.
 
-**Team with an issue backlog** — apply `forza:ready` to issues you're comfortable automating. Forza triages, plans, and implements while the team focuses on review. Pair with `gate_label` so nothing runs until you've explicitly opted it in.
+**Solo developer** — add a `forza.toml` with routes, label issues `forza:ready`, and let forza open PRs while you work on something else. Run `forza run --watch` for continuous processing.
 
-**CI maintenance** — configure condition routes (`ci_failing_or_conflicts`, `approved_and_green`) so forza watches your forza-owned PRs and fixes failures, rebases stale branches, and merges when green — without anyone having to manually re-trigger CI or click merge.
+**Team with an issue backlog** — apply `forza:ready` to issues you're comfortable automating. Use `forza plan` to organize a batch, review the plan, then `forza plan --exec` to process them all in dependency order.
 
-**Research and exploration** — use a `research` route with the `research -> comment` workflow. Forza investigates a question (API compatibility, migration path, alternative approaches) and posts findings directly on the issue as a comment. No code changes, no PR.
+**CI maintenance** — configure condition routes (`ci_failing_or_conflicts`, `approved_and_green`) so forza watches your PRs and fixes failures, rebases stale branches, and merges when green — without anyone having to manually re-trigger CI or click merge.
+
+**Research and exploration** — use a `research` route with the `research -> comment` workflow. Forza investigates a question and posts findings directly on the issue as a comment. No code changes, no PR.
 
 **Batch planning** — use `forza plan` to analyze a set of issues at once. The agent reads the codebase, classifies issues, detects dependencies, and creates a plan issue with a mermaid dependency graph and implementation order. Review the plan, comment to adjust, then `forza plan --exec` processes them in dependency order.

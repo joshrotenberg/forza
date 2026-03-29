@@ -28,22 +28,12 @@ powershell -ExecutionPolicy ByPass -c "irm https://github.com/joshrotenberg/forz
 cargo install forza
 ```
 
-### 2. Initialize your repository
+### 2. Process your first issue
 
-Run the guided setup in your repository directory:
-
-```bash
-forza init --repo owner/name
-```
-
-This creates the required GitHub labels (`forza:ready`, `forza:in-progress`, `forza:complete`, `forza:failed`, `forza:needs-human`) and writes a starter `forza.toml` to the current directory.
-
-### 3. Process your first issue
-
-Label an issue with `bug` and `forza:ready`, then run:
+No configuration needed. From inside any repo with a GitHub remote:
 
 ```bash
-forza issue 123
+forza issue 42 --workflow feature
 ```
 
 Forza picks up the issue, plans the fix, implements it, runs tests, and opens a PR.
@@ -51,21 +41,34 @@ Forza picks up the issue, plans the fix, implements it, runs tests, and opens a 
 To preview without executing:
 
 ```bash
-forza issue 123 --dry-run
+forza issue 42 --workflow feature --dry-run
+```
+
+### 3. Add configuration (optional)
+
+For automated discovery and continuous processing, initialize your repo:
+
+```bash
+forza init --repo owner/name
+```
+
+This creates the required GitHub labels and writes a starter `forza.toml`. Then:
+
+```bash
+# Run one batch cycle
+forza run
+
+# Continuous polling
+forza run --watch
 ```
 
 ## Minimal configuration
 
-The simplest possible setup — one repo, one bug route, all defaults:
+The simplest setup — one repo, one bug route:
 
 ```toml
 [global]
 model = "claude-sonnet-4-6"
-
-[security]
-authorization_level = "contributor"
-
-[repos."your-org/your-repo"]
 
 [repos."your-org/your-repo".routes.bugfix]
 type = "issue"
@@ -73,27 +76,39 @@ label = "bug"
 workflow = "bug"
 ```
 
-Save this as `forza.toml` in your working directory.
+Save as `forza.toml` in your working directory.
 
 ## Common commands
 
 ```bash
-# Process a single issue
-forza issue 123
+# Process a single issue (configless)
+forza issue 42 --workflow feature
 
-# Fix a PR (rebase + fix CI)
-forza pr 42
+# Process a single issue (with config, route matching)
+forza issue 42
 
-# Run one batch cycle (discover + process all eligible issues)
+# Fix a PR
+forza pr 123 --workflow pr-fix
+
+# Re-run a failed issue with error context
+forza issue 42 --fix
+
+# Plan a batch of issues
+forza plan 10 20 30
+
+# Execute a plan in dependency order
+forza plan --exec 99
+
+# Run one batch cycle (requires config)
 forza run
 
-# Continuous polling loop
-forza watch --interval 60
+# Continuous polling (requires config)
+forza run --watch --interval 60
 
 # View run history
 forza status
 
-# Visualize your config, routes, and workflows
+# Visualize config, routes, and workflows
 forza explain
 ```
 
