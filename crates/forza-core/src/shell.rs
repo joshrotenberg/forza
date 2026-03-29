@@ -129,6 +129,7 @@ mod tests {
             html_url: String::new(),
             author: "user".into(),
             branch: "automation/42-test".into(),
+            comments: Vec::new(),
             mergeable: None,
             checks_passing: None,
             review_decision: None,

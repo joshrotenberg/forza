@@ -106,6 +106,7 @@ mod tests {
             html_url: String::new(),
             author: "user".into(),
             branch: "fix/thing".into(),
+            comments: Vec::new(),
             mergeable: mergeable.map(String::from),
             checks_passing,
             review_decision: review_decision.map(String::from),

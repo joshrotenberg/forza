@@ -52,6 +52,9 @@ pub const PROMPT_CMD_PLAN_REVISE: &str = include_str!("prompts/cmd_plan_revise.m
 /// * `preamble` — Optional preamble prepended to all agent prompts.
 /// * `agent` — The agent name (e.g. `"claude"`, `"codex"`). Used for prompt directory lookup.
 /// * `prompts_dir` — Optional path to a directory containing prompt overrides.
+/// * `route_name` — The name of the matched route.
+/// * `workflow_name` — The name of the workflow being executed.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_prompts(
     subject: &Subject,
     workflow: &Workflow,
@@ -60,6 +63,8 @@ pub fn generate_prompts(
     preamble: &str,
     agent: &str,
     prompts_dir: Option<&std::path::Path>,
+    route_name: &str,
+    workflow_name: &str,
 ) -> Vec<String> {
     let stage_count = workflow.stages.len();
     workflow
@@ -81,6 +86,8 @@ pub fn generate_prompts(
                 validation_commands,
                 preamble,
                 has_successor,
+                route_name,
+                workflow_name,
             )
         })
         .collect()
@@ -165,6 +172,7 @@ fn select_template(
 ///
 /// Handles both issue and PR variables. Missing variables are left as-is
 /// (the template may contain variables not relevant to this subject type).
+#[allow(clippy::too_many_arguments)]
 fn substitute(
     template: &str,
     subject: &Subject,
@@ -172,6 +180,8 @@ fn substitute(
     validation_commands: &[String],
     preamble: &str,
     has_successor: bool,
+    route_name: &str,
+    workflow_name: &str,
 ) -> String {
     let validation_step = if validation_commands.is_empty() {
         String::new()
@@ -232,6 +242,26 @@ fn substitute(
         .replace("{validation_step}", &validation_step)
         .replace("{commit_num}", commit_num)
         .replace("{breadcrumb_instruction}", &breadcrumb_instruction)
+        .replace("{route}", route_name)
+        .replace("{workflow}", workflow_name)
+        .replace("{comments}", &format_comments(&subject.comments))
+}
+
+fn format_comments(comments: &[String]) -> String {
+    if comments.is_empty() {
+        return String::new();
+    }
+    let wrapped: Vec<String> = comments
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            format!(
+                "### Comment {}\n--- BEGIN USER-PROVIDED CONTENT ---\n{c}\n--- END USER-PROVIDED CONTENT ---",
+                i + 1
+            )
+        })
+        .collect();
+    format!("\n## Issue discussion\n\n{}\n", wrapped.join("\n\n"))
 }
 
 /// Generate a project-scoped preamble for agent prompts.
@@ -262,6 +292,7 @@ mod tests {
             html_url: String::new(),
             author: "user".into(),
             branch: "automation/42-fix-the-bug".into(),
+            comments: Vec::new(),
             mergeable: None,
             checks_passing: None,
             review_decision: None,
@@ -281,6 +312,7 @@ mod tests {
             html_url: String::new(),
             author: "user".into(),
             branch: "automation/42-fix-the-bug".into(),
+            comments: Vec::new(),
             mergeable: Some("MERGEABLE".into()),
             checks_passing: Some(true),
             review_decision: None,
@@ -300,7 +332,17 @@ mod tests {
                 Stage::agent(StageKind::Test),
             ],
         );
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert_eq!(prompts.len(), 3);
     }
 
@@ -314,7 +356,17 @@ mod tests {
                 Stage::shell(StageKind::Merge, "gh pr merge"),
             ],
         );
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(!prompts[0].is_empty()); // agent stage
         assert!(prompts[1].is_empty()); // shell stage
     }
@@ -323,7 +375,17 @@ mod tests {
     fn issue_prompts_contain_issue_number() {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Plan)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(
             prompts[0].contains("#42"),
             "prompt should contain issue number: {}",
@@ -335,7 +397,17 @@ mod tests {
     fn pr_prompts_contain_pr_number() {
         let subject = make_pr();
         let workflow = Workflow::new("pr-fix-ci", vec![Stage::agent(StageKind::FixCi)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(
             prompts[0].contains("#99") || prompts[0].contains("99"),
             "prompt should contain PR number"
@@ -347,7 +419,17 @@ mod tests {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Plan)]);
         let preamble = "You are working on forza.";
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], preamble, "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            preamble,
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(prompts[0].contains("You are working on forza."));
     }
 
@@ -364,6 +446,8 @@ mod tests {
             "",
             "claude",
             None,
+            "test-route",
+            "test-workflow",
         );
         assert!(prompts[0].contains("cargo fmt --check"));
         assert!(prompts[0].contains("cargo test"));
@@ -373,7 +457,17 @@ mod tests {
     fn user_content_is_security_wrapped() {
         let subject = make_issue();
         let workflow = Workflow::new("bug", vec![Stage::agent(StageKind::Plan)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(prompts[0].contains("BEGIN USER-PROVIDED CONTENT"));
         assert!(prompts[0].contains("END USER-PROVIDED CONTENT"));
     }
@@ -395,7 +489,17 @@ mod tests {
     fn branch_substituted_in_pr_prompts() {
         let subject = make_pr();
         let workflow = Workflow::new("pr-fix-ci", vec![Stage::agent(StageKind::FixCi)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(
             prompts[0].contains("automation/42-fix-the-bug"),
             "PR prompt should contain branch name"
@@ -406,7 +510,17 @@ mod tests {
     fn repo_substituted_in_prompts() {
         let subject = make_pr();
         let workflow = Workflow::new("pr-fix-ci", vec![Stage::agent(StageKind::FixCi)]);
-        let prompts = generate_prompts(&subject, &workflow, "run-1", &[], "", "claude", None);
+        let prompts = generate_prompts(
+            &subject,
+            &workflow,
+            "run-1",
+            &[],
+            "",
+            "claude",
+            None,
+            "test-route",
+            "test-workflow",
+        );
         assert!(prompts[0].contains("owner/repo"));
     }
 
@@ -420,7 +534,17 @@ mod tests {
             } else {
                 &issue
             };
-            let prompts = generate_prompts(subject, &wf, "run-1", &[], "", "claude", None);
+            let prompts = generate_prompts(
+                subject,
+                &wf,
+                "run-1",
+                &[],
+                "",
+                "claude",
+                None,
+                "test-route",
+                "test-workflow",
+            );
             assert_eq!(
                 prompts.len(),
                 wf.stages.len(),

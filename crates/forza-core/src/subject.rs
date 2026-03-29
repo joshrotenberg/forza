@@ -56,6 +56,9 @@ pub struct Subject {
     pub author: String,
     /// Branch name — PR head branch, or generated from pattern for issues.
     pub branch: String,
+    /// Issue comments (discussion context for agent prompts).
+    #[serde(default)]
+    pub comments: Vec<String>,
 
     // ── PR-specific fields (None for issues) ──────────────────────────
     /// GitHub mergeability state: `"MERGEABLE"`, `"CONFLICTING"`, `"UNKNOWN"`.
@@ -132,6 +135,7 @@ mod tests {
             html_url: "https://github.com/owner/repo/issues/42".into(),
             author: "user".into(),
             branch: "automation/42-fix-the-bug".into(),
+            comments: Vec::new(),
             mergeable: None,
             checks_passing: None,
             review_decision: None,
@@ -151,6 +155,7 @@ mod tests {
             html_url: "https://github.com/owner/repo/pull/99".into(),
             author: "user".into(),
             branch: "automation/42-fix-the-bug".into(),
+            comments: Vec::new(),
             mergeable: Some("MERGEABLE".into()),
             checks_passing: Some(true),
             review_decision: None,
