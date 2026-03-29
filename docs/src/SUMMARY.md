@@ -5,6 +5,7 @@
 - [Getting Started](getting-started.md)
 
 - [Concepts](concepts/overview.md)
+  - [Layers of Usage](concepts/layers.md)
   - [Routes](concepts/routes.md)
   - [Workflows](concepts/workflows.md)
   - [Stage Kinds](concepts/stage-kinds.md)
