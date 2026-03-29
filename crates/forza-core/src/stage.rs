@@ -219,8 +219,8 @@ fn default_true() -> bool {
 
 /// Shell command for the DraftPr stage.
 /// Loaded from `commands/draft_pr.sh` at compile time.
-/// Available for custom workflows that include a draft_pr stage.
-#[allow(dead_code)]
+/// Shell command for the DraftPr stage.
+/// Loaded from `commands/draft_pr.sh` at compile time.
 const DRAFT_PR_COMMAND: &str = include_str!("commands/draft_pr.sh");
 
 /// Shell command for the Merge stage.
@@ -263,6 +263,7 @@ impl Workflow {
                 vec![
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
+                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::OpenPr),
                 ],
             ),
@@ -270,6 +271,7 @@ impl Workflow {
                 "feature",
                 vec![
                     Stage::agent(StageKind::Plan),
+                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
