@@ -19,9 +19,10 @@ use tracing::info;
         Agent-agnostic: uses Claude by default, pluggable for other agents."
 )]
 struct Cli {
-    /// Path to config file.
-    #[arg(long, short, default_value = "forza.toml", global = true)]
-    config: PathBuf,
+    /// Path to config file. When omitted, forza.toml is used if present;
+    /// for `issue` and `pr` commands the config is optional.
+    #[arg(long, short, global = true)]
+    config: Option<PathBuf>,
 
     /// Write tracing output to this file instead of stderr.
     #[arg(long, global = true)]
@@ -416,6 +417,33 @@ fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> 
     }
 }
 
+/// Resolve the config to use.
+///
+/// - Explicit `--config PATH`: load it (error if missing).
+/// - No flag, `forza.toml` exists: load it.
+/// - No flag, `forza.toml` absent, command is `issue`/`pr`: return a default config.
+/// - No flag, `forza.toml` absent, other commands: error with a hint.
+fn resolve_config(
+    config_flag: &Option<PathBuf>,
+    command: &Command,
+) -> Result<forza::RunnerConfig, ExitCode> {
+    if let Some(path) = config_flag {
+        return load_config(path);
+    }
+    let default_path = PathBuf::from("forza.toml");
+    if default_path.exists() {
+        return load_config(&default_path);
+    }
+    if matches!(command, Command::Issue(_) | Command::Pr(_)) {
+        return Ok(forza::RunnerConfig::default());
+    }
+    eprintln!("error: forza.toml not found");
+    eprintln!(
+        "hint: run `forza init --repo owner/name` to create a config, or pass --config <path>"
+    );
+    Err(ExitCode::FAILURE)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -446,7 +474,7 @@ async fn main() -> ExitCode {
         return cmd_init(args, &*gh_init).await;
     }
 
-    let config = match load_config(&cli.config) {
+    let config = match resolve_config(&cli.config, &cli.command) {
         Ok(c) => c,
         Err(code) => return code,
     };
@@ -1469,6 +1497,31 @@ workflow = "feature"
 /// Resolve which repo, repo_dir, and routes to use for a single-issue command.
 ///
 /// Checks `args.repo` when multiple repos are configured; errors if ambiguous.
+/// Parse a GitHub `owner/name` slug from a remote URL.
+///
+/// Handles both HTTPS (`https://github.com/owner/name.git`) and SSH
+/// (`git@github.com:owner/name.git`) formats.
+fn slug_from_remote_url(url: &str) -> Option<String> {
+    let url = url.trim().trim_end_matches(".git");
+    // SSH: git@github.com:owner/name
+    if let Some(rest) = url.split_once(':').map(|(_, r)| r)
+        && rest.contains('/')
+        && !rest.contains("//")
+    {
+        return Some(rest.to_string());
+    }
+    // HTTPS: https://github.com/owner/name
+    let parts: Vec<&str> = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .splitn(3, '/')
+        .collect();
+    if parts.len() == 3 {
+        return Some(format!("{}/{}", parts[1], parts[2]));
+    }
+    None
+}
+
 async fn resolve_repo<'a>(
     args_repo: Option<&str>,
     args_repo_dir: &Option<PathBuf>,
@@ -1507,7 +1560,30 @@ async fn resolve_repo<'a>(
         .or_else(|| args_repo_dir.clone())
         .or_else(|| config.global.repo_dir.as_ref().map(PathBuf::from));
 
-    let rd = match forza::isolation::find_or_clone_repo(repo_str, explicit_dir, git).await {
+    // When no repo is configured (default config), infer it from the git remote.
+    let repo_slug = if repo_str.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let url = match git.remote_url(&cwd).await {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("error: no repo configured and could not read git remote: {e}");
+                eprintln!("hint: run from a git checkout or set repo in forza.toml");
+                return Err(ExitCode::FAILURE);
+            }
+        };
+        match slug_from_remote_url(&url) {
+            Some(s) => s,
+            None => {
+                eprintln!("error: could not parse owner/name from remote URL: {url}");
+                eprintln!("hint: set repo = \"owner/name\" in forza.toml");
+                return Err(ExitCode::FAILURE);
+            }
+        }
+    } else {
+        repo_str.to_string()
+    };
+
+    let rd = match forza::isolation::find_or_clone_repo(&repo_slug, explicit_dir, git).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1515,7 +1591,7 @@ async fn resolve_repo<'a>(
         }
     };
 
-    Ok((repo_str.to_string(), rd, routes))
+    Ok((repo_slug, rd, routes))
 }
 
 async fn cmd_issue(
