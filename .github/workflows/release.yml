@@ -242,6 +242,24 @@ jobs:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
+      # Clean up stale releases from previous failed runs.
+      # In a workspace, dist creates releases per-package. If one succeeds
+      # and another fails, re-running hits "release already exists". This
+      # step deletes any existing releases for tags in this run.
+      - name: Clean stale releases
+        shell: bash
+        run: |
+          TAG="${{ needs.plan.outputs.tag }}"
+          # Delete the announcement release if it exists
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          # For workspace releases, also clean the other package tag.
+          # Extract version from tag (e.g. forza-v0.5.2 -> 0.5.2)
+          VERSION=$(echo "$TAG" | grep -oP '\d+\.\d+\.\d+')
+          if [ -n "$VERSION" ]; then
+            for pkg in forza forza-core; do
+              gh release delete "${pkg}-v${VERSION}" --yes --cleanup-tag 2>/dev/null || true
+            done
+          fi
       - id: host
         shell: bash
         run: |
@@ -275,6 +293,9 @@ jobs:
         run: |
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
+
+          # Delete existing release if present (idempotent re-runs)
+          gh release delete "${{ needs.plan.outputs.tag }}" --yes --cleanup-tag 2>/dev/null || true
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
