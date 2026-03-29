@@ -15,7 +15,7 @@ if [ "$COMMAND" = "auto" ]; then
       if [ -n "${ISSUE_NUMBER:-}" ]; then
         echo "Event: issues.${GITHUB_EVENT_ACTION} on #${ISSUE_NUMBER}"
         COMMAND="issue"
-        ARGS="${ISSUE_NUMBER} --no-gate ${ARGS}"
+        ARGS="${ISSUE_NUMBER} ${ARGS}"
       else
         echo "Event: issues (no number), falling back to run"
         COMMAND="run"
