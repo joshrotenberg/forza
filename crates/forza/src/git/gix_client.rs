@@ -73,8 +73,9 @@ impl GitClient for GixClient {
         let output = if remote_exists || local_exists {
             git_cli(&["worktree", "add", &dir_str, branch], repo_dir).await?
         } else {
+            let base = self.default_branch(repo_dir).await?;
             git_cli(
-                &["worktree", "add", "-b", branch, &dir_str, "origin/main"],
+                &["worktree", "add", "-b", branch, &dir_str, &base],
                 repo_dir,
             )
             .await?
@@ -205,6 +206,18 @@ impl GitClient for GixClient {
             return Err(Error::Git(format!("git branch failed: {stderr}")));
         }
         Ok(())
+    }
+
+    async fn default_branch(&self, repo_dir: &Path) -> Result<String> {
+        let output = git_cli(&["symbolic-ref", "refs/remotes/origin/HEAD"], repo_dir).await?;
+        if output.status.success() {
+            let sym = String::from_utf8_lossy(&output.stdout);
+            let branch = sym.trim().trim_start_matches("refs/remotes/");
+            if !branch.is_empty() {
+                return Ok(branch.to_string());
+            }
+        }
+        Ok("origin/main".to_string())
     }
 
     async fn version(&self) -> Result<String> {

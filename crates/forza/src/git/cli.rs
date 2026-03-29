@@ -81,7 +81,8 @@ impl GitClient for GitCliClient {
             )
             .await?
         } else {
-            // New branch — create from origin/main.
+            // New branch — create from the repo's default branch.
+            let base = self.default_branch(repo_dir).await?;
             git(
                 &[
                     "worktree",
@@ -89,7 +90,7 @@ impl GitClient for GitCliClient {
                     "-b",
                     branch,
                     &worktree_dir.to_string_lossy(),
-                    "origin/main",
+                    &base,
                 ],
                 repo_dir,
             )
@@ -196,6 +197,19 @@ impl GitClient for GitCliClient {
         }
         git_ok(&["branch", branch, base], repo_dir).await?;
         Ok(())
+    }
+
+    async fn default_branch(&self, repo_dir: &Path) -> Result<String> {
+        let output = git(&["symbolic-ref", "refs/remotes/origin/HEAD"], repo_dir).await?;
+        if output.status.success() {
+            let sym = String::from_utf8_lossy(&output.stdout);
+            // "refs/remotes/origin/main\n" -> strip "refs/remotes/" prefix
+            let branch = sym.trim().trim_start_matches("refs/remotes/");
+            if !branch.is_empty() {
+                return Ok(branch.to_string());
+            }
+        }
+        Ok("origin/main".to_string())
     }
 
     async fn version(&self) -> Result<String> {

@@ -82,6 +82,12 @@ pub trait GitClient: Send + Sync {
     /// Fetches from origin first, then creates the branch if it does not exist.
     async fn create_branch_from(&self, repo_dir: &Path, branch: &str, base: &str) -> Result<()>;
 
+    /// Detect the default remote branch (e.g. `origin/main` or `origin/master`).
+    ///
+    /// Resolves `refs/remotes/origin/HEAD` via `git symbolic-ref`. Falls back
+    /// to `"origin/main"` if the ref is unset or the command fails.
+    async fn default_branch(&self, repo_dir: &Path) -> Result<String>;
+
     /// Check if git is available and return version string.
     async fn version(&self) -> Result<String>;
 }
