@@ -219,6 +219,8 @@ fn default_true() -> bool {
 
 /// Shell command for the DraftPr stage.
 /// Loaded from `commands/draft_pr.sh` at compile time.
+/// Available for custom workflows that include a draft_pr stage.
+#[allow(dead_code)]
 const DRAFT_PR_COMMAND: &str = include_str!("commands/draft_pr.sh");
 
 /// Shell command for the Merge stage.
@@ -243,40 +245,35 @@ impl Workflow {
     }
 
     /// Returns the builtin workflow templates.
+    /// Resolve a workflow alias to its canonical name.
+    ///
+    /// Legacy names (`bug`, `chore`) map to their modern equivalents.
+    pub fn resolve_alias(name: &str) -> &str {
+        match name {
+            "bug" | "chore" => "quick",
+            other => other,
+        }
+    }
+
     pub fn builtins() -> Vec<Workflow> {
         vec![
             // ── Issue workflows ──────────────────────────────────────
             Workflow::new(
-                "bug",
+                "quick",
                 vec![
-                    Stage::agent(StageKind::Plan),
-                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
-                    Stage::agent(StageKind::Review),
                     Stage::agent(StageKind::OpenPr),
-                    Stage::shell(StageKind::Merge, MERGE_COMMAND).optional(),
                 ],
             ),
             Workflow::new(
                 "feature",
                 vec![
                     Stage::agent(StageKind::Plan),
-                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
                     Stage::agent(StageKind::OpenPr),
-                    Stage::shell(StageKind::Merge, MERGE_COMMAND).optional(),
-                ],
-            ),
-            Workflow::new(
-                "chore",
-                vec![
-                    Stage::agent(StageKind::Implement),
-                    Stage::agent(StageKind::Test),
-                    Stage::agent(StageKind::OpenPr),
-                    Stage::shell(StageKind::Merge, MERGE_COMMAND).optional(),
                 ],
             ),
             Workflow::new(
@@ -365,15 +362,23 @@ mod tests {
     fn builtins_cover_expected_names() {
         let builtins = Workflow::builtins();
         let names: Vec<&str> = builtins.iter().map(|w| w.name.as_str()).collect();
-        assert!(names.contains(&"bug"));
+        assert!(names.contains(&"quick"));
         assert!(names.contains(&"feature"));
-        assert!(names.contains(&"chore"));
         assert!(names.contains(&"research"));
         assert!(names.contains(&"pr-fix"));
         assert!(names.contains(&"pr-fix-ci"));
         assert!(names.contains(&"pr-rebase"));
         assert!(names.contains(&"pr-merge"));
         assert!(names.contains(&"pr-review"));
+    }
+
+    #[test]
+    fn aliases_resolve_to_quick() {
+        assert_eq!(Workflow::resolve_alias("bug"), "quick");
+        assert_eq!(Workflow::resolve_alias("chore"), "quick");
+        assert_eq!(Workflow::resolve_alias("feature"), "feature");
+        assert_eq!(Workflow::resolve_alias("research"), "research");
+        assert_eq!(Workflow::resolve_alias("unknown"), "unknown");
     }
 
     #[test]

@@ -462,7 +462,9 @@ pub fn resolve_workflow_public(config: &RunnerConfig, name: &str) -> Option<Work
 
 /// Resolve a workflow name to a forza-core Workflow.
 fn resolve_workflow(config: &RunnerConfig, name: &str) -> Option<Workflow> {
-    // Prefer forza-core builtins (which include DraftPr stages).
+    // Resolve aliases (bug -> quick, chore -> quick).
+    let name = Workflow::resolve_alias(name);
+    // Prefer forza-core builtins.
     if let Some(builtin) = Workflow::builtins().into_iter().find(|w| w.name == name) {
         // Check if user has a custom override for this workflow name.
         if config.workflow_templates.iter().any(|t| t.name == name) {
