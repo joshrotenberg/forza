@@ -1617,13 +1617,14 @@ async fn cmd_issue(
             }
         };
 
-        // Detect plan issues.
+        // Detect plan issues — auto-dispatch to plan --exec.
         if issue.labels.iter().any(|l| l == "forza:plan") {
-            eprintln!(
-                "issue #{} is a plan issue. Use `forza plan --exec {}` to execute it.",
-                issue.number, issue.number
+            tracing::info!(
+                "issue #{} is a plan issue; dispatching to plan --exec",
+                issue.number
             );
-            return ExitCode::FAILURE;
+            return cmd_plan_exec(issue.number, &repo, &rd, config, gh, git, true, false, None)
+                .await;
         }
 
         // Match route.
@@ -1677,15 +1678,15 @@ async fn cmd_issue(
         return ExitCode::SUCCESS;
     }
 
-    // Check for plan issues before processing.
+    // Check for plan issues before processing — auto-dispatch to plan --exec.
     if let Ok(issue) = gh.fetch_issue(&repo, args.number).await
         && issue.labels.iter().any(|l| l == "forza:plan")
     {
-        eprintln!(
-            "issue #{} is a plan issue. Use `forza plan --exec {}` to execute it.",
-            args.number, args.number
+        tracing::info!(
+            "issue #{} is a plan issue; dispatching to plan --exec",
+            args.number
         );
-        return ExitCode::FAILURE;
+        return cmd_plan_exec(args.number, &repo, &rd, config, gh, git, false, false, None).await;
     }
 
     // --fix: find latest failed run and re-process.
