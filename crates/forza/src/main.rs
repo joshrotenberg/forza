@@ -996,6 +996,15 @@ async fn cmd_plan_exec(
         }
     }
 
+    let plan_label = if failed == 0 {
+        "forza:complete"
+    } else {
+        "forza:failed"
+    };
+    if let Err(e) = gh.add_label(repo, plan_number, plan_label).await {
+        eprintln!("warning: failed to apply label {plan_label} to #{plan_number}: {e}");
+    }
+
     println!(
         "\nPlan #{plan_number} complete: {succeeded} succeeded, {failed} failed, {} skipped",
         skipped.len().saturating_sub(failed)
