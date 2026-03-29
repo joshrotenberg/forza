@@ -175,15 +175,11 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
     // as normal.
     vec![
         WorkflowTemplate {
-            name: "bug".into(),
+            name: "quick".into(),
             stages: vec![
-                Stage::new(StageKind::Plan),
                 Stage::new(StageKind::Implement),
                 Stage::new(StageKind::Test),
-                Stage::new(StageKind::Review).optional(),
                 Stage::new(StageKind::OpenPr),
-                Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -193,21 +189,8 @@ pub fn builtin_templates() -> Vec<WorkflowTemplate> {
                 Stage::new(StageKind::Plan),
                 Stage::new(StageKind::Implement),
                 Stage::new(StageKind::Test),
-                Stage::new(StageKind::Review).optional(),
+                Stage::new(StageKind::Review),
                 Stage::new(StageKind::OpenPr),
-                Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
-            ],
-            ..Default::default()
-        },
-        WorkflowTemplate {
-            name: "chore".into(),
-            stages: vec![
-                Stage::new(StageKind::Implement),
-                Stage::new(StageKind::Test),
-                Stage::new(StageKind::OpenPr),
-                Stage::new(StageKind::Merge)
-                    .agentless("gh pr merge --auto --squash 2>/dev/null; gh pr view --json autoMergeRequest --jq '.autoMergeRequest != null' | grep -q true || gh pr merge --squash"),
             ],
             ..Default::default()
         },
@@ -309,8 +292,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bug_feature_chore_templates_end_with_merge() {
-        for name in &["bug", "feature", "chore"] {
+    fn quick_and_feature_templates_end_with_open_pr() {
+        for name in &["quick", "feature"] {
             let template = builtin_templates()
                 .into_iter()
                 .find(|t| t.name == *name)
@@ -318,10 +301,9 @@ mod tests {
             let last = template.stages.last().expect("template must have stages");
             assert_eq!(
                 last.kind,
-                StageKind::Merge,
-                "{name} template should end with Merge"
+                StageKind::OpenPr,
+                "{name} template should end with OpenPr"
             );
-            assert!(last.agentless, "{name} Merge stage must be agentless");
         }
     }
 

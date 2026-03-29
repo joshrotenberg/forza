@@ -833,14 +833,21 @@ impl RunnerConfig {
 
     /// Resolve a workflow template by name (custom overrides built-in).
     pub fn resolve_workflow(&self, name: &str) -> Option<crate::workflow::WorkflowTemplate> {
-        // Check custom templates first.
+        // Check custom templates first (before alias resolution so users can override aliases).
         if let Some(template) = self.workflow_templates.iter().find(|t| t.name == name) {
+            return Some(template.clone());
+        }
+        // Resolve aliases (bug -> quick, chore -> quick).
+        let canonical = forza_core::Workflow::resolve_alias(name);
+        if canonical != name
+            && let Some(template) = self.workflow_templates.iter().find(|t| t.name == canonical)
+        {
             return Some(template.clone());
         }
         // Fall back to built-in.
         crate::workflow::builtin_templates()
             .into_iter()
-            .find(|t| t.name == name)
+            .find(|t| t.name == canonical)
     }
 }
 
