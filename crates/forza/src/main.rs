@@ -131,7 +131,7 @@ struct IssueArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --route fix-pr\n  forza pr 123 --dry-run\n  forza pr 123 --workflow pr-fix\n  forza pr 123 --fix"
+    after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --dry-run\n  forza pr 123 --workflow pr-fix\n  forza pr 123 --fix"
 )]
 struct PrArgs {
     /// PR number to process.
@@ -151,9 +151,6 @@ struct PrArgs {
     /// Add a skill file for every stage in this run (repeatable).
     #[arg(long, action = clap::ArgAction::Append)]
     skill: Vec<String>,
-    /// Force a specific route by name, bypassing label-based matching.
-    #[arg(long)]
-    route: Option<String>,
     /// Override the workflow template, skipping route matching (e.g. pr-fix, pr-rebase).
     #[arg(long)]
     workflow: Option<String>,
@@ -1791,20 +1788,14 @@ async fn cmd_pr(
             }
         };
 
-        let (route_name, route) = if let Some(ref rn) = args.route
-            && let Some(r) = routes.get(rn)
-        {
-            (rn.as_str(), r)
-        } else {
-            match forza::RunnerConfig::match_pr_route_in(routes, &pr) {
-                Some(r) => r,
-                None => {
-                    eprintln!(
-                        "no route matches PR #{} (labels: {:?})",
-                        pr.number, pr.labels
-                    );
-                    return ExitCode::FAILURE;
-                }
+        let (route_name, route) = match forza::RunnerConfig::match_pr_route_in(routes, &pr) {
+            Some(r) => r,
+            None => {
+                eprintln!(
+                    "no route matches PR #{} (labels: {:?})",
+                    pr.number, pr.labels
+                );
+                return ExitCode::FAILURE;
             }
         };
 
@@ -1866,7 +1857,7 @@ async fn cmd_pr(
             git.clone(),
             args.model,
             args.skill,
-            args.route,
+            None,
             args.workflow,
         )
         .await
@@ -1890,7 +1881,7 @@ async fn cmd_pr(
         git.clone(),
         args.model,
         args.skill,
-        args.route,
+        None,
         args.workflow,
     )
     .await
