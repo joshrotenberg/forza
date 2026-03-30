@@ -457,15 +457,27 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
             .build()
             .map_err(|e| CoreError::Agent(format!("failed to create codex client: {e}")))?;
 
-        let mut cmd = codex_wrapper::ExecCommand::new(&full_prompt)
-            .dangerously_bypass_approvals_and_sandbox();
-
-        if let Some(m) = model {
-            cmd = cmd.model(m);
-        }
-
+        // Use ReviewCommand for review stages (codex exec review), ExecCommand
+        // for everything else. Both are ephemeral since forza stages are one-shot.
         let start = std::time::Instant::now();
-        let result = codex_wrapper::command::CodexCommand::execute(&cmd, &codex).await;
+        let result = if stage_name == "review" {
+            let mut cmd = codex_wrapper::ReviewCommand::new()
+                .prompt(&full_prompt)
+                .dangerously_bypass_approvals_and_sandbox()
+                .ephemeral();
+            if let Some(m) = model {
+                cmd = cmd.model(m);
+            }
+            codex_wrapper::command::CodexCommand::execute(&cmd, &codex).await
+        } else {
+            let mut cmd = codex_wrapper::ExecCommand::new(&full_prompt)
+                .dangerously_bypass_approvals_and_sandbox()
+                .ephemeral();
+            if let Some(m) = model {
+                cmd = cmd.model(m);
+            }
+            codex_wrapper::command::CodexCommand::execute(&cmd, &codex).await
+        };
         let duration = start.elapsed();
 
         match result {
