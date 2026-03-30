@@ -102,6 +102,8 @@ pub enum Execution {
         /// The shell command to execute via `sh -c`.
         command: String,
     },
+    /// Executed directly by the pipeline via trait methods — no agent or shell.
+    Native,
 }
 
 impl std::fmt::Display for Execution {
@@ -109,6 +111,7 @@ impl std::fmt::Display for Execution {
         match self {
             Execution::Agent => f.write_str("agent"),
             Execution::Shell { .. } => f.write_str("shell"),
+            Execution::Native => f.write_str("native"),
         }
     }
 }
@@ -170,6 +173,19 @@ impl Stage {
         }
     }
 
+    /// Create a new native-executed stage (direct API calls, no agent or shell).
+    pub fn native(kind: StageKind) -> Self {
+        Self {
+            kind,
+            execution: Execution::Native,
+            optional: false,
+            condition: None,
+            model: None,
+            skills: None,
+            mcp_config: None,
+        }
+    }
+
     /// Mark this stage as optional (failure won't stop the workflow).
     pub fn optional(mut self) -> Self {
         self.optional = true;
@@ -182,16 +198,16 @@ impl Stage {
         self
     }
 
-    /// Whether this stage runs a shell command directly.
+    /// Whether this stage runs without an agent (shell command or native API call).
     pub fn is_agentless(&self) -> bool {
-        matches!(self.execution, Execution::Shell { .. })
+        matches!(self.execution, Execution::Shell { .. } | Execution::Native)
     }
 
-    /// Returns the shell command if this is an agentless stage.
+    /// Returns the shell command if this is a shell-executed stage.
     pub fn shell_command(&self) -> Option<&str> {
         match &self.execution {
             Execution::Shell { command } => Some(command),
-            Execution::Agent => None,
+            Execution::Agent | Execution::Native => None,
         }
     }
 }
@@ -219,8 +235,8 @@ fn default_true() -> bool {
 
 /// Shell command for the DraftPr stage.
 /// Loaded from `commands/draft_pr.sh` at compile time.
-/// Shell command for the DraftPr stage.
-/// Loaded from `commands/draft_pr.sh` at compile time.
+/// Retained for custom shell-based DraftPr workflows.
+#[allow(dead_code)]
 const DRAFT_PR_COMMAND: &str = include_str!("commands/draft_pr.sh");
 
 /// Shell command for the Merge stage.
@@ -263,7 +279,7 @@ impl Workflow {
                 vec![
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
-                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND),
+                    Stage::native(StageKind::DraftPr),
                     Stage::agent(StageKind::OpenPr),
                 ],
             ),
@@ -271,7 +287,7 @@ impl Workflow {
                 "feature",
                 vec![
                     Stage::agent(StageKind::Plan),
-                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
+                    Stage::native(StageKind::DraftPr).optional(),
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
                     Stage::agent(StageKind::Review),
@@ -429,6 +445,15 @@ mod tests {
             .to_string(),
             "shell"
         );
+        assert_eq!(Execution::Native.to_string(), "native");
+    }
+
+    #[test]
+    fn stage_native_is_agentless() {
+        let s = Stage::native(StageKind::DraftPr);
+        assert!(s.is_agentless());
+        assert!(s.shell_command().is_none());
+        assert!(!s.optional);
     }
 
     #[test]
