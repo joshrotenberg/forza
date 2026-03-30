@@ -71,9 +71,9 @@ enum Command {
     after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml\n  forza init --repo owner/name --auto\n  forza init --repo owner/name --auto --model claude-opus-4-6\n  forza init --repo owner/name --guided"
 )]
 struct InitArgs {
-    /// Repository in owner/name format (e.g. acme/myrepo).
+    /// Repository in owner/name format (e.g. acme/myrepo). Inferred from git remote if omitted.
     #[arg(long)]
-    repo: String,
+    repo: Option<String>,
     /// Output path for the generated config file.
     #[arg(long, default_value = "forza.toml")]
     output: std::path::PathBuf,
@@ -1318,6 +1318,38 @@ fn parse_issue_numbers(args: &[String]) -> forza::error::Result<Vec<u64>> {
 }
 
 async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitCode {
+    // Resolve repo: explicit flag or infer from git remote.
+    let repo = match args.repo {
+        Some(r) => r,
+        None => {
+            let output = tokio::process::Command::new("git")
+                .args(["remote", "get-url", "origin"])
+                .output()
+                .await;
+            match output {
+                Ok(o) if o.status.success() => {
+                    let url = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    match slug_from_remote_url(&url) {
+                        Some(slug) => {
+                            println!("Detected repo: {slug}");
+                            slug
+                        }
+                        None => {
+                            eprintln!("error: could not parse owner/name from remote URL: {url}");
+                            eprintln!("hint: use --repo owner/name");
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("error: --repo not provided and could not read git remote");
+                    eprintln!("hint: run from a git checkout or use --repo owner/name");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    };
+
     // Forza lifecycle labels.
     let labels: &[(&str, &str, &str)] = &[
         (
@@ -1348,9 +1380,9 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
         ("forza:plan", "5319e7", "Forza plan issue"),
     ];
 
-    println!("Creating forza labels in {}...", args.repo);
+    println!("Creating forza labels in {}...", repo);
     for (name, color, description) in labels {
-        match gh.create_label(&args.repo, name, color, description).await {
+        match gh.create_label(&repo, name, color, description).await {
             Ok(()) => println!("  label: {name}"),
             Err(e) => {
                 eprintln!("error creating label {name}: {e}");
@@ -1364,7 +1396,7 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
 
         let prompt_template = include_str!("prompts/init_guided.md");
         let system_prompt = prompt_template
-            .replace("{repo}", &args.repo)
+            .replace("{repo}", &repo)
             .replace("{output}", &args.output.display().to_string());
 
         let claude = match Claude::builder().working_dir(".").build() {
@@ -1389,7 +1421,7 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
             cmd.arg("--model").arg(model);
         }
 
-        println!("Starting guided config session for {}...", args.repo);
+        println!("Starting guided config session for {}...", repo);
         let status = match cmd.status().await {
             Ok(s) => s,
             Err(e) => {
@@ -1434,7 +1466,7 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
 
         let prompt_template = include_str!("prompts/init_auto.md");
         let prompt = prompt_template
-            .replace("{repo}", &args.repo)
+            .replace("{repo}", &repo)
             .replace("{output}", &args.output.display().to_string());
 
         let claude = match Claude::builder().working_dir(".").build() {
@@ -1579,7 +1611,7 @@ type = "issue"
 label = "enhancement"
 workflow = "feature"
 "#,
-        repo = args.repo,
+        repo = repo,
         validation = validation_commands,
         agent_config = agent_config_block,
     );
