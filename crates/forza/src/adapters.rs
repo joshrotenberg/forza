@@ -384,8 +384,10 @@ impl forza_core::AgentExecutor for ClaudeAgentAdapter {
 
 /// Wraps `codex-wrapper` to satisfy `forza_core::AgentExecutor`.
 ///
-/// Uses `codex exec --full-auto` with the prompt as the command argument.
-/// Codex uses its own default model unless overridden.
+/// Uses `codex exec --dangerously-bypass-approvals-and-sandbox` so Codex has
+/// full git access in the worktree (the default `--full-auto` sandbox makes
+/// `.git` read-only, preventing commits). Codex uses its own default model
+/// unless overridden.
 pub struct CodexAgentAdapter;
 
 #[async_trait]
@@ -429,7 +431,8 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
             .build()
             .map_err(|e| CoreError::Agent(format!("failed to create codex client: {e}")))?;
 
-        let mut cmd = codex_wrapper::ExecCommand::new(&full_prompt).full_auto();
+        let mut cmd = codex_wrapper::ExecCommand::new(&full_prompt)
+            .dangerously_bypass_approvals_and_sandbox();
 
         if let Some(m) = model {
             cmd = cmd.model(m);
