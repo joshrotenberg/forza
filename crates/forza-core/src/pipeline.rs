@@ -313,6 +313,13 @@ pub async fn execute(
         };
 
         let success = result.success;
+
+        // Auto-commit: if an agent stage left uncommitted changes, commit them.
+        // Some agents (e.g. Codex) may not commit even when told to.
+        if success && matches!(stage.execution, Execution::Agent) {
+            auto_commit_if_needed(work_dir, &work.subject).await;
+        }
+
         info!(
             number = work.subject.number,
             stage = stage_name,
@@ -660,6 +667,65 @@ async fn run_finally_hooks(
     if let Some(hooks) = config.stage_hooks.get(stage_name) {
         for cmd in &hooks.finally {
             let _ = shell::run(cmd, work_dir, subject, run_id, route, workflow).await;
+        }
+    }
+}
+
+/// Check for uncommitted changes and commit them on behalf of the agent.
+///
+/// Some agents (notably Codex) make code changes but don't run `git commit`,
+/// even when instructed. This catches that case so downstream stages
+/// (validation, draft_pr) see the actual changes.
+async fn auto_commit_if_needed(work_dir: &Path, subject: &Subject) {
+    // Check for any uncommitted changes (staged or unstaged, including untracked).
+    let status = tokio::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(work_dir)
+        .output()
+        .await;
+
+    let has_changes = match &status {
+        Ok(output) => output.status.success() && !output.stdout.is_empty(),
+        Err(_) => false,
+    };
+
+    if !has_changes {
+        return;
+    }
+
+    info!(
+        number = subject.number,
+        "agent left uncommitted changes, auto-committing"
+    );
+
+    // Stage everything.
+    let add = tokio::process::Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(work_dir)
+        .output()
+        .await;
+    if add.is_err() || !add.unwrap().status.success() {
+        warn!(number = subject.number, "auto-commit: git add failed");
+        return;
+    }
+
+    // Commit.
+    let msg = format!(
+        "feat: {} closes #{}",
+        subject.title.to_lowercase(),
+        subject.number
+    );
+    let commit = tokio::process::Command::new("git")
+        .args(["commit", "-m", &msg])
+        .current_dir(work_dir)
+        .output()
+        .await;
+    match commit {
+        Ok(output) if output.status.success() => {
+            info!(number = subject.number, "auto-commit succeeded");
+        }
+        _ => {
+            warn!(number = subject.number, "auto-commit: git commit failed");
         }
     }
 }
