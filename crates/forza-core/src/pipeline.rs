@@ -250,6 +250,14 @@ pub async fn execute(
                     files_modified: None,
                 }
             }
+            Execution::Native => {
+                info!(
+                    number = work.subject.number,
+                    stage = stage_name,
+                    "running native stage"
+                );
+                execute_native_stage(stage.kind, &work.subject, work_dir, gh, git).await
+            }
             Execution::Agent => {
                 let model = stage.model.as_deref().or(config.model.as_deref());
                 let base_skills = stage.skills.as_ref().unwrap_or(&config.skills);
@@ -553,6 +561,90 @@ pub async fn execute(
     );
 
     run
+}
+
+/// Execute a native stage via direct trait method calls.
+///
+/// Currently supports `DraftPr` — pushes the branch and creates a draft PR
+/// using the `GitClient` and `GitHubClient` traits directly, replacing the
+/// previous shell-based implementation.
+async fn execute_native_stage(
+    kind: StageKind,
+    subject: &Subject,
+    work_dir: &Path,
+    gh: &dyn GitHubClient,
+    git: &dyn GitClient,
+) -> StageResult {
+    let start = std::time::Instant::now();
+    match kind {
+        StageKind::DraftPr => {
+            // 1. Push the branch.
+            if let Err(e) = git.push(work_dir, &subject.branch, false).await {
+                return StageResult {
+                    stage: "draft_pr".into(),
+                    success: false,
+                    duration_secs: start.elapsed().as_secs_f64(),
+                    cost_usd: None,
+                    output: format!("failed to push branch: {e}"),
+                    files_modified: None,
+                };
+            }
+
+            // 2. Build PR title and body.
+            let title = format!("[WIP] {} (#{})", subject.title, subject.number);
+            let body = match tokio::fs::read_to_string(work_dir.join(".plan_breadcrumb.md")).await {
+                Ok(content) if !content.trim().is_empty() => content,
+                _ => format!(
+                    "Work in progress for {} (#{})",
+                    subject.title, subject.number
+                ),
+            };
+
+            // 3. Create the draft PR.
+            match gh
+                .create_pr(
+                    &subject.repo,
+                    &subject.branch,
+                    &title,
+                    &body,
+                    true,
+                    work_dir,
+                )
+                .await
+            {
+                Ok(pr_number) => StageResult {
+                    stage: "draft_pr".into(),
+                    success: true,
+                    duration_secs: start.elapsed().as_secs_f64(),
+                    cost_usd: None,
+                    output: format!("created draft PR #{pr_number}"),
+                    files_modified: None,
+                },
+                Err(e) => StageResult {
+                    stage: "draft_pr".into(),
+                    success: false,
+                    duration_secs: start.elapsed().as_secs_f64(),
+                    cost_usd: None,
+                    output: format!("failed to create draft PR: {e}"),
+                    files_modified: None,
+                },
+            }
+        }
+        other => {
+            warn!(stage = other.name(), "unsupported native stage kind");
+            StageResult {
+                stage: other.name().into(),
+                success: false,
+                duration_secs: start.elapsed().as_secs_f64(),
+                cost_usd: None,
+                output: format!(
+                    "native execution not implemented for stage: {}",
+                    other.name()
+                ),
+                files_modified: None,
+            }
+        }
+    }
 }
 
 /// Run finally hooks for a stage (always runs, regardless of outcome).

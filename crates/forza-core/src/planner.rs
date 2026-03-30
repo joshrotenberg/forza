@@ -72,8 +72,8 @@ pub fn generate_prompts(
         .iter()
         .enumerate()
         .map(|(i, stage)| {
-            // Shell stages don't need prompts — the command is in the stage.
-            if matches!(stage.execution, Execution::Shell { .. }) {
+            // Shell and native stages don't need prompts.
+            if matches!(stage.execution, Execution::Shell { .. } | Execution::Native) {
                 return String::new();
             }
 

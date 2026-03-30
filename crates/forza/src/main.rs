@@ -2598,11 +2598,7 @@ fn explain_route_verbose(name: &str, route: &forza::config::Route, config: &forz
         println!("  Workflow:    {wf_name}");
         println!("  Stages:");
         for (i, stage) in wf.stages.iter().enumerate() {
-            let exec = if stage.is_agentless() {
-                "shell"
-            } else {
-                "agent"
-            };
+            let exec = &stage.execution;
             let opt = if stage.optional { " (optional)" } else { "" };
             let cond = stage
                 .condition
@@ -2669,11 +2665,7 @@ fn explain_workflow(name: &str, config: &forza::RunnerConfig) -> ExitCode {
     println!("Workflow: {} ({wt})", wf.name);
     println!("{}", "-".repeat(60));
     for (i, stage) in wf.stages.iter().enumerate() {
-        let exec = if stage.is_agentless() {
-            "shell"
-        } else {
-            "agent"
-        };
+        let exec = &stage.execution;
         let opt = if stage.optional { " (optional)" } else { "" };
         let cond = stage
             .condition
