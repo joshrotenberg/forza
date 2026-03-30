@@ -1,16 +1,15 @@
 #!/bin/sh
 # Create an early draft PR for visibility.
 # Pushes the branch and creates a draft PR.
-set -x
+set -xe
+
+BRANCH=$(git branch --show-current)
 
 # Create an empty commit to establish a diff from main.
 git commit --allow-empty -m "wip: $FORZA_SUBJECT_TITLE (#$FORZA_SUBJECT_NUMBER) [skip ci]"
 
 # Push the branch.
 git push origin HEAD
-
-# Check gh auth status
-gh auth status
 
 # Read the plan breadcrumb for the PR body.
 if [ -f .plan_breadcrumb.md ]; then
@@ -21,5 +20,7 @@ fi
 
 # Create the draft PR.
 gh pr create --draft \
+    --repo "$FORZA_REPO" \
+    --head "$BRANCH" \
     --title "[WIP] $FORZA_SUBJECT_TITLE (#$FORZA_SUBJECT_NUMBER)" \
     --body "$BODY"
