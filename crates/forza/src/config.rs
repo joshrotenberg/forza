@@ -27,6 +27,19 @@ pub struct RepoEntry {
     pub routes: IndexMap<String, Route>,
 }
 
+/// Per-agent model defaults and budget guardrails.
+///
+/// Configure under `[agents.claude]` or `[agents.codex]` in `forza.toml`.
+/// Settings here take effect when the matching agent is active, falling back
+/// to global config if absent.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PerAgentConfig {
+    /// Default model for this agent (overrides `[global] model`).
+    pub model: Option<String>,
+    /// Maximum budget in USD per run for this agent.
+    pub max_budget_usd: Option<f64>,
+}
+
 /// Top-level runner configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunnerConfig {
@@ -58,6 +71,10 @@ pub struct RunnerConfig {
     /// Global agent config (skills, MCP, system prompt).
     #[serde(default)]
     pub agent_config: AgentConfig,
+
+    /// Per-agent defaults (model, budget). Keys: `"claude"`, `"codex"`, etc.
+    #[serde(default)]
+    pub agents: HashMap<String, PerAgentConfig>,
 
     /// Per-stage hooks.
     #[serde(default)]
@@ -106,6 +123,7 @@ impl Default for RunnerConfig {
             routes: IndexMap::new(),
             workflow_templates: Vec::new(),
             agent_config: AgentConfig::default(),
+            agents: HashMap::new(),
             stage_hooks: HashMap::new(),
             prompt_templates: HashMap::new(),
         }
@@ -471,6 +489,9 @@ pub struct Route {
 
     /// Override branch_pattern for this route.
     pub branch_pattern: Option<String>,
+
+    /// Maximum budget in USD per run for this route.
+    pub max_budget_usd: Option<f64>,
 }
 
 impl Route {
@@ -738,9 +759,25 @@ impl RunnerConfig {
         Self::match_route_in(&self.routes, issue)
     }
 
-    /// Get the effective model for a route (route override > global default).
-    pub fn effective_model<'a>(&'a self, route: &'a Route) -> Option<&'a str> {
-        route.model.as_deref().or(self.global.model.as_deref())
+    /// Get the effective model for a route and agent.
+    ///
+    /// Resolution order: route > agents[agent] > global.
+    pub fn effective_model<'a>(&'a self, route: &'a Route, agent: &str) -> Option<&'a str> {
+        route
+            .model
+            .as_deref()
+            .or_else(|| self.agents.get(agent).and_then(|a| a.model.as_deref()))
+            .or(self.global.model.as_deref())
+    }
+
+    /// Get the effective max budget in USD for a route and agent.
+    ///
+    /// Resolution order: route > agents[agent] > global.max_cost_per_issue.
+    pub fn effective_max_budget_usd(&self, route: &Route, agent: &str) -> Option<f64> {
+        route
+            .max_budget_usd
+            .or_else(|| self.agents.get(agent).and_then(|a| a.max_budget_usd))
+            .or(self.global.max_cost_per_issue)
     }
 
     /// Get the effective skills for a stage+route+global (stage > route > global).
@@ -1025,8 +1062,100 @@ model = "opus"
         .unwrap();
 
         assert_eq!(
-            config.effective_model(&config.routes["bugfix"]),
+            config.effective_model(&config.routes["bugfix"], "claude"),
             Some("opus")
+        );
+    }
+
+    #[test]
+    fn effective_model_agents_table_used_when_no_route_override() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+model = "global-model"
+
+[agents.claude]
+model = "claude-opus-4-6"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.effective_model(&config.routes["bugfix"], "claude"),
+            Some("claude-opus-4-6")
+        );
+    }
+
+    #[test]
+    fn effective_model_route_beats_agents_table() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+
+[agents.claude]
+model = "claude-agents-model"
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+model = "route-model"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.effective_model(&config.routes["bugfix"], "claude"),
+            Some("route-model")
+        );
+    }
+
+    #[test]
+    fn effective_max_budget_usd_resolution() {
+        let config: RunnerConfig = toml::from_str(
+            r#"
+[global]
+repo = "owner/repo"
+max_cost_per_issue = 1.0
+
+[agents.claude]
+max_budget_usd = 2.0
+
+[routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+
+[routes.expensive]
+type = "issue"
+label = "expensive"
+workflow = "feature"
+max_budget_usd = 5.0
+"#,
+        )
+        .unwrap();
+
+        // Route override takes priority.
+        assert_eq!(
+            config.effective_max_budget_usd(&config.routes["expensive"], "claude"),
+            Some(5.0)
+        );
+        // Agent default beats global fallback.
+        assert_eq!(
+            config.effective_max_budget_usd(&config.routes["bugfix"], "claude"),
+            Some(2.0)
+        );
+        // Unknown agent falls back to global.max_cost_per_issue.
+        assert_eq!(
+            config.effective_max_budget_usd(&config.routes["bugfix"], "codex"),
+            Some(1.0)
         );
     }
 
@@ -1512,6 +1641,7 @@ workflow = "bug"
                 max_retries: None,
                 draft_pr: None,
                 branch_pattern: None,
+                max_budget_usd: None,
             },
         );
 
@@ -1668,6 +1798,7 @@ repo = "owner/repo"
             max_retries: None,
             draft_pr: None,
             branch_pattern: None,
+            max_budget_usd: None,
         };
         assert!(route.validate("test").is_err()); // no trigger
 

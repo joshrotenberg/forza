@@ -518,12 +518,21 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
         gate: config.global.gate_label.clone(),
     };
 
-    // Resolve model: route > global.
+    // Resolve model: route > agents[agent] > global.
+    let agent_name = &config.global.agent;
     let model = work
         .route
         .model
         .clone()
+        .or_else(|| config.agents.get(agent_name).and_then(|a| a.model.clone()))
         .or_else(|| config.global.model.clone());
+
+    // Resolve max_budget_usd: route > agents[agent] > global.max_cost_per_issue.
+    let max_budget_usd = work
+        .route
+        .max_budget_usd
+        .or_else(|| config.agents.get(agent_name).and_then(|a| a.max_budget_usd))
+        .or(config.global.max_cost_per_issue);
 
     // Resolve skills: route > global.
     let skills = work
@@ -566,6 +575,7 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
         stage_hooks,
         tools_dir: None,
         agent: String::new(),
+        max_budget_usd,
     }
 }
 
@@ -599,6 +609,7 @@ fn to_core_route(route: &Route) -> forza_core::Route {
         skills: route.skills.clone(),
         mcp_config: route.mcp_config.clone(),
         validation_commands: route.validation_commands.clone(),
+        max_budget_usd: route.max_budget_usd,
     }
 }
 
@@ -777,6 +788,7 @@ pub async fn process_issue(
                 },
                 mcp_config: None,
                 validation_commands: None,
+                max_budget_usd: None,
             },
             workflow_name: wf_name,
         }
@@ -890,6 +902,7 @@ pub async fn process_pr(
                 },
                 mcp_config: None,
                 validation_commands: None,
+                max_budget_usd: None,
             },
             workflow_name: wf_name,
         }

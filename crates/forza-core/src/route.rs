@@ -84,6 +84,9 @@ pub struct Route {
     /// Override validation commands for this route.
     #[serde(default)]
     pub validation_commands: Option<Vec<String>>,
+    /// Maximum budget in USD for a single run on this route.
+    #[serde(default)]
+    pub max_budget_usd: Option<f64>,
 }
 
 fn default_concurrency() -> usize {
@@ -227,6 +230,7 @@ mod tests {
             skills: None,
             mcp_config: None,
             validation_commands: None,
+            max_budget_usd: None,
         }
     }
 
@@ -243,6 +247,7 @@ mod tests {
             skills: None,
             mcp_config: None,
             validation_commands: None,
+            max_budget_usd: None,
         }
     }
 

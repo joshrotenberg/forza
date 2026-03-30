@@ -685,7 +685,7 @@ async fn cmd_open(
     let model = args.model.as_deref().or(config.global.model.as_deref());
 
     match agent
-        .execute("open", &prompt, &rd, model, &[], None, None, &[])
+        .execute("open", &prompt, &rd, model, None, &[], None, None, &[])
         .await
     {
         Ok(result) => {
@@ -781,7 +781,17 @@ async fn cmd_plan(
     let model = args.model.as_deref().or(config.global.model.as_deref());
 
     match agent
-        .execute("plan", &prompt, &rd, model, &[], None, None, &allowed_tools)
+        .execute(
+            "plan",
+            &prompt,
+            &rd,
+            model,
+            None,
+            &[],
+            None,
+            None,
+            &allowed_tools,
+        )
         .await
     {
         Ok(result) => {
@@ -1260,7 +1270,17 @@ async fn cmd_plan_revise(
     let model = config.global.model.as_deref();
 
     match agent
-        .execute("plan", &prompt, rd, model, &[], None, None, &allowed_tools)
+        .execute(
+            "plan",
+            &prompt,
+            rd,
+            model,
+            None,
+            &[],
+            None,
+            None,
+            &allowed_tools,
+        )
         .await
     {
         Ok(result) => {
@@ -1854,7 +1874,7 @@ async fn cmd_issue(
         let effective_model = args
             .model
             .as_deref()
-            .or_else(|| config.effective_model(route));
+            .or_else(|| config.effective_model(route, &config.global.agent));
         if let Some(model) = effective_model {
             println!("Model:    {model}");
         }
@@ -2006,7 +2026,7 @@ async fn cmd_pr(
         let effective_model = args
             .model
             .as_deref()
-            .or_else(|| config.effective_model(route));
+            .or_else(|| config.effective_model(route, &config.global.agent));
         if let Some(model) = effective_model {
             println!("Model:    {model}");
         }
@@ -2703,7 +2723,7 @@ fn explain_route_verbose(name: &str, route: &forza::config::Route, config: &forz
 
     // Model.
     let model = config
-        .effective_model(route)
+        .effective_model(route, &config.global.agent)
         .unwrap_or("(default)")
         .to_string();
     println!("  Model:       {model}");

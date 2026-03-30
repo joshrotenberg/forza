@@ -664,6 +664,7 @@ mod tests {
             repos: Default::default(),
             workflow_templates: vec![],
             agent_config: Default::default(),
+            agents: Default::default(),
             stage_hooks: Default::default(),
             prompt_templates: Default::default(),
         };
@@ -724,6 +725,7 @@ mod tests {
             repos: Default::default(),
             workflow_templates: vec![],
             agent_config: Default::default(),
+            agents: Default::default(),
             stage_hooks: Default::default(),
             prompt_templates: Default::default(),
         };
@@ -788,6 +790,7 @@ mod tests {
             repos: Default::default(),
             workflow_templates: vec![],
             agent_config: Default::default(),
+            agents: Default::default(),
             stage_hooks: Default::default(),
             prompt_templates: Default::default(),
         };

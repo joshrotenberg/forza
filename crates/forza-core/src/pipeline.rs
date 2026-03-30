@@ -47,6 +47,8 @@ pub struct PipelineConfig {
     pub tools_dir: Option<PathBuf>,
     /// Agent name used for agent-specific tool list lookup.
     pub agent: String,
+    /// Maximum budget in USD per run (passed to the agent executor).
+    pub max_budget_usd: Option<f64>,
 }
 
 /// Pre/post/finally hooks for a stage kind.
@@ -285,6 +287,7 @@ pub async fn execute(
                         &full_prompt,
                         work_dir,
                         model,
+                        config.max_budget_usd,
                         &effective_skills,
                         mcp,
                         config.append_system_prompt.as_deref(),
@@ -937,6 +940,7 @@ mod tests {
             _prompt: &str,
             _work_dir: &std::path::Path,
             _model: Option<&str>,
+            _max_budget_usd: Option<f64>,
             _skills: &[String],
             _mcp_config: Option<&str>,
             _append_system_prompt: Option<&str>,
@@ -985,6 +989,7 @@ mod tests {
                 skills: None,
                 mcp_config: None,
                 validation_commands: None,
+                max_budget_usd: None,
             },
             workflow_name: "bug".into(),
         }
@@ -1002,6 +1007,7 @@ mod tests {
             stage_hooks: std::collections::HashMap::new(),
             tools_dir: None,
             agent: "claude".into(),
+            max_budget_usd: None,
         }
     }
 
@@ -1206,6 +1212,7 @@ mod tests {
             stage_hooks: std::collections::HashMap::new(),
             tools_dir: None,
             agent: "claude".into(),
+            max_budget_usd: None,
         };
         assert!(config.stage_hooks.is_empty());
         assert!(config.validation.is_empty());

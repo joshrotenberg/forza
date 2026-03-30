@@ -278,7 +278,10 @@ async fn trigger_issue(
             route: route_name.to_string(),
             workflow: template.name.clone(),
             branch,
-            model: state.config.effective_model(route).map(|s| s.to_string()),
+            model: state
+                .config
+                .effective_model(route, &state.config.global.agent)
+                .map(|s| s.to_string()),
             stages,
         })
         .into_response());
@@ -367,7 +370,10 @@ async fn trigger_pr(
             route: route_name.to_string(),
             workflow: template.name.clone(),
             branch,
-            model: state.config.effective_model(route).map(|s| s.to_string()),
+            model: state
+                .config
+                .effective_model(route, &state.config.global.agent)
+                .map(|s| s.to_string()),
             stages,
         })
         .into_response());
@@ -617,6 +623,7 @@ async fn create_plan(
                 &prompt,
                 &rd,
                 model.as_deref(),
+                None,
                 &[],
                 None,
                 None,
@@ -765,6 +772,7 @@ async fn revise_plan(
                 &prompt,
                 &rd,
                 config.global.model.as_deref(),
+                None,
                 &[],
                 None,
                 None,

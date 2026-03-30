@@ -379,7 +379,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     format!("Workflow: {}", template.name),
                     format!("Branch:   {branch}"),
                 ];
-                if let Some(model) = config.effective_model(route) {
+                if let Some(model) = config.effective_model(route, &config.global.agent) {
                     lines.push(format!("Model:    {model}"));
                 }
                 lines.push("Stages:".to_string());
@@ -616,6 +616,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                         &prompt,
                         &rd,
                         model.as_deref(),
+                        None,
                         &[],
                         None,
                         None,
@@ -743,6 +744,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                         &prompt,
                         &rd,
                         app.config.global.model.as_deref(),
+                        None,
                         &[],
                         None,
                         None,

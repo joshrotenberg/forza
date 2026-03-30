@@ -158,6 +158,7 @@ pub trait AgentExecutor: Send + Sync {
         prompt: &str,
         work_dir: &Path,
         model: Option<&str>,
+        max_budget_usd: Option<f64>,
         skills: &[String],
         mcp_config: Option<&str>,
         append_system_prompt: Option<&str>,

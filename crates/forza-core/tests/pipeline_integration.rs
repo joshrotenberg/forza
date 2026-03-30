@@ -25,6 +25,7 @@ fn default_config() -> PipelineConfig {
         stage_hooks: HashMap::new(),
         tools_dir: None,
         agent: "claude".into(),
+        max_budget_usd: None,
     }
 }
 
@@ -41,6 +42,7 @@ fn bug_route() -> Route {
         skills: None,
         mcp_config: None,
         validation_commands: None,
+        max_budget_usd: None,
     }
 }
 
@@ -466,6 +468,7 @@ fn ci_failing_route() -> Route {
         skills: None,
         mcp_config: None,
         validation_commands: None,
+        max_budget_usd: None,
     }
 }
 
@@ -544,6 +547,7 @@ async fn pipeline_condition_route_has_conflicts_pr_runs_rebase() {
         skills: None,
         mcp_config: None,
         validation_commands: None,
+        max_budget_usd: None,
     };
 
     let workflow =

@@ -37,6 +37,7 @@ pub struct ClaudeAdapter {
     binary: Option<PathBuf>,
     model: Option<String>,
     max_turns: Option<u32>,
+    max_budget_usd: Option<f64>,
     skills: Vec<String>,
     mcp_config: Option<String>,
     append_system_prompt: Option<String>,
@@ -48,6 +49,7 @@ impl ClaudeAdapter {
             binary: None,
             model: None,
             max_turns: None,
+            max_budget_usd: None,
             skills: Vec::new(),
             mcp_config: None,
             append_system_prompt: None,
@@ -61,6 +63,11 @@ impl ClaudeAdapter {
 
     pub fn max_turns(mut self, turns: u32) -> Self {
         self.max_turns = Some(turns);
+        self
+    }
+
+    pub fn max_budget_usd(mut self, budget: f64) -> Self {
+        self.max_budget_usd = Some(budget);
         self
     }
 
@@ -121,6 +128,9 @@ impl AgentAdapter for ClaudeAdapter {
         }
         if let Some(turns) = self.max_turns {
             cmd = cmd.max_turns(turns);
+        }
+        if let Some(budget) = self.max_budget_usd {
+            cmd = cmd.max_budget_usd(budget);
         }
         if let Some(ref p) = self.mcp_config {
             cmd = cmd.mcp_config(p);

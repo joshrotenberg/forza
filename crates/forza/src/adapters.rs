@@ -372,6 +372,7 @@ impl forza_core::AgentExecutor for ClaudeAgentAdapter {
         prompt: &str,
         work_dir: &Path,
         model: Option<&str>,
+        max_budget_usd: Option<f64>,
         skills: &[String],
         mcp_config: Option<&str>,
         append_system_prompt: Option<&str>,
@@ -380,6 +381,9 @@ impl forza_core::AgentExecutor for ClaudeAgentAdapter {
         let mut adapter = crate::executor::ClaudeAdapter::new();
         if let Some(m) = model {
             adapter = adapter.model(m);
+        }
+        if let Some(budget) = max_budget_usd {
+            adapter = adapter.max_budget_usd(budget);
         }
         if !skills.is_empty() {
             adapter = adapter.skills(skills.iter().cloned());
@@ -456,11 +460,18 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
         prompt: &str,
         work_dir: &Path,
         model: Option<&str>,
+        max_budget_usd: Option<f64>,
         skills: &[String],
         mcp_config: Option<&str>,
         append_system_prompt: Option<&str>,
         allowed_tools: &[String],
     ) -> CoreResult<CoreStageResult> {
+        if max_budget_usd.is_some() {
+            tracing::warn!(
+                stage = stage_name,
+                "Codex does not support max_budget_usd; value will be ignored"
+            );
+        }
         if mcp_config.is_some() {
             tracing::warn!(
                 stage = stage_name,
