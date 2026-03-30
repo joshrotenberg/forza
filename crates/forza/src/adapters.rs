@@ -329,6 +329,48 @@ impl forza_core::GitClient for GitAdapter {
 
 // ── Agent factory ──────────────────────────────────────────────────────
 
+/// Infer the agent name from a model string.
+///
+/// Returns `Some("codex")` for OpenAI models, `Some("claude")` for Anthropic
+/// models, or `None` if the model doesn't clearly identify an agent.
+pub fn infer_agent_from_model(model: &str) -> Option<&'static str> {
+    if model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("gpt")
+        || model.starts_with("codex")
+    {
+        Some("codex")
+    } else if model.starts_with("claude")
+        || model.starts_with("sonnet")
+        || model.starts_with("opus")
+        || model.starts_with("haiku")
+    {
+        Some("claude")
+    } else {
+        None
+    }
+}
+
+/// Resolve the agent name from explicit `--agent`, `--model`, and config default.
+///
+/// Priority: explicit `--agent` > inferred from `--model` > config default.
+pub fn resolve_agent_name<'a>(
+    agent_override: Option<&'a str>,
+    model_override: Option<&'a str>,
+    config_default: &'a str,
+) -> &'a str {
+    if let Some(agent) = agent_override {
+        return agent;
+    }
+    if let Some(model) = model_override
+        && let Some(inferred) = infer_agent_from_model(model)
+    {
+        tracing::info!(model, agent = inferred, "inferred agent from model");
+        return inferred;
+    }
+    config_default
+}
+
 /// Create the appropriate agent executor based on the agent name.
 ///
 /// Supported values: `"claude"` (default), `"codex"`.

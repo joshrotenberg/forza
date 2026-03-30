@@ -811,6 +811,14 @@ pub async fn process_issue(
         }
     };
 
+    // Resolve agent before model_override is consumed.
+    let agent_name = adapters::resolve_agent_name(
+        agent_override.as_deref(),
+        model_override.as_deref(),
+        &config.global.agent,
+    )
+    .to_string();
+
     // Apply CLI overrides (for the route-matched path; workflow override path sets these above).
     if matched.route_name != "direct" {
         if let Some(m) = model_override {
@@ -823,8 +831,7 @@ pub async fn process_issue(
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
     let git_adapter = Arc::new(GitAdapter::new(git));
-    let agent_name = agent_override.as_deref().unwrap_or(&config.global.agent);
-    let agent = adapters::create_agent(agent_name);
+    let agent = adapters::create_agent(&agent_name);
 
     Ok(execute_work(
         matched,
@@ -919,6 +926,14 @@ pub async fn process_pr(
         }
     };
 
+    // Resolve agent before model_override is consumed.
+    let agent_name = adapters::resolve_agent_name(
+        agent_override.as_deref(),
+        model_override.as_deref(),
+        &config.global.agent,
+    )
+    .to_string();
+
     // Apply CLI overrides (for the route-matched path; workflow override path sets these above).
     if matched.route_name != "direct" {
         if let Some(m) = model_override {
@@ -931,8 +946,7 @@ pub async fn process_pr(
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
     let git_adapter = Arc::new(GitAdapter::new(git));
-    let agent_name = agent_override.as_deref().unwrap_or(&config.global.agent);
-    let agent = adapters::create_agent(agent_name);
+    let agent = adapters::create_agent(&agent_name);
 
     Ok(execute_work(
         matched,
