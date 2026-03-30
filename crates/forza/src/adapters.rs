@@ -425,10 +425,30 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
         work_dir: &Path,
         model: Option<&str>,
         skills: &[String],
-        _mcp_config: Option<&str>,
-        _append_system_prompt: Option<&str>,
-        _allowed_tools: &[String],
+        mcp_config: Option<&str>,
+        append_system_prompt: Option<&str>,
+        allowed_tools: &[String],
     ) -> CoreResult<CoreStageResult> {
+        if mcp_config.is_some() {
+            tracing::warn!(
+                stage = stage_name,
+                "Codex does not support MCP config; mcp_config will be ignored"
+            );
+        }
+        if append_system_prompt.is_some() {
+            tracing::warn!(
+                stage = stage_name,
+                "Codex does not support append_system_prompt; value will be ignored"
+            );
+        }
+        if !allowed_tools.is_empty() {
+            tracing::warn!(
+                stage = stage_name,
+                "Codex does not support allowed_tools; {} tool(s) will be ignored",
+                allowed_tools.len()
+            );
+        }
+
         // Prepend skill file contents to the prompt so Codex gets the same
         // context that Claude receives via --skill flags.
         let full_prompt = if skills.is_empty() {
