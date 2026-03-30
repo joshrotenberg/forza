@@ -6,6 +6,7 @@ Read issue #{issue_number} and analyze the codebase to create an implementation 
 
 Issue body:
 {issue_context}
+{comments}
 
 ## Steps
 

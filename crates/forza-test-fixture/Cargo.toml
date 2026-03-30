@@ -1,0 +1,6 @@
+[package]
+name = "forza-test-fixture"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+description = "Test fixture for forza integration tests — a simple calculator with intentional gaps"

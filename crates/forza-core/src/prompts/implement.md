@@ -3,6 +3,7 @@
 Implement the changes for issue #{issue_number}.
 
 {issue_title}
+{comments}
 
 ## Context
 
