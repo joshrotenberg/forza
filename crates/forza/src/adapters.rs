@@ -435,7 +435,10 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
             .dangerously_bypass_approvals_and_sandbox();
 
         if let Some(m) = model {
-            cmd = cmd.model(m);
+            // Skip Claude-specific models — let Codex use its default.
+            if !m.starts_with("claude") {
+                cmd = cmd.model(m);
+            }
         }
 
         let start = std::time::Instant::now();
