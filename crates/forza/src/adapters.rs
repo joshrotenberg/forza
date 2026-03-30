@@ -323,6 +323,17 @@ pub struct ClaudeAgentAdapter;
 
 #[async_trait]
 impl forza_core::AgentExecutor for ClaudeAgentAdapter {
+    fn resolve_model<'a>(&self, model: Option<&'a str>) -> Option<&'a str> {
+        match model {
+            // Accept claude models and unrecognized models (might be aliases like "sonnet").
+            Some(m) if m.starts_with("o1") || m.starts_with("o3") || m.starts_with("gpt") => {
+                tracing::warn!(model = m, "ignoring non-Claude model for Claude agent");
+                None
+            }
+            other => other,
+        }
+    }
+
     async fn execute(
         &self,
         stage_name: &str,
@@ -392,6 +403,16 @@ pub struct CodexAgentAdapter;
 
 #[async_trait]
 impl forza_core::AgentExecutor for CodexAgentAdapter {
+    fn resolve_model<'a>(&self, model: Option<&'a str>) -> Option<&'a str> {
+        match model {
+            Some(m) if m.starts_with("claude") || m.starts_with("sonnet") || m.starts_with("opus") || m.starts_with("haiku") => {
+                tracing::warn!(model = m, "ignoring Claude model for Codex agent");
+                None
+            }
+            other => other,
+        }
+    }
+
     async fn execute(
         &self,
         stage_name: &str,
@@ -435,10 +456,7 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
             .dangerously_bypass_approvals_and_sandbox();
 
         if let Some(m) = model {
-            // Skip Claude-specific models — let Codex use its default.
-            if !m.starts_with("claude") {
-                cmd = cmd.model(m);
-            }
+            cmd = cmd.model(m);
         }
 
         let start = std::time::Instant::now();

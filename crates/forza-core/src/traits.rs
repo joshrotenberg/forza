@@ -138,6 +138,16 @@ pub trait GitClient: Send + Sync {
 /// binary crate provides `ClaudeAdapter` as the default implementation.
 #[async_trait]
 pub trait AgentExecutor: Send + Sync {
+    /// Resolve a model name for this agent.
+    ///
+    /// Returns `Some(model)` if the agent should use a specific model,
+    /// or `None` to use the agent's built-in default. Implementations
+    /// should filter out models belonging to other agents (e.g. Codex
+    /// should ignore `claude-*` models and vice versa).
+    fn resolve_model<'a>(&self, model: Option<&'a str>) -> Option<&'a str> {
+        model
+    }
+
     /// Execute a stage with the given prompt in the given working directory.
     ///
     /// Returns a `StageResult` with success/failure, duration, cost, and output.
