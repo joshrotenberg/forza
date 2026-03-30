@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.5.2...forza-core-v0.6.0) - 2026-03-30
+
+### Added
+
+- *(pipeline)* native DraftPr stage — no shell, no gh CLI ([#482](https://github.com/joshrotenberg/forza/pull/482)) ([#503](https://github.com/joshrotenberg/forza/pull/503))
+
+### Fixed
+
+- *(pipeline)* prevent agents from committing forza internal files ([#551](https://github.com/joshrotenberg/forza/pull/551))
+- *(runner)* skip closed issues/PRs, auto-prune stale worktrees ([#539](https://github.com/joshrotenberg/forza/pull/539))
+- *(agents)* resolve models per-agent to prevent cross-agent model leaks ([#536](https://github.com/joshrotenberg/forza/pull/536))
+- *(pipeline)* auto-commit uncommitted changes after agent stages ([#534](https://github.com/joshrotenberg/forza/pull/534))
+- *(prompts)* make implement/test prompts resilient to missing breadcrumbs ([#524](https://github.com/joshrotenberg/forza/pull/524))
+- *(prompts)* add {comments} to plan and implement templates ([#510](https://github.com/joshrotenberg/forza/pull/510))
+- *(pipeline)* warn when open_pr succeeds but no PR found ([#491](https://github.com/joshrotenberg/forza/pull/491)) ([#502](https://github.com/joshrotenberg/forza/pull/502))
+- add --repo and --head to draft_pr, remove auth check ([#501](https://github.com/joshrotenberg/forza/pull/501))
+- *(pipeline)* restore draft_pr stage to quick and feature workflows ([#492](https://github.com/joshrotenberg/forza/pull/492))
+
+### Other
+
+- *(pipeline)* move breadcrumbs from worktree to state directory ([#553](https://github.com/joshrotenberg/forza/pull/553))
+- clean debug flags from draft_pr.sh (set -xe -> set -e) ([#512](https://github.com/joshrotenberg/forza/pull/512))
+- loud draft_pr — set -x, no error suppression, gh auth check ([#499](https://github.com/joshrotenberg/forza/pull/499))
+- show draft_pr errors instead of silencing them ([#496](https://github.com/joshrotenberg/forza/pull/496))
+
 ## [0.5.2](https://github.com/joshrotenberg/forza/compare/forza-core-v0.5.1...forza-core-v0.5.2) - 2026-03-29
 
 ### Fixed

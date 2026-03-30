@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/joshrotenberg/forza/compare/forza-v0.5.2...forza-v0.6.0) - 2026-03-30
+
+### Added
+
+- *(cli)* output GitHub URLs for PRs in run results ([#554](https://github.com/joshrotenberg/forza/pull/554))
+- *(adapters)* use wrapper RetryPolicy for transient agent CLI failures ([#550](https://github.com/joshrotenberg/forza/pull/550))
+- *(cli)* infer agent from model name when --agent is not specified ([#549](https://github.com/joshrotenberg/forza/pull/549))
+- *(cli)* check agent CLI version at startup closes #530 ([#543](https://github.com/joshrotenberg/forza/pull/543))
+- *(codex)* use ephemeral mode and ReviewCommand for Codex stages ([#541](https://github.com/joshrotenberg/forza/pull/541))
+- *(cli)* guided init supports --agent, auto-detection, and passthrough args ([#521](https://github.com/joshrotenberg/forza/pull/521)) ([#522](https://github.com/joshrotenberg/forza/pull/522))
+- multi-agent support — --agent flag, create_agent helper, codex skills ([#518](https://github.com/joshrotenberg/forza/pull/518)) ([#519](https://github.com/joshrotenberg/forza/pull/519))
+- *(cli)* search parent directories for forza.toml closes #495 ([#511](https://github.com/joshrotenberg/forza/pull/511))
+- *(pipeline)* native DraftPr stage — no shell, no gh CLI ([#482](https://github.com/joshrotenberg/forza/pull/482)) ([#503](https://github.com/joshrotenberg/forza/pull/503))
+- *(cli)* add `forza doctor` to check dependencies and environment closes #493 ([#497](https://github.com/joshrotenberg/forza/pull/497))
+
+### Fixed
+
+- *(plan)* use floor_char_boundary to avoid panic on multi-byte UTF-8 ([#555](https://github.com/joshrotenberg/forza/pull/555))
+- *(codex)* warn when unsupported options are silently dropped ([#540](https://github.com/joshrotenberg/forza/pull/540))
+- *(runner)* skip closed issues/PRs, auto-prune stale worktrees ([#539](https://github.com/joshrotenberg/forza/pull/539))
+- *(agents)* resolve models per-agent to prevent cross-agent model leaks ([#536](https://github.com/joshrotenberg/forza/pull/536))
+- *(codex)* skip Claude-specific models when invoking Codex ([#533](https://github.com/joshrotenberg/forza/pull/533))
+- *(codex)* use full sandbox bypass so Codex can commit in worktrees ([#525](https://github.com/joshrotenberg/forza/pull/525))
+- *(prompts)* make implement/test prompts resilient to missing breadcrumbs ([#524](https://github.com/joshrotenberg/forza/pull/524))
+- *(github)* detect default branch for PR creation ([#523](https://github.com/joshrotenberg/forza/pull/523))
+- *(cli)* add missing --repo-dir to plan/open, --repo to run ([#515](https://github.com/joshrotenberg/forza/pull/515)) ([#516](https://github.com/joshrotenberg/forza/pull/516))
+- *(cli)* forza init infers --repo from git remote ([#513](https://github.com/joshrotenberg/forza/pull/513)) ([#514](https://github.com/joshrotenberg/forza/pull/514))
+
+### Other
+
+- extract shared skill-file logic, fix codex init path ([#532](https://github.com/joshrotenberg/forza/pull/532)) ([#542](https://github.com/joshrotenberg/forza/pull/542))
+
 ## [0.5.2](https://github.com/joshrotenberg/forza/compare/forza-v0.5.1...forza-v0.5.2) - 2026-03-29
 
 ### Fixed
