@@ -433,18 +433,17 @@ fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> 
     }
 }
 
-/// Walk parent directories looking for `forza.toml`, stopping at the filesystem
-/// root or when leaving the current git repository (no `.git` in the ancestor).
+/// Walk parent directories looking for `forza.toml`, stopping at the git repo root.
 fn find_config_in_ancestors() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     for ancestor in cwd.ancestors().skip(1) {
-        // Stop if we've left the git repository.
-        if !ancestor.join(".git").exists() {
-            return None;
-        }
         let candidate = ancestor.join("forza.toml");
         if candidate.exists() {
             return Some(candidate);
+        }
+        // If this directory is the git repo root, don't search beyond it.
+        if ancestor.join(".git").exists() {
+            return None;
         }
     }
     None
