@@ -98,7 +98,11 @@ impl AgentAdapter for ClaudeAdapter {
 
         let start = std::time::Instant::now();
 
-        let mut builder = Claude::builder().working_dir(work_dir);
+        let mut builder = Claude::builder().working_dir(work_dir).retry(
+            claude_wrapper::RetryPolicy::new()
+                .exponential()
+                .retry_on_timeout(true),
+        );
         if let Some(ref binary) = self.binary {
             builder = builder.binary(binary);
         }
