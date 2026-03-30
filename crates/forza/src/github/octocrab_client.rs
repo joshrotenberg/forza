@@ -510,7 +510,7 @@ impl GitHubClient for OctocrabClient {
             .draft(draft)
             .send()
             .await
-            .map_err(|e| Error::GitHub(format!("create PR: {e}")))?;
+            .map_err(|e| Error::GitHub(format!("create PR: {e:#?}")))?;
 
         Ok(PullRequest {
             number: pr.number,
