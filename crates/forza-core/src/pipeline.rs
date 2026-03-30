@@ -742,10 +742,26 @@ async fn load_breadcrumb(run_id: &str, stage_name: &str, work_dir: &Path) -> Opt
 }
 
 /// Create a worktree for isolated execution.
+///
+/// If a previous run left the worktree registered but the directory missing,
+/// prune stale entries before retrying.
 async fn create_worktree(repo_dir: &Path, branch: &str, git: &dyn GitClient) -> Result<PathBuf> {
     let worktree_dir = repo_dir.join(".worktrees").join(branch.replace('/', "-"));
-    git.create_worktree(repo_dir, branch, &worktree_dir).await?;
-    Ok(worktree_dir)
+    match git.create_worktree(repo_dir, branch, &worktree_dir).await {
+        Ok(()) => Ok(worktree_dir),
+        Err(_) if !worktree_dir.exists() => {
+            // Directory missing but registered — prune and retry.
+            info!("pruning stale worktree registration, retrying");
+            let _ = tokio::process::Command::new("git")
+                .args(["worktree", "prune"])
+                .current_dir(repo_dir)
+                .output()
+                .await;
+            git.create_worktree(repo_dir, branch, &worktree_dir).await?;
+            Ok(worktree_dir)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Save a run record to the state directory.

@@ -739,6 +739,12 @@ pub async fn process_issue(
         _ => forza_core::Error::GitHub(e.to_string()),
     })?;
 
+    if issue.state == "closed" {
+        return Err(forza_core::Error::GitHub(format!(
+            "issue #{number} is already closed"
+        )));
+    }
+
     let mut matched = if let Some(wf_name) = workflow_override {
         // Workflow override: skip route matching, build a synthetic route.
         let branch = generate_branch(
@@ -854,6 +860,13 @@ pub async fn process_pr(
         crate::error::Error::GitHub(msg) => forza_core::Error::GitHub(msg),
         _ => forza_core::Error::GitHub(e.to_string()),
     })?;
+
+    if pr.state == "closed" || pr.state == "merged" {
+        return Err(forza_core::Error::GitHub(format!(
+            "PR #{number} is already {}",
+            pr.state
+        )));
+    }
 
     let mut matched = if let Some(wf_name) = workflow_override {
         // Workflow override: skip route matching, build a synthetic route.
