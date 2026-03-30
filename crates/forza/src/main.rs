@@ -433,10 +433,27 @@ fn load_config(path: &std::path::Path) -> Result<forza::RunnerConfig, ExitCode> 
     }
 }
 
+/// Walk parent directories looking for `forza.toml`, stopping at the git repo root.
+fn find_config_in_ancestors() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    for ancestor in cwd.ancestors().skip(1) {
+        let candidate = ancestor.join("forza.toml");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        // If this directory is the git repo root, don't search beyond it.
+        if ancestor.join(".git").exists() {
+            return None;
+        }
+    }
+    None
+}
+
 /// Resolve the config to use.
 ///
 /// - Explicit `--config PATH`: load it (error if missing).
-/// - No flag, `forza.toml` exists: load it.
+/// - No flag, `forza.toml` exists in cwd: load it.
+/// - No flag, `forza.toml` found in a parent directory (within the same git repo): load it.
 /// - No flag, `forza.toml` absent, command is `issue`/`pr`/`explain`: return a default config.
 /// - No flag, `forza.toml` absent, other commands: error with a hint.
 fn resolve_config(
@@ -449,6 +466,9 @@ fn resolve_config(
     let default_path = PathBuf::from("forza.toml");
     if default_path.exists() {
         return load_config(&default_path);
+    }
+    if let Some(ancestor_path) = find_config_in_ancestors() {
+        return load_config(&ancestor_path);
     }
     if matches!(
         command,
