@@ -405,7 +405,12 @@ pub struct CodexAgentAdapter;
 impl forza_core::AgentExecutor for CodexAgentAdapter {
     fn resolve_model<'a>(&self, model: Option<&'a str>) -> Option<&'a str> {
         match model {
-            Some(m) if m.starts_with("claude") || m.starts_with("sonnet") || m.starts_with("opus") || m.starts_with("haiku") => {
+            Some(m)
+                if m.starts_with("claude")
+                    || m.starts_with("sonnet")
+                    || m.starts_with("opus")
+                    || m.starts_with("haiku") =>
+            {
                 tracing::warn!(model = m, "ignoring Claude model for Codex agent");
                 None
             }

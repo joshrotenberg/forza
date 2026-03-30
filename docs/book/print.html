@@ -1,0 +1,2812 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>forza</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Autonomous GitHub issue runner — turns issues into pull requests through configurable multi-stage workflows.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-39616064.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-92948abe.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">forza</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/joshrotenberg/forza" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="forza"><a class="header" href="#forza">forza</a></h1>
+<p><a href="https://crates.io/crates/forza"><img src="https://img.shields.io/crates/v/forza.svg" alt="Crates.io"></a>
+<a href="https://github.com/joshrotenberg/forza/blob/main/LICENSE-MIT"><img src="https://img.shields.io/crates/l/forza.svg" alt="License"></a>
+<a href="https://github.com/joshrotenberg/forza/actions/workflows/ci.yml"><img src="https://github.com/joshrotenberg/forza/actions/workflows/ci.yml/badge.svg" alt="CI"></a></p>
+<p>Autonomous GitHub issue runner. Turns issues into pull requests through configurable multi-stage workflows. Agent-agnostic — supports Claude and Codex backends.</p>
+<h2 id="how-it-works"><a class="header" href="#how-it-works">How it works</a></h2>
+<pre><code>GitHub Issue  -&gt;  Route Match  -&gt;  Workflow  -&gt;  Stages  -&gt;  Pull Request  -&gt;  Auto-Merge
+</code></pre>
+<p>When an issue is labeled (or a PR enters a matching state), forza:</p>
+<ol>
+<li><strong>Picks it up</strong> — the polling loop finds issues with <code>forza:ready</code> or PRs matching a condition route</li>
+<li><strong>Matches a route</strong> — compares the label or PR state against your configured routes to select a workflow</li>
+<li><strong>Executes stages</strong> — runs each stage in order (e.g., plan → implement → test → review → open_pr), with validation commands between stages and breadcrumbs carrying context forward</li>
+<li><strong>Opens a PR</strong> — commits the work to an isolated git worktree and opens a PR against your branch</li>
+<li><strong>Merges (optional)</strong> — if the workflow includes a merge stage, it waits for CI and merges</li>
+</ol>
+<p>For PRs, condition routes automatically detect CI failures and merge conflicts, fix them, and merge when green. Each condition route does one thing — the poll loop handles sequencing across cycles.</p>
+<h2 id="responsibility-boundaries"><a class="header" href="#responsibility-boundaries">Responsibility boundaries</a></h2>
+<p>Forza is infrastructure, not an autonomous agent. Three actors share responsibility:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Actor</th><th>Decides</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>You (human)</strong></td><td>What to work on, when to start, what “done” means</td></tr>
+<tr><td><strong>Forza (process)</strong></td><td>Which stages run, where work happens, when to stop, label lifecycle</td></tr>
+<tr><td><strong>Agent (Claude/Codex)</strong></td><td>How to implement, what files to change, how to fix failures</td></tr>
+</tbody>
+</table>
+</div>
+<p>Adding decision-making to the framework — adaptive prompting, automatic workflow selection, intelligent retries — blurs these lanes and adds unpredictability. When evaluating a new feature, ask: does this belong with the human, the agent, or the framework? If it belongs with the human or agent, it does not belong in forza.</p>
+<h2 id="when-to-use-forza"><a class="header" href="#when-to-use-forza">When to use forza</a></h2>
+<p><strong>Quick one-off</strong> — process a single issue with no configuration: <code>forza issue 42 --workflow feature</code>. Forza plans, implements, tests, reviews, and opens a PR. Good for bug fixes, chores, and anything with a clear spec.</p>
+<p><strong>Solo developer</strong> — add a <code>forza.toml</code> with routes, label issues <code>forza:ready</code>, and let forza open PRs while you work on something else. Run <code>forza run --watch</code> for continuous processing.</p>
+<p><strong>Team with an issue backlog</strong> — apply <code>forza:ready</code> to issues you’re comfortable automating. Use <code>forza plan</code> to organize a batch, review the plan, then <code>forza plan --exec</code> to process them all in dependency order.</p>
+<p><strong>CI maintenance</strong> — configure condition routes (<code>ci_failing_or_conflicts</code>, <code>approved_and_green</code>) so forza watches your PRs and fixes failures, rebases stale branches, and merges when green — without anyone having to manually re-trigger CI or click merge.</p>
+<p><strong>Research and exploration</strong> — use a <code>research</code> route with the <code>research -&gt; comment</code> workflow. Forza investigates a question and posts findings directly on the issue as a comment. No code changes, no PR.</p>
+<p><strong>Batch planning</strong> — use <code>forza plan</code> to analyze a set of issues at once. The agent reads the codebase, classifies issues, detects dependencies, and creates a plan issue with a mermaid dependency graph and implementation order. Review the plan, comment to adjust, then <code>forza plan --exec</code> processes them in dependency order.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
+<h2 id="quickstart"><a class="header" href="#quickstart">Quickstart</a></h2>
+<h3 id="1-install-forza"><a class="header" href="#1-install-forza">1. Install forza</a></h3>
+<p><strong>Homebrew (macOS and Linux):</strong></p>
+<pre><code class="language-bash">brew install joshrotenberg/brew/forza
+</code></pre>
+<p><strong>Shell installer (macOS and Linux):</strong></p>
+<pre><code class="language-bash">curl --proto '=https' --tlsv1.2 -LsSf https://github.com/joshrotenberg/forza/releases/latest/download/forza-installer.sh | sh
+</code></pre>
+<p><strong>PowerShell installer (Windows):</strong></p>
+<pre><code class="language-powershell">powershell -ExecutionPolicy ByPass -c "irm https://github.com/joshrotenberg/forza/releases/latest/download/forza-installer.ps1 | iex"
+</code></pre>
+<p><strong>Cargo:</strong></p>
+<pre><code class="language-bash">cargo install forza
+</code></pre>
+<h3 id="2-process-your-first-issue"><a class="header" href="#2-process-your-first-issue">2. Process your first issue</a></h3>
+<p>No configuration needed. From inside any repo with a GitHub remote:</p>
+<pre><code class="language-bash">forza issue 42 --workflow feature
+</code></pre>
+<p>Forza picks up the issue, plans the fix, implements it, runs tests, and opens a PR.</p>
+<p>To preview without executing:</p>
+<pre><code class="language-bash">forza issue 42 --workflow feature --dry-run
+</code></pre>
+<h3 id="3-add-configuration-optional"><a class="header" href="#3-add-configuration-optional">3. Add configuration (optional)</a></h3>
+<p>For automated discovery and continuous processing, initialize your repo:</p>
+<pre><code class="language-bash">forza init --repo owner/name
+</code></pre>
+<p>This creates the required GitHub labels and writes a starter <code>forza.toml</code>. Then:</p>
+<pre><code class="language-bash"># Run one batch cycle
+forza run
+
+# Continuous polling
+forza run --watch
+</code></pre>
+<h2 id="minimal-configuration"><a class="header" href="#minimal-configuration">Minimal configuration</a></h2>
+<p>The simplest setup — one repo, one bug route:</p>
+<pre><code class="language-toml">[global]
+model = "claude-sonnet-4-6"
+
+[repos."your-org/your-repo".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+</code></pre>
+<p>Save as <code>forza.toml</code> in your working directory.</p>
+<h2 id="common-commands"><a class="header" href="#common-commands">Common commands</a></h2>
+<pre><code class="language-bash"># Process a single issue (configless)
+forza issue 42 --workflow feature
+
+# Process a single issue (with config, route matching)
+forza issue 42
+
+# Fix a PR
+forza pr 123 --workflow pr-fix
+
+# Re-run a failed issue with error context
+forza issue 42 --fix
+
+# Plan a batch of issues
+forza plan 10 20 30
+
+# Execute a plan in dependency order
+forza plan --exec 99
+
+# Run one batch cycle (requires config)
+forza run
+
+# Continuous polling (requires config)
+forza run --watch --interval 60
+
+# View run history
+forza status
+
+# Visualize config, routes, and workflows
+forza explain
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next steps</a></h2>
+<ul>
+<li>Read <a href="#concepts">Concepts</a> to understand routes, workflows, and stages</li>
+<li>See <a href="#configuration-reference">Configuration Reference</a> for all available options</li>
+<li>Browse <a href="#configuration-examples">Examples</a> for common configurations</li>
+<li>Learn how to <a href="#writing-issues-for-forza">write effective issues</a> for best results</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="concepts"><a class="header" href="#concepts">Concepts</a></h1>
+<p>Forza is built around a small set of composable primitives. Understanding how they fit together makes configuration straightforward and debugging predictable.</p>
+<h2 id="the-execution-model"><a class="header" href="#the-execution-model">The execution model</a></h2>
+<pre><code>Issue/PR  -&gt;  Route  -&gt;  Workflow  -&gt;  Stages  -&gt;  Output
+</code></pre>
+<ol>
+<li><strong>Discovery</strong> — forza fetches open issues and PRs from GitHub</li>
+<li><strong>Route matching</strong> — each subject is compared against configured routes; the first match wins</li>
+<li><strong>Workflow execution</strong> — the matched route’s workflow runs its stages in order</li>
+<li><strong>Output</strong> — forza opens a PR, posts a comment, merges, or records a failure</li>
+</ol>
+<h2 id="core-primitives"><a class="header" href="#core-primitives">Core primitives</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Primitive</th><th>What it is</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#routes">Route</a></td><td>A named rule mapping a trigger to a workflow</td></tr>
+<tr><td><a href="#workflows">Workflow</a></td><td>A chain of stages for a type of work</td></tr>
+<tr><td><a href="#stage-kinds">Stage</a></td><td>A bounded unit of work (agent-driven or agentless)</td></tr>
+<tr><td><a href="#lifecycle">Lifecycle</a></td><td>GitHub label state machine tracking progress</td></tr>
+<tr><td><a href="#breadcrumbs">Breadcrumbs</a></td><td>Context summaries passed between stages</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="three-actors-clear-lanes"><a class="header" href="#three-actors-clear-lanes">Three actors, clear lanes</a></h2>
+<p>Forza is infrastructure, not an autonomous agent. Three actors share responsibility, and keeping their lanes clear is the key design constraint.</p>
+<h3 id="forza-decides-the-process"><a class="header" href="#forza-decides-the-process">Forza decides (the process)</a></h3>
+<ul>
+<li>Which stages run and in what order</li>
+<li>When to stop (validation failure, retry budget)</li>
+<li>Where work happens (worktrees, branches)</li>
+<li>What labels to apply and when</li>
+<li>How to recover (condition routes, retry with backoff)</li>
+</ul>
+<h3 id="humans-decide-the-direction"><a class="header" href="#humans-decide-the-direction">Humans decide (the direction)</a></h3>
+<ul>
+<li>What to work on (labeling issues <code>forza:ready</code>)</li>
+<li>When to start (manual run, watch mode, or action trigger)</li>
+<li>What “done” looks like (acceptance criteria in the issue)</li>
+<li>Whether to merge (or let auto-merge handle it)</li>
+<li>Sequencing and prioritization of work</li>
+</ul>
+<h3 id="the-agent-decides-the-implementation"><a class="header" href="#the-agent-decides-the-implementation">The agent decides (the implementation)</a></h3>
+<ul>
+<li>How to implement the plan</li>
+<li>What files to change</li>
+<li>How to fix failures</li>
+<li>What to write in the PR</li>
+</ul>
+<p>Forza provides deterministic guardrails — stages, validation, lifecycle labels, retry budgets — and the human decides what to work on and when. The agent decides how. Adding intelligence to the framework adds unpredictability.</p>
+<h2 id="design-principles"><a class="header" href="#design-principles">Design principles</a></h2>
+<p>These follow directly from the three-actor model.</p>
+<ol>
+<li>
+<p><strong>One route, one action, one cycle.</strong> A route does exactly one thing. If a PR needs rebasing and CI fixing and merging, that is three routes across three poll cycles. Multi-step behavior is achieved through configuration, not framework complexity.</p>
+</li>
+<li>
+<p><strong>GitHub is the state machine.</strong> PR state on GitHub is authoritative. Routes are transition functions. The poll loop is the event loop. Forza does not maintain an internal state machine that duplicates or diverges from GitHub state.</p>
+</li>
+<li>
+<p><strong>Match once, carry through.</strong> Once a subject is matched to a route, that binding is immutable for the duration of the run. No re-matching mid-execution. The human’s intent, expressed as a label or PR state, is locked in at discovery time.</p>
+</li>
+<li>
+<p><strong>Config is behavior.</strong> Everything a route does is visible in <code>forza.toml</code>. No global flags that secretly modify stage behavior. If you want auto-merge, include the merge stage. If you do not want it, leave it out.</p>
+</li>
+<li>
+<p><strong>All workflows are linear.</strong> Issues and PRs follow the same execution pipeline. Differences are data, not control flow. Stages execute in order. Fail-fast on non-optional failures. No reactive dispatch or branching.</p>
+</li>
+</ol>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="layers-of-usage"><a class="header" href="#layers-of-usage">Layers of Usage</a></h1>
+<p>forza is designed to be useful immediately with zero setup, and progressively more powerful as you add configuration. Each layer builds on the previous one.</p>
+<h2 id="layer-1-direct-commands"><a class="header" href="#layer-1-direct-commands">Layer 1: Direct Commands</a></h2>
+<p><strong>What you need:</strong> forza installed, a GitHub repo.</p>
+<p>No configuration file, no labels, no setup. Tell forza exactly what to do:</p>
+<pre><code class="language-bash">forza issue 42 --workflow quick
+forza pr 84 --workflow pr-fix
+</code></pre>
+<p>forza infers the repository from the git remote, creates a worktree, runs the workflow stages, and opens a PR. You review and merge.</p>
+<p><strong>Built-in workflows:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Workflow</th><th>Stages</th><th>Use for</th></tr>
+</thead>
+<tbody>
+<tr><td><code>quick</code></td><td>implement, test, open_pr</td><td>Bugs, chores, small tasks</td></tr>
+<tr><td><code>feature</code></td><td>plan, implement, test, review, open_pr</td><td>Larger features</td></tr>
+<tr><td><code>research</code></td><td>research, comment</td><td>Investigation, no code changes</td></tr>
+<tr><td><code>pr-fix</code></td><td>revise_pr, fix_ci</td><td>Fix PR review feedback + CI</td></tr>
+<tr><td><code>pr-rebase</code></td><td>revise_pr</td><td>Rebase a PR</td></tr>
+<tr><td><code>pr-merge</code></td><td>merge</td><td>Merge a PR</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>When to graduate to Layer 2:</strong> you find yourself running forza on multiple issues with the same workflow, or you want forza to pick up work automatically.</p>
+<h2 id="layer-2-config-driven-automation"><a class="header" href="#layer-2-config-driven-automation">Layer 2: Config-Driven Automation</a></h2>
+<p><strong>What you need:</strong> a <code>forza.toml</code> with routes.</p>
+<p>Routes tell forza <em>when</em> to act, not just <em>how</em>. A route maps a trigger (label or condition) to a workflow:</p>
+<pre><code class="language-toml">[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+
+[repos."owner/name".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "quick"
+
+[repos."owner/name".routes.auto-rebase]
+type = "pr"
+condition = "has_conflicts"
+workflow = "pr-rebase"
+scope = "forza_owned"
+</code></pre>
+<p>Now forza can discover work on its own:</p>
+<pre><code class="language-bash">forza run                    # process one batch
+forza run --watch            # poll continuously
+</code></pre>
+<p>Label an issue <code>bug</code> + <code>forza:ready</code>, and the next poll cycle picks it up. Condition routes watch PRs and react to state changes (CI failing, merge conflicts, approved and green).</p>
+<p><strong>When to graduate to Layer 3:</strong> you have a batch of issues to work through and want to control the order.</p>
+<h2 id="layer-3-planning"><a class="header" href="#layer-3-planning">Layer 3: Planning</a></h2>
+<p><strong>What you need:</strong> Layer 1 or 2, plus issues to plan.</p>
+<p><code>forza plan</code> analyzes multiple issues at once, detects dependencies, and creates a plan issue with a visual dependency graph:</p>
+<pre><code class="language-bash">forza plan 42 45 48 51       # analyze specific issues
+forza plan --label backlog   # analyze by label
+</code></pre>
+<p>The plan issue is a GitHub issue with:</p>
+<ul>
+<li>A mermaid dependency graph (rendered by GitHub)</li>
+<li>Actionable issues in recommended order</li>
+<li>Blocked issues with reasons</li>
+<li>Skipped issues (already processed)</li>
+</ul>
+<p>Review the plan. Comment to adjust. Revise:</p>
+<pre><code class="language-bash">forza plan --revise 99       # update plan based on your comments
+</code></pre>
+<p>Execute when ready:</p>
+<pre><code class="language-bash">forza plan --exec 99         # process issues in dependency order
+forza plan --exec 99 --dry-run   # preview the order first
+</code></pre>
+<p>The plan is the contract between you and forza. You decide what to work on and approve the approach. Forza executes.</p>
+<p><strong>When to graduate to Layer 4:</strong> you want forza to run on GitHub’s infrastructure instead of your laptop.</p>
+<h2 id="layer-4-github-action"><a class="header" href="#layer-4-github-action">Layer 4: GitHub Action</a></h2>
+<p><strong>What you need:</strong> the forza action in your workflow, an <code>ANTHROPIC_API_KEY</code> secret.</p>
+<p>Drop a workflow file in any repo:</p>
+<pre><code class="language-yaml"># .github/workflows/forza.yml
+name: forza
+on:
+  issues:
+    types: [labeled]
+  check_suite:
+    types: [completed]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  forza:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: joshrotenberg/forza/action@main
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+</code></pre>
+<p>Label an issue, the action fires, forza runs on GitHub’s runners. No laptop, no polling, no infrastructure.</p>
+<p>The action’s auto mode maps events to commands:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Event</th><th>forza command</th></tr>
+</thead>
+<tbody>
+<tr><td><code>issues.labeled</code></td><td><code>forza issue &lt;N&gt;</code></td></tr>
+<tr><td><code>pull_request.labeled</code></td><td><code>forza pr &lt;N&gt;</code></td></tr>
+<tr><td><code>check_suite.completed</code></td><td><code>forza run</code></td></tr>
+<tr><td><code>schedule</code></td><td><code>forza run</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>When to graduate to Layer 5:</strong> you want automated testing of forza itself.</p>
+<h2 id="layer-5-self-testing"><a class="header" href="#layer-5-self-testing">Layer 5: Self-Testing</a></h2>
+<p><strong>What you need:</strong> a test repo with scenario tags, the test-scenarios workflow.</p>
+<p>forza can test itself. The test framework uses immutable git tags with known-broken code. Each test run:</p>
+<ol>
+<li>Creates a throwaway branch from a scenario tag</li>
+<li>Creates an issue describing the bug</li>
+<li>Runs forza to fix it</li>
+<li>Verifies the fix (build, tests pass)</li>
+<li>Cleans up (close issue, close PR, delete branch)</li>
+</ol>
+<p>The tag never changes. The test is infinitely repeatable. Multiple test runs can happen concurrently.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Layer</th><th>Config needed</th><th>Trigger</th><th>Runs on</th></tr>
+</thead>
+<tbody>
+<tr><td>1. Direct</td><td>None</td><td>You type a command</td><td>Your machine</td></tr>
+<tr><td>2. Automation</td><td><code>forza.toml</code></td><td>Labels, conditions</td><td>Your machine</td></tr>
+<tr><td>3. Planning</td><td>Issues to plan</td><td><code>forza plan</code></td><td>Your machine</td></tr>
+<tr><td>4. Action</td><td>Workflow file</td><td>GitHub events</td><td>GitHub runners</td></tr>
+<tr><td>5. Testing</td><td>Scenario tags</td><td>Schedule, dispatch</td><td>GitHub runners</td></tr>
+</tbody>
+</table>
+</div>
+<p>Start at Layer 1. Add layers as your needs grow.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="routes"><a class="header" href="#routes">Routes</a></h1>
+<p>A route is a named rule that maps a trigger to a workflow. Routes are defined per repository under <code>[repos."owner/name".routes.&lt;name&gt;]</code>.</p>
+<h2 id="trigger-types"><a class="header" href="#trigger-types">Trigger types</a></h2>
+<h3 id="label-routes"><a class="header" href="#label-routes">Label routes</a></h3>
+<p>Fire when a GitHub label is present on an issue or PR:</p>
+<pre><code class="language-toml">[repos."owner/name".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+</code></pre>
+<h3 id="condition-routes"><a class="header" href="#condition-routes">Condition routes</a></h3>
+<p>Fire automatically when PR state matches a condition — no label required:</p>
+<pre><code class="language-toml">[repos."owner/name".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+max_retries = 3
+</code></pre>
+<p>Supported conditions:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Condition</th><th>When it fires</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ci_failing</code></td><td>CI checks are failing on the PR</td></tr>
+<tr><td><code>has_conflicts</code></td><td>The PR has merge conflicts</td></tr>
+<tr><td><code>ci_failing_or_conflicts</code></td><td>Either CI failing or conflicts present</td></tr>
+<tr><td><code>approved_and_green</code></td><td>PR is approved and CI is passing</td></tr>
+<tr><td><code>ci_green_no_objections</code></td><td>CI is passing with no blocking reviews</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="route-fields"><a class="header" href="#route-fields">Route fields</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>type</code></td><td><code>"issue"</code> | <code>"pr"</code></td><td>Whether this route matches issues or PRs</td></tr>
+<tr><td><code>label</code></td><td>string</td><td>Label trigger (label routes only)</td></tr>
+<tr><td><code>condition</code></td><td>string</td><td>Condition trigger (condition routes only)</td></tr>
+<tr><td><code>workflow</code></td><td>string</td><td>Workflow template name to execute</td></tr>
+<tr><td><code>scope</code></td><td><code>"forza_owned"</code> | <code>"all"</code></td><td>Which PRs to evaluate (condition routes only; default: <code>forza_owned</code>)</td></tr>
+<tr><td><code>concurrency</code></td><td>integer</td><td>Maximum parallel runs for this route</td></tr>
+<tr><td><code>poll_interval</code></td><td>integer</td><td>Seconds between discovery polls</td></tr>
+<tr><td><code>max_retries</code></td><td>integer</td><td>Max failures before applying <code>forza:needs-human</code></td></tr>
+<tr><td><code>branch_pattern</code></td><td>string</td><td>Override global <code>branch_pattern</code> for this route (see <a href="#branch-pattern-placeholders">Configuration Reference</a>)</td></tr>
+<tr><td><code>model</code></td><td>string</td><td>Model override for this route</td></tr>
+<tr><td><code>skills</code></td><td>string[]</td><td>Additional skill files to inject into agent prompts</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="branch-pattern"><a class="header" href="#branch-pattern">Branch pattern</a></h2>
+<p>Each route inherits the global <code>branch_pattern</code> by default. Set <code>branch_pattern</code> on a route to override it:</p>
+<pre><code class="language-toml">[global]
+branch_pattern = "automation/{issue}-{slug}"
+
+[repos."owner/name".routes.bugfix]
+# Inherits global pattern: automation/42-fix-bug
+
+[repos."owner/name".routes.design-review]
+branch_pattern = "review/{issue}-{slug}"
+# Produces: review/42-fix-bug — different prefix
+</code></pre>
+<p>Per-route patterns are useful for separating branch namespaces. For example, a <code>design-review</code> route with prefix <code>review/</code> won’t be picked up by condition routes that use <code>forza_owned</code> scope, because <code>forza_owned</code> checks branch prefixes (see below).</p>
+<h2 id="scope"><a class="header" href="#scope">Scope</a></h2>
+<p>Condition routes default to <code>forza_owned</code> — only PRs on branches that forza created are evaluated. Set <code>scope = "all"</code> to evaluate every open PR in the repository.</p>
+<p>Label routes always evaluate every issue or PR with the matching label, regardless of origin.</p>
+<h3 id="multi-prefix-forza_owned-matching"><a class="header" href="#multi-prefix-forza_owned-matching">Multi-prefix <code>forza_owned</code> matching</a></h3>
+<p>The <code>forza_owned</code> scope determines ownership by checking whether a PR’s branch starts with any known forza branch prefix. Forza collects prefixes from the global <code>branch_pattern</code> and every per-route <code>branch_pattern</code> override, deduplicates them, and matches against all of them.</p>
+<p>For example, given this config:</p>
+<pre><code class="language-toml">[global]
+branch_pattern = "automation/{issue}-{slug}"    # prefix: "automation/"
+
+[repos."owner/name".routes.bugfix]
+# Inherits global — no new prefix
+
+[repos."owner/name".routes.hotfix]
+branch_pattern = "fix/{issue}-{slug}"           # prefix: "fix/"
+
+[repos."owner/name".routes.auto-rebase]
+type = "pr"
+condition = "has_conflicts"
+scope = "forza_owned"
+</code></pre>
+<p>The <code>auto-rebase</code> route evaluates PRs on branches starting with <code>automation/</code> or <code>fix/</code> — covering branches created by both the <code>bugfix</code> and <code>hotfix</code> routes.</p>
+<p>To exclude a route’s branches from condition-triggered maintenance, give it a prefix that differs from all other routes:</p>
+<pre><code class="language-toml">[repos."owner/name".routes.design-review]
+branch_pattern = "review/{issue}-{slug}"
+# auto-rebase won't touch these — "review/" isn't a forza_owned prefix
+# unless another route also uses "review/"
+</code></pre>
+<h2 id="concurrency"><a class="header" href="#concurrency">Concurrency</a></h2>
+<p>Each route has its own concurrency limit. Multiple routes can run concurrently up to <code>[global].max_concurrency</code>. A route with <code>concurrency = 1</code> processes one issue at a time within that route, reducing merge conflicts.</p>
+<h2 id="issue-selection-and-ordering"><a class="header" href="#issue-selection-and-ordering">Issue selection and ordering</a></h2>
+<p>Each discovery cycle, forza fetches up to 10 issues that have the gate label (if configured) and matches each against the defined routes. The GitHub API returns issues in an unspecified order — without explicit ordering, the set of issues processed each cycle is non-deterministic.</p>
+<p>Use <code>issue_order</code> in <code>[global]</code> to control the order:</p>
+<pre><code class="language-toml">[global]
+issue_order = "oldest_first"   # default — lower issue numbers first
+# issue_order = "newest_first" # higher issue numbers first
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Value</th><th>Behavior</th></tr>
+</thead>
+<tbody>
+<tr><td><code>oldest_first</code></td><td>Issues are sorted by issue number ascending (lower = older). This is the default.</td></tr>
+<tr><td><code>newest_first</code></td><td>Issues are sorted by issue number descending (higher = more recent).</td></tr>
+</tbody>
+</table>
+</div>
+<p>Note that <code>issue_order</code> controls priority within a single discovery cycle only. When the cycle produces more candidates than <code>max_concurrency</code> allows, lower-priority candidates are dropped and re-discovered next cycle — there are no fairness or starvation guarantees across cycles.</p>
+<h2 id="max-retries"><a class="header" href="#max-retries">Max retries</a></h2>
+<p>When a route’s run fails, forza increments a retry counter for that subject. Once <code>max_retries</code> is reached, forza applies the <code>forza:needs-human</code> label and stops processing that subject, preserving it for manual review.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="workflows"><a class="header" href="#workflows">Workflows</a></h1>
+<p>A workflow is a chain of stages that execute in order. Forza ships with built-in workflow templates for common tasks. You can also define custom templates in <code>forza.toml</code>.</p>
+<h2 id="built-in-templates"><a class="header" href="#built-in-templates">Built-in templates</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Template</th><th>Stages</th></tr>
+</thead>
+<tbody>
+<tr><td><code>bug</code></td><td>plan -&gt; draft_pr* -&gt; implement -&gt; test -&gt; review -&gt; open_pr -&gt; merge*</td></tr>
+<tr><td><code>feature</code></td><td>plan -&gt; draft_pr* -&gt; implement -&gt; test -&gt; review -&gt; open_pr -&gt; merge*</td></tr>
+<tr><td><code>chore</code></td><td>implement -&gt; test -&gt; open_pr -&gt; merge*</td></tr>
+<tr><td><code>research</code></td><td>research -&gt; comment</td></tr>
+<tr><td><code>pr-fix</code></td><td>revise_pr -&gt; fix_ci</td></tr>
+<tr><td><code>pr-fix-ci</code></td><td>fix_ci</td></tr>
+<tr><td><code>pr-rebase</code></td><td>revise_pr</td></tr>
+<tr><td><code>pr-merge</code></td><td>merge (no worktree)</td></tr>
+<tr><td><code>pr-review</code></td><td>review</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>*</code> = optional stage (skipped if not applicable, does not fail the run)</p>
+<h2 id="execution-model"><a class="header" href="#execution-model">Execution model</a></h2>
+<p>All workflows are linear. Stages run in the order defined. A non-optional stage failure stops the workflow and records a failure outcome. Optional stages are skipped without failure if their condition is not met.</p>
+<p>Between stages, forza runs the configured <a href="#validation-1">validation commands</a>. All validation commands must pass before the next stage starts.</p>
+<h2 id="custom-workflow-templates"><a class="header" href="#custom-workflow-templates">Custom workflow templates</a></h2>
+<p>Define custom templates in <code>forza.toml</code> using <code>[[workflow_templates]]</code>:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "safe-feature"
+stages = [
+  { kind = "plan" },
+  { kind = "implement" },
+  { kind = "test", optional = true },
+  { kind = "review" },
+  { kind = "open_pr" },
+]
+</code></pre>
+<p>A custom template with the same name as a built-in overrides the built-in.</p>
+<h2 id="stage-options"><a class="header" href="#stage-options">Stage options</a></h2>
+<p>Each stage in a template accepts these options:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>kind</code></td><td>string</td><td>The <a href="#stage-kinds">stage kind</a> to execute</td></tr>
+<tr><td><code>optional</code></td><td>bool</td><td>If true, skip rather than fail when not applicable</td></tr>
+<tr><td><code>condition</code></td><td>string</td><td>Shell command; skip stage if exit code is non-zero</td></tr>
+<tr><td><code>max_retries</code></td><td>integer</td><td>Stage-level retry limit</td></tr>
+<tr><td><code>command</code></td><td>string</td><td>For agentless stages: the shell command to run</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="choosing-a-workflow"><a class="header" href="#choosing-a-workflow">Choosing a workflow</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Situation</th><th>Recommended workflow</th></tr>
+</thead>
+<tbody>
+<tr><td>Bug fix with full lifecycle</td><td><code>bug</code></td></tr>
+<tr><td>New feature with full lifecycle</td><td><code>feature</code></td></tr>
+<tr><td>Dependency update or housekeeping</td><td><code>chore</code></td></tr>
+<tr><td>Research question, no code change</td><td><code>research</code></td></tr>
+<tr><td>Fix CI failures on an existing PR</td><td><code>pr-fix-ci</code></td></tr>
+<tr><td>Rebase a PR with conflicts</td><td><code>pr-rebase</code></td></tr>
+<tr><td>Fix CI and rebase</td><td><code>pr-fix</code></td></tr>
+<tr><td>Merge an approved PR</td><td><code>pr-merge</code></td></tr>
+<tr><td>Review a PR and leave feedback</td><td><code>pr-review</code></td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="stage-kinds"><a class="header" href="#stage-kinds">Stage Kinds</a></h1>
+<p>There are 13 stage kinds. Each performs a specific, bounded unit of work.</p>
+<h2 id="issue-workflow-stages"><a class="header" href="#issue-workflow-stages">Issue workflow stages</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Kind</th><th>What the agent does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>triage</code></td><td>Classify the issue, add labels, determine if it is actionable</td></tr>
+<tr><td><code>clarify</code></td><td>Post a comment asking for more information if the issue is ambiguous</td></tr>
+<tr><td><code>plan</code></td><td>Produce a detailed implementation plan; writes a plan breadcrumb</td></tr>
+<tr><td><code>draft_pr</code></td><td>Open a draft PR before implementation begins</td></tr>
+<tr><td><code>implement</code></td><td>Make the code changes described in the plan</td></tr>
+<tr><td><code>test</code></td><td>Write or update tests to cover the changes</td></tr>
+<tr><td><code>review</code></td><td>Self-review the diff; flag concerns or verify correctness</td></tr>
+<tr><td><code>open_pr</code></td><td>Commit to the worktree branch and open a PR</td></tr>
+<tr><td><code>research</code></td><td>Investigate a question and produce findings</td></tr>
+<tr><td><code>comment</code></td><td>Post a comment on the issue (typically after <code>research</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="pr-workflow-stages"><a class="header" href="#pr-workflow-stages">PR workflow stages</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Kind</th><th>What the agent does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>revise_pr</code></td><td>Rebase the PR branch against the target branch</td></tr>
+<tr><td><code>fix_ci</code></td><td>Diagnose CI failures and apply targeted fixes</td></tr>
+<tr><td><code>merge</code></td><td>Merge the PR once CI is green and approvals are satisfied</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="agentless-stages"><a class="header" href="#agentless-stages">Agentless stages</a></h2>
+<p>Any stage kind can be made agentless by providing a <code>command</code> field instead of invoking an agent:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "format-only"
+stages = [
+  { kind = "implement", command = "cargo fmt --all" },
+  { kind = "open_pr" },
+]
+</code></pre>
+<p>An agentless stage runs the shell command directly and does not consume agent tokens.</p>
+<h2 id="conditional-stages"><a class="header" href="#conditional-stages">Conditional stages</a></h2>
+<p>A stage can be gated by a shell command. If the command exits non-zero, the stage is skipped:</p>
+<pre><code class="language-toml">{ kind = "test", condition = "git diff --quiet HEAD~1 -- tests/" }
+</code></pre>
+<p>This skips the <code>test</code> stage if no test files were modified.</p>
+<h2 id="optional-stages"><a class="header" href="#optional-stages">Optional stages</a></h2>
+<p>Mark a stage <code>optional = true</code> to skip it without failing the run when it is not applicable:</p>
+<pre><code class="language-toml">{ kind = "draft_pr", optional = true }
+</code></pre>
+<p>The <code>draft_pr</code> and <code>merge</code> stages in the built-in <code>bug</code> and <code>feature</code> templates are optional by default.</p>
+<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment variables</a></h2>
+<p>All stages (agentless commands, conditions, hooks, validation) receive these environment variables:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Value</th></tr>
+</thead>
+<tbody>
+<tr><td><code>FORZA_REPO</code></td><td><code>owner/name</code></td></tr>
+<tr><td><code>FORZA_SUBJECT_TYPE</code></td><td><code>issue</code> or <code>pr</code></td></tr>
+<tr><td><code>FORZA_SUBJECT_NUMBER</code></td><td>Issue or PR number</td></tr>
+<tr><td><code>FORZA_ISSUE_NUMBER</code></td><td>Issue number (issue runs only)</td></tr>
+<tr><td><code>FORZA_PR_NUMBER</code></td><td>PR number (PR runs only)</td></tr>
+<tr><td><code>FORZA_BRANCH</code></td><td>The worktree branch name</td></tr>
+<tr><td><code>FORZA_RUN_ID</code></td><td>Unique run identifier</td></tr>
+<tr><td><code>FORZA_ROUTE</code></td><td>Route name</td></tr>
+<tr><td><code>FORZA_WORKFLOW</code></td><td>Workflow template name</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="lifecycle"><a class="header" href="#lifecycle">Lifecycle</a></h1>
+<p>Forza uses GitHub labels to track the state of each issue or PR it processes. Labels are the state machine.</p>
+<h2 id="label-states"><a class="header" href="#label-states">Label states</a></h2>
+<pre><code>forza:ready
+    |
+    v
+forza:in-progress
+    |
+    +-- (success) --&gt; forza:complete
+    |
+    +-- (failure) --&gt; forza:failed
+    |
+    +-- (retries exhausted) --&gt; forza:needs-human
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Label</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>forza:ready</code></td><td>The issue/PR is eligible for processing (gate label)</td></tr>
+<tr><td><code>forza:in-progress</code></td><td>Forza has picked up the subject and is working on it</td></tr>
+<tr><td><code>forza:complete</code></td><td>The run completed successfully</td></tr>
+<tr><td><code>forza:failed</code></td><td>The run failed; retry is possible</td></tr>
+<tr><td><code>forza:needs-human</code></td><td>Retries exhausted or blocked during planning; manual intervention required</td></tr>
+<tr><td><code>forza:plan</code></td><td>A plan issue created by <code>forza plan</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="gate-label"><a class="header" href="#gate-label">Gate label</a></h2>
+<p>When <code>gate_label</code> is configured (typically <code>forza:ready</code>), forza only processes issues and PRs that carry that label. At the start of a run, the gate label is replaced with <code>forza:in-progress</code>. This prevents double-processing and makes the current state visible in the GitHub UI.</p>
+<p>Condition routes bypass the gate label — they fire based on PR state, not labels.</p>
+<h2 id="initialization"><a class="header" href="#initialization">Initialization</a></h2>
+<p>Run <code>forza init</code> to create all required labels in a repository:</p>
+<pre><code class="language-bash">forza init --repo owner/name
+</code></pre>
+<p>This is a one-time setup step. The command is idempotent — safe to run on a repo that already has some of the labels.</p>
+<h2 id="run-outcomes"><a class="header" href="#run-outcomes">Run outcomes</a></h2>
+<p>Every run records an outcome:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Outcome</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>PrCreated</code></td><td>A new PR was opened</td></tr>
+<tr><td><code>PrUpdated</code></td><td>An existing PR was updated</td></tr>
+<tr><td><code>PrMerged</code></td><td>A PR was merged</td></tr>
+<tr><td><code>CommentPosted</code></td><td>A comment was posted on the issue</td></tr>
+<tr><td><code>Failed</code></td><td>The run failed with an error</td></tr>
+<tr><td><code>Exhausted</code></td><td>Max retries reached; <code>forza:needs-human</code> applied</td></tr>
+<tr><td><code>NothingToDo</code></td><td>No eligible subjects found</td></tr>
+</tbody>
+</table>
+</div>
+<p>Use <code>forza status</code> to view the outcome history for recent runs.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="breadcrumbs"><a class="header" href="#breadcrumbs">Breadcrumbs</a></h1>
+<p>Breadcrumbs are context summaries written by one stage and read by the next. They allow an agent to begin a new stage with knowledge of what previous stages discovered or decided, without requiring the agent to re-read the entire issue or codebase.</p>
+<h2 id="how-they-work"><a class="header" href="#how-they-work">How they work</a></h2>
+<p>Each stage with a successor writes a context summary to:</p>
+<pre><code>.forza/breadcrumbs/{run_id}/{stage_name}.md
+</code></pre>
+<p>The pipeline reads this file and prepends it as a <code>## Context from previous stage</code> section to the next stage’s prompt.</p>
+<h2 id="plan-breadcrumb"><a class="header" href="#plan-breadcrumb">Plan breadcrumb</a></h2>
+<p>The <code>plan</code> stage writes an additional breadcrumb to the repository root:</p>
+<pre><code>.plan_breadcrumb.md
+</code></pre>
+<p>The <code>implement</code> stage reads this file to obtain the list of files to modify and the commit message. This is also the file used by forza’s own automation agent to pick up where the plan stage left off.</p>
+<h2 id="what-goes-in-a-breadcrumb"><a class="header" href="#what-goes-in-a-breadcrumb">What goes in a breadcrumb</a></h2>
+<p>A breadcrumb typically contains:</p>
+<ul>
+<li>A summary of what this stage found or decided</li>
+<li>The files that were examined or changed</li>
+<li>Any design decisions or constraints the next stage should respect</li>
+<li>The proposed commit message (in the plan breadcrumb)</li>
+</ul>
+<h2 id="visibility"><a class="header" href="#visibility">Visibility</a></h2>
+<p>Breadcrumbs are stored in <code>.forza/breadcrumbs/</code> inside the git worktree created for the run. They are not committed to the repository — they exist only for the duration of the run and are cleaned up by <code>forza clean</code>.</p>
+<p>The plan breadcrumb (<code>.plan_breadcrumb.md</code>) is written to the worktree root and is visible to agents operating in that directory.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>Forza uses a small set of core abstractions and a unified execution pipeline. Issues and PRs follow the same code path — differences are data, not control flow.</p>
+<h2 id="core-abstractions"><a class="header" href="#core-abstractions">Core abstractions</a></h2>
+<h3 id="subject"><a class="header" href="#subject">Subject</a></h3>
+<p>The thing being worked on. Unifies issues and PRs into a single type.</p>
+<p>A subject carries the GitHub metadata needed for routing and prompt generation: number, title, body, labels, and (for PRs) branch, mergeable state, check status, and review decision.</p>
+<h3 id="matchedwork"><a class="header" href="#matchedwork">MatchedWork</a></h3>
+<p>A subject bound to its route. Created once at discovery time and never re-matched. This struct flows through the entire pipeline unchanged, ensuring the human’s intent (expressed as a label or PR state) is locked in.</p>
+<h3 id="route"><a class="header" href="#route">Route</a></h3>
+<p>A trigger-to-workflow mapping. Each route specifies a subject type (issue or PR), a trigger (label or condition), a workflow name, and optional overrides for model, concurrency, and retry limits. See <a href="#routes">Routes</a> for configuration details.</p>
+<h3 id="workflow"><a class="header" href="#workflow">Workflow</a></h3>
+<p>An ordered list of stages. Always linear — no branching or reactive dispatch. See <a href="#workflows">Workflows</a> for built-in templates and custom definitions.</p>
+<h3 id="run"><a class="header" href="#run">Run</a></h3>
+<p>A single execution of a workflow against a subject. Tracks stage records, timing, status, and outcome. Run records are persisted to disk for <code>forza status</code> and retry tracking.</p>
+<h2 id="the-pipeline"><a class="header" href="#the-pipeline">The pipeline</a></h2>
+<p>The entire execution model flows through a single function:</p>
+<pre><code>discover -&gt; match -&gt; execute -&gt; report
+</code></pre>
+<h3 id="discovery"><a class="header" href="#discovery">Discovery</a></h3>
+<p>Fetches eligible subjects from GitHub. Three sources:</p>
+<ol>
+<li><strong>Gate-labeled issues</strong> — issues with <code>forza:ready</code> (or configured gate label)</li>
+<li><strong>Label-routed PRs</strong> — PRs with a route-specific label</li>
+<li><strong>Condition-routed PRs</strong> — all open PRs evaluated against condition routes</li>
+</ol>
+<p>Discovery produces a list of subject-route pairs. The route is determined here and never re-evaluated.</p>
+<h3 id="matching"><a class="header" href="#matching">Matching</a></h3>
+<p>For issues, matching is label-based — find the route whose label matches one of the issue’s labels. For condition-routed PRs, matching already happened during discovery. The output is <code>MatchedWork</code>: subject + route + resolved workflow.</p>
+<h3 id="execution"><a class="header" href="#execution">Execution</a></h3>
+<p>One function handles both issues and PRs:</p>
+<ol>
+<li><strong>Acquire lease</strong> — add the in-progress label</li>
+<li><strong>Create worktree</strong> — if the workflow needs one (some like <code>pr-merge</code> do not)</li>
+<li><strong>Build stage prompts</strong> — the planner generates prompts from the subject and workflow</li>
+<li><strong>Execute stages</strong> — for each stage:
+<ul>
+<li>Evaluate the stage condition (if any)</li>
+<li>Run pre-hooks</li>
+<li>Execute (agent invocation or shell command)</li>
+<li>Run post-hooks and finally-hooks</li>
+<li>Load breadcrumb for the next stage</li>
+<li>Run validation commands between stages</li>
+<li>Stop on non-optional failure</li>
+</ul>
+</li>
+<li><strong>Release lease</strong> — remove in-progress label, add complete or failed label</li>
+<li><strong>Cleanup worktree</strong></li>
+<li><strong>Persist run record</strong></li>
+<li><strong>Notify</strong></li>
+</ol>
+<h3 id="issue-vs-pr-where-the-differences-live"><a class="header" href="#issue-vs-pr-where-the-differences-live">Issue vs PR: where the differences live</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Concern</th><th>Issue</th><th>PR</th></tr>
+</thead>
+<tbody>
+<tr><td>Prompt generation</td><td>Uses issue title/body, <code>{issue_number}</code></td><td>Uses PR title/body, <code>{pr_number}</code>, <code>{head_branch}</code></td></tr>
+<tr><td>Open PR stage</td><td>Creates a new PR</td><td>Updates existing PR body</td></tr>
+<tr><td>Merge stage</td><td>Merges the created PR</td><td>Merges the existing PR</td></tr>
+<tr><td>Label API</td><td>Issue label endpoints</td><td>PR label endpoints</td></tr>
+<tr><td>Branch</td><td>Generated from pattern</td><td>Already exists (PR head)</td></tr>
+<tr><td>Env vars</td><td><code>FORZA_ISSUE_NUMBER</code></td><td><code>FORZA_PR_NUMBER</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>These differences are handled by checking <code>subject.kind</code> in the planner, lifecycle module, and shell environment setup. No separate code paths.</p>
+<h2 id="scheduling"><a class="header" href="#scheduling">Scheduling</a></h2>
+<p>The batch/poll loop is a scheduler that:</p>
+<ol>
+<li>Discovers eligible work each cycle</li>
+<li>Filters by concurrency limits (global <code>max_concurrency</code> and per-route <code>concurrency</code>)</li>
+<li>Spawns work that fits within limits</li>
+<li>Defers remaining work to the next cycle</li>
+<li>Collects completed runs</li>
+</ol>
+<h2 id="crate-structure"><a class="header" href="#crate-structure">Crate structure</a></h2>
+<pre><code>Cargo.toml                        (workspace root)
+crates/
+  forza-core/                     (library -- domain model, traits, pipeline)
+    src/
+      condition.rs                RouteCondition evaluation
+      error.rs                    Error types
+      lifecycle.rs                Label management (in-progress, complete, failed)
+      pipeline.rs                 Unified stage execution
+      planner.rs                  Prompt generation from Subject + Workflow
+      route.rs                    Route, Trigger, Scope, MatchedWork
+      run.rs                      Run, RunStatus, Outcome, StageRecord
+      shell.rs                    Shell execution with FORZA_* env vars
+      stage.rs                    StageKind, Stage, Execution, Workflow, builtins
+      subject.rs                  Subject (unified issue/PR type), SubjectKind
+      traits.rs                   GitHubClient, GitClient, AgentExecutor traits
+  forza/                          (binary -- CLI, API, MCP, client implementations)
+    src/
+      adapters.rs                 Agent and client adapters
+      runner.rs                   Discovery, scheduling, pipeline execution
+      config.rs                   RunnerConfig, Route, GlobalConfig (TOML parsing)
+      main.rs                     CLI (clap)
+      api.rs                      REST API (axum)
+      mcp.rs                      MCP server (tower-mcp)
+      github/                     GitHubClient implementations (gh CLI, octocrab)
+      git/                        GitClient implementations (git CLI, gix)
+</code></pre>
+<h2 id="environment-variables-1"><a class="header" href="#environment-variables-1">Environment variables</a></h2>
+<p>All shell commands (agentless stages, conditions, hooks, validation) receive these environment variables:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Always set</th><th>Value</th></tr>
+</thead>
+<tbody>
+<tr><td><code>FORZA_REPO</code></td><td>yes</td><td><code>owner/name</code></td></tr>
+<tr><td><code>FORZA_SUBJECT_TYPE</code></td><td>yes</td><td><code>issue</code> or <code>pr</code></td></tr>
+<tr><td><code>FORZA_SUBJECT_NUMBER</code></td><td>yes</td><td>issue/PR number</td></tr>
+<tr><td><code>FORZA_ISSUE_NUMBER</code></td><td>issues only</td><td>issue number</td></tr>
+<tr><td><code>FORZA_PR_NUMBER</code></td><td>PRs only</td><td>PR number</td></tr>
+<tr><td><code>FORZA_BRANCH</code></td><td>yes</td><td>branch name</td></tr>
+<tr><td><code>FORZA_RUN_ID</code></td><td>yes</td><td>run ID</td></tr>
+<tr><td><code>FORZA_ROUTE</code></td><td>yes</td><td>route name</td></tr>
+<tr><td><code>FORZA_WORKFLOW</code></td><td>yes</td><td>workflow name</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="what-forza-isnt"><a class="header" href="#what-forza-isnt">What forza isn’t</a></h1>
+<p><strong>forza will fail, and that’s by design.</strong> When a run fails, forza stops, labels the issue, and tells you what happened. It doesn’t retry, work around, or guess. The right response is usually to read the failure, improve the issue description, and run again.</p>
+<h2 id="what-forza-is-not"><a class="header" href="#what-forza-is-not">What forza is not</a></h2>
+<ul>
+<li><strong>Not fully autonomous</strong> — humans decide what to work on and when. Labeling an issue <code>forza:ready</code> is a human decision.</li>
+<li><strong>Not self-healing</strong> — failures are reported, not automatically resolved. A failed stage means a labeled issue and a failure comment, not a retry loop.</li>
+<li><strong>Not a replacement for good issue writing</strong> — vague issues produce vague results. The quality of forza’s output is bounded by the quality of the issue.</li>
+<li><strong>Not an agent</strong> — forza is infrastructure that agents run inside. The agent implements; forza orchestrates.</li>
+<li><strong>Not trying to handle every edge case</strong> — simplicity and determinism over cleverness. If an edge case isn’t covered, the answer is usually a better issue or a human decision.</li>
+</ul>
+<h2 id="why-this-matters"><a class="header" href="#why-this-matters">Why this matters</a></h2>
+<p>The temptation is to make forza handle more. Resist it. Every conditional path added to the pipeline is complexity that makes the system harder to reason about. If something fails, the answer is usually a better issue, a better prompt, or a human decision — not more framework logic.</p>
+<p>This follows directly from the <a href="#three-actors-clear-lanes">three-actor model</a>: forza controls process, humans control direction, agents control implementation. Blurring those lanes adds unpredictability without adding value.</p>
+<h2 id="what-this-rules-out"><a class="header" href="#what-this-rules-out">What this rules out</a></h2>
+<ul>
+<li><strong>Adaptive prompting</strong> — forza does not modify prompts based on prior failures. The agent adapts; forza does not.</li>
+<li><strong>Automatic workflow selection</strong> — the human picks the workflow via route config. Forza does not infer it from issue content.</li>
+<li><strong>In-process decisions between stages</strong> — forza does not inspect stage output to decide what to do next. The stage sequence is fixed in config.</li>
+<li><strong>Autonomous issue triage</strong> — forza does not label, prioritize, or select which issues to work on. It only acts on issues that already have the gate label.</li>
+<li><strong>Framework-level retry intelligence</strong> — retries are a counter, not a strategy. Forza retries blindly up to <code>max_retries</code>; the agent is responsible for varying its approach.</li>
+</ul>
+<h2 id="evaluating-features"><a class="header" href="#evaluating-features">Evaluating features</a></h2>
+<p>When a feature is proposed, ask:</p>
+<ul>
+<li>Does this add decision-making to forza that belongs with the human or the agent?</li>
+<li>Does this make the pipeline less deterministic?</li>
+<li>Can this be achieved by a better issue, a better prompt, or a better config instead of new framework logic?</li>
+</ul>
+<p>If the answer to any of these is “yes,” the feature probably does not belong in forza.</p>
+<h3 id="examples"><a class="header" href="#examples">Examples</a></h3>
+<p><strong>Belongs in forza:</strong> A <code>max_retries</code> field that stops a route after N failures. This is process control — a guardrail the human configures.</p>
+<p><strong>Does not belong in forza:</strong> Automatically adjusting the prompt when a stage fails repeatedly. That is intelligence in the framework. The human should update the issue; the agent should handle variation.</p>
+<p><strong>Belongs in forza:</strong> A <code>condition</code> field on a stage that gates execution on a shell command exit code. The human writes the condition; forza enforces it.</p>
+<p><strong>Does not belong in forza:</strong> Automatically deciding which workflow to use based on issue content analysis. Route matching is the human’s job; it must be explicit in config.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<p>Forza is configured via <code>forza.toml</code> in the directory where you run the forza process. The file uses TOML with named sections for global settings, security, validation, repos, and workflow templates.</p>
+<h2 id="structure"><a class="header" href="#structure">Structure</a></h2>
+<pre><code class="language-toml">[global]           # Global settings: model, gate_label, concurrency
+[security]         # Authorization level, allowed authors
+[validation]       # Commands run between stages
+[agent_config]     # Agent skill files, MCP config, system prompt
+[stage_hooks.*]    # Pre/post/finally hooks per stage kind
+[repos."owner/name"]             # Per-repo settings
+[repos."owner/name".routes.*]    # Named routes per repo
+[[workflow_templates]]           # Custom workflow templates
+</code></pre>
+<h2 id="configuration-file-location"><a class="header" href="#configuration-file-location">Configuration file location</a></h2>
+<p>Forza looks for <code>forza.toml</code> in the current directory by default. Use <code>--config</code> to specify a different path:</p>
+<pre><code class="language-bash">forza run --config /path/to/forza.toml
+</code></pre>
+<h2 id="sections"><a class="header" href="#sections">Sections</a></h2>
+<h3 id="global"><a class="header" href="#global">[global]</a></h3>
+<p>Settings that apply to all repos unless overridden per route:</p>
+<pre><code class="language-toml">[global]
+model = "claude-sonnet-4-6"    # Default agent model
+agent = "claude"               # Agent backend: "claude" or "codex"
+gate_label = "forza:ready"     # Label gate; omit to process all matching routes
+branch_pattern = "automation/{issue}-{slug}"
+max_concurrency = 5            # Total parallel runs across all routes
+max_cost_per_issue = 5.00      # Cost cap per issue (USD)
+max_cost_per_hour = 20.00      # Hourly cost cap (USD)
+</code></pre>
+<h3 id="security"><a class="header" href="#security">[security]</a></h3>
+<p>Controls what the agent is authorized to do and who can trigger runs:</p>
+<pre><code class="language-toml">[security]
+authorization_level = "contributor"   # sandbox | local | contributor | trusted
+allowed_authors = []                  # Empty = authenticated user only
+require_label = "security:approved"   # Additional approval gate (optional)
+</code></pre>
+<h3 id="validation"><a class="header" href="#validation">[validation]</a></h3>
+<p>Commands that run between every stage. All must pass before the next stage starts:</p>
+<pre><code class="language-toml">[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test --lib",
+]
+</code></pre>
+<h3 id="agent_config"><a class="header" href="#agent_config">[agent_config]</a></h3>
+<p>Customize the agent invocation:</p>
+<pre><code class="language-toml">[agent_config]
+skills = ["./skills/rust.md"]           # Skill files prepended to prompts
+mcp_config = ".mcp.json"                # MCP server config path
+append_system_prompt = "..."            # Extra instructions appended to system prompt
+</code></pre>
+<h3 id="stage_hooks"><a class="header" href="#stage_hooks">[stage_hooks.*]</a></h3>
+<p>Shell commands to run before, after, or regardless of stage outcome:</p>
+<pre><code class="language-toml">[stage_hooks.implement]
+pre     = ["echo 'starting implement'"]
+post    = ["cargo fmt --all"]
+finally = ["echo 'implement done'"]
+</code></pre>
+<h3 id="reposownername"><a class="header" href="#reposownername">[repos.“owner/name”]</a></h3>
+<p>Per-repo configuration. The repo key is <code>owner/name</code>:</p>
+<pre><code class="language-toml">[repos."your-org/your-repo"]
+repo_dir = "/path/to/local/checkout"   # Optional; defaults to current directory
+</code></pre>
+<h3 id="reposownernameroutes"><a class="header" href="#reposownernameroutes">[repos.“owner/name”.routes.*]</a></h3>
+<p>Named routes for a repo. See <a href="#routes">Routes</a> for full field documentation.</p>
+<h3 id="workflow_templates"><a class="header" href="#workflow_templates">[[workflow_templates]]</a></h3>
+<p>Custom workflow templates. See <a href="#workflows">Workflows</a> for details.</p>
+<h2 id="next-steps-1"><a class="header" href="#next-steps-1">Next steps</a></h2>
+<ul>
+<li><a href="#configuration-reference">Configuration Reference</a> — full field documentation</li>
+<li><a href="#configuration-examples">Examples</a> — ready-to-use configurations</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration-reference"><a class="header" href="#configuration-reference">Configuration Reference</a></h1>
+<p>Complete field reference for <code>forza.toml</code>.</p>
+<h2 id="global-1"><a class="header" href="#global-1">[global]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>model</code></td><td>string</td><td>—</td><td>Default agent model (e.g., <code>claude-sonnet-4-6</code>)</td></tr>
+<tr><td><code>agent</code></td><td>string</td><td><code>"claude"</code></td><td>Agent backend: <code>"claude"</code> or <code>"codex"</code></td></tr>
+<tr><td><code>gate_label</code></td><td>string</td><td>—</td><td>Label required on issues/PRs before processing; omit to process all matching subjects</td></tr>
+<tr><td><code>branch_pattern</code></td><td>string</td><td><code>"automation/{issue}-{slug}"</code></td><td>Branch name pattern (see <a href="#branch-pattern-placeholders">Placeholders</a> below)</td></tr>
+<tr><td><code>max_concurrency</code></td><td>integer</td><td>—</td><td>Total parallel runs across all repos and routes</td></tr>
+<tr><td><code>max_cost_per_issue</code></td><td>float</td><td>—</td><td>Stop a run if it exceeds this USD cost</td></tr>
+<tr><td><code>max_cost_per_hour</code></td><td>float</td><td>—</td><td>Pause all routes if hourly spend exceeds this USD amount</td></tr>
+<tr><td><code>auto_merge</code></td><td>bool</td><td><code>false</code></td><td>Automatically merge PRs once CI is green (deprecated; prefer a <code>merge</code> stage)</td></tr>
+<tr><td><code>issue_order</code></td><td>string</td><td><code>"oldest_first"</code></td><td>Order in which eligible issues are processed each cycle: <code>"oldest_first"</code> (lowest issue number first) or <code>"newest_first"</code> (highest issue number first)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="security-1"><a class="header" href="#security-1">[security]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>authorization_level</code></td><td>string</td><td><code>"contributor"</code></td><td><code>sandbox</code> | <code>local</code> | <code>contributor</code> | <code>trusted</code> — controls agent permissions</td></tr>
+<tr><td><code>allowed_authors</code></td><td>string[]</td><td><code>[]</code></td><td>Only process issues from these GitHub usernames; empty = authenticated user only</td></tr>
+<tr><td><code>require_label</code></td><td>string</td><td>—</td><td>Additional label that must be present before processing; never removed automatically</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="authorization-levels"><a class="header" href="#authorization-levels">Authorization levels</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Level</th><th>Agent can</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sandbox</code></td><td>Read files only; no writes, no shell commands</td></tr>
+<tr><td><code>local</code></td><td>Read and write files; no shell execution</td></tr>
+<tr><td><code>contributor</code></td><td>Read, write, and run pre-approved shell commands</td></tr>
+<tr><td><code>trusted</code></td><td>Full access; unrestricted shell execution</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="validation-1"><a class="header" href="#validation-1">[validation]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>commands</code></td><td>string[]</td><td>Shell commands run between every stage; all must exit 0</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="agent_config-1"><a class="header" href="#agent_config-1">[agent_config]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>skills</code></td><td>string[]</td><td>Paths to skill files prepended to every agent prompt</td></tr>
+<tr><td><code>mcp_config</code></td><td>string</td><td>Path to an MCP server config file</td></tr>
+<tr><td><code>append_system_prompt</code></td><td>string</td><td>Text appended to the system prompt for every agent invocation</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="stage_hookskind"><a class="header" href="#stage_hookskind">[stage_hooks.&lt;kind&gt;]</a></h2>
+<p>Replace <code>&lt;kind&gt;</code> with a stage kind name (e.g., <code>implement</code>, <code>test</code>, <code>open_pr</code>).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>pre</code></td><td>string[]</td><td>Commands run before the stage</td></tr>
+<tr><td><code>post</code></td><td>string[]</td><td>Commands run after a successful stage</td></tr>
+<tr><td><code>finally</code></td><td>string[]</td><td>Commands run after the stage regardless of success or failure</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="reposownername-1"><a class="header" href="#reposownername-1">[repos.“owner/name”]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>repo_dir</code></td><td>string</td><td>Path to the local git checkout; defaults to current directory</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="reposownernameroutesname"><a class="header" href="#reposownernameroutesname">[repos.“owner/name”.routes.&lt;name&gt;]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>type</code></td><td>string</td><td>yes</td><td><code>"issue"</code> or <code>"pr"</code></td></tr>
+<tr><td><code>label</code></td><td>string</td><td>label routes</td><td>GitHub label that triggers this route</td></tr>
+<tr><td><code>condition</code></td><td>string</td><td>condition routes</td><td>PR condition that triggers this route</td></tr>
+<tr><td><code>workflow</code></td><td>string</td><td>yes</td><td>Workflow template name</td></tr>
+<tr><td><code>scope</code></td><td>string</td><td>no</td><td><code>"forza_owned"</code> (default) or <code>"all"</code> — which PRs to evaluate</td></tr>
+<tr><td><code>concurrency</code></td><td>integer</td><td>no</td><td>Max parallel runs for this route</td></tr>
+<tr><td><code>poll_interval</code></td><td>integer</td><td>no</td><td>Seconds between discovery polls</td></tr>
+<tr><td><code>max_retries</code></td><td>integer</td><td>no</td><td>Failures before applying <code>forza:needs-human</code></td></tr>
+<tr><td><code>branch_pattern</code></td><td>string</td><td>no</td><td>Override global <code>branch_pattern</code> for this route</td></tr>
+<tr><td><code>model</code></td><td>string</td><td>no</td><td>Model override for this route</td></tr>
+<tr><td><code>skills</code></td><td>string[]</td><td>no</td><td>Additional skill files for this route</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="workflow_templates-1"><a class="header" href="#workflow_templates-1">[[workflow_templates]]</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td>string</td><td>yes</td><td>Template name; overrides built-in if names match</td></tr>
+<tr><td><code>stages</code></td><td>Stage[]</td><td>yes</td><td>Ordered list of stages</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="stage-fields"><a class="header" href="#stage-fields">Stage fields</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>kind</code></td><td>string</td><td>yes</td><td>Stage kind (see <a href="#stage-kinds">Stage Kinds</a>)</td></tr>
+<tr><td><code>optional</code></td><td>bool</td><td>no</td><td>Skip rather than fail if not applicable</td></tr>
+<tr><td><code>condition</code></td><td>string</td><td>no</td><td>Shell command; skip stage if exit code is non-zero</td></tr>
+<tr><td><code>max_retries</code></td><td>integer</td><td>no</td><td>Stage-level retry limit</td></tr>
+<tr><td><code>command</code></td><td>string</td><td>no</td><td>Agentless: shell command to run instead of invoking the agent</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="branch-pattern-placeholders"><a class="header" href="#branch-pattern-placeholders">Branch pattern placeholders</a></h2>
+<p>The <code>branch_pattern</code> field (global or per-route) supports these placeholders:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Placeholder</th><th>Value</th><th>Example</th></tr>
+</thead>
+<tbody>
+<tr><td><code>{issue}</code></td><td>Issue or PR number</td><td><code>42</code></td></tr>
+<tr><td><code>{slug}</code></td><td>Slugified title (max 40 chars)</td><td><code>fix-the-login-bug</code></td></tr>
+<tr><td><code>{route}</code></td><td>Route name from config</td><td><code>bugfix</code></td></tr>
+<tr><td><code>{label}</code></td><td>Trigger label, or empty string if none</td><td><code>bug</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The slug is generated by lowercasing the title, replacing non-alphanumeric characters with hyphens, collapsing consecutive hyphens, and truncating to 40 characters. The final branch name is truncated to 60 characters.</p>
+<p>Per-route <code>branch_pattern</code> overrides the global default. Routes without an override inherit the global pattern.</p>
+<pre><code class="language-toml">[global]
+branch_pattern = "automation/{issue}-{slug}"
+
+[repos."owner/name".routes.bugfix]
+# Inherits global pattern: automation/42-fix-bug
+
+[repos."owner/name".routes.design-review]
+branch_pattern = "review/{issue}-{slug}"
+# Produces: review/42-fix-bug
+
+[repos."owner/name".routes.feature]
+branch_pattern = "automation/{label}/{issue}-{slug}"
+# Produces: automation/enhancement/43-add-widget
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration-examples"><a class="header" href="#configuration-examples">Configuration Examples</a></h1>
+<p>Ready-to-use configuration examples. Copy the one closest to your needs and adjust the repo name.</p>
+<h2 id="minimal"><a class="header" href="#minimal">Minimal</a></h2>
+<p>The simplest possible setup — one repo, one bug route, all defaults. Use this as your starting point.</p>
+<pre><code class="language-toml"># forza minimal configuration
+#
+# The simplest possible forza setup. One repo, one bug route, all defaults.
+# Use this as your starting point — copy, change the repo name, and go.
+#
+# When to use: you want to try forza with zero ceremony.
+
+[global]
+model = "claude-sonnet-4-6"
+
+[security]
+authorization_level = "contributor"
+
+[repos."your-org/your-repo"]
+
+[repos."your-org/your-repo".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+</code></pre>
+<h2 id="rust-project"><a class="header" href="#rust-project">Rust project</a></h2>
+<p>Standard setup for a Rust codebase: fmt/clippy/test validation, three issue routes (bugs, features, chores), auto-fix condition route.</p>
+<pre><code class="language-toml"># forza configuration — typical Rust project
+#
+# Standard setup for a Rust codebase: fmt/clippy/test validation, three issue
+# routes (bugs, features, chores), auto-merge enabled for approved green PRs.
+#
+# When to use: you maintain a Rust library or CLI and want forza to handle the
+# full issue-to-PR lifecycle with Rust-specific quality checks.
+
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+branch_pattern = "automation/{issue}-{slug}"
+auto_merge = false   # set true to merge PRs automatically once CI is green
+
+# Cost guardrails.
+max_cost_per_issue = 5.00
+max_cost_per_hour = 20.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# contributor: processes issues from repo contributors and above.
+authorization_level = "contributor"
+
+# ── Validation ───────────────────────────────────────────────────────
+#
+# These commands run between stages. All must pass before the next stage starts.
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo test --lib --all-features",
+]
+
+# ── Agent config ─────────────────────────────────────────────────────
+
+[agent_config]
+# Inject a Rust-specific skill file into every agent invocation.
+skills = ["./skills/rust.md"]
+
+# ── Routes ───────────────────────────────────────────────────────────
+
+[repos."your-org/your-rust-crate"]
+
+[repos."your-org/your-rust-crate".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1        # one bug at a time to avoid merge conflicts
+poll_interval = 60     # check every minute — bugs are urgent
+model = "claude-opus-4-6"  # use a more capable model for bug investigation
+
+[repos."your-org/your-rust-crate".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 2
+poll_interval = 300    # check every 5 minutes
+
+[repos."your-org/your-rust-crate".routes.chores]
+type = "issue"
+label = "chore"
+workflow = "chore"
+concurrency = 3
+poll_interval = 600    # check every 10 minutes
+
+# Automatically fix CI failures and conflicts on forza-created PRs.
+[repos."your-org/your-rust-crate".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 2
+poll_interval = 60
+max_retries = 3        # apply forza:needs-human after 3 failed attempts
+
+# ── Per-stage hooks ──────────────────────────────────────────────────
+#
+# Format code after every implement stage, run tests before opening a PR.
+
+[stage_hooks.implement]
+post = ["cargo fmt --all"]
+
+[stage_hooks.open_pr]
+pre = ["cargo test --all-features"]
+</code></pre>
+<h2 id="multiple-repositories"><a class="header" href="#multiple-repositories">Multiple repositories</a></h2>
+<p>Manage several repos from a single forza instance. Each repo gets its own route table, concurrency limits, and polling frequencies.</p>
+<pre><code class="language-toml"># forza configuration — multiple repositories
+#
+# Manage several repos from a single forza instance. Each repo gets its own
+# route table, concurrency limits, and polling frequencies. Global settings
+# (model, security, validation) apply everywhere unless overridden per route.
+#
+# When to use: you own or maintain multiple GitHub repos and want one runner
+# process handling all of them.
+
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"
+branch_pattern = "automation/{issue}-{slug}"
+max_concurrency = 8   # total across all repos and routes
+
+max_cost_per_issue = 5.00
+max_cost_per_hour = 30.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+authorization_level = "contributor"
+
+# ── Validation ───────────────────────────────────────────────────────
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+]
+
+# ── Repo: primary library ─────────────────────────────────────────────
+#
+# The main library repo — tighter concurrency, more thorough validation.
+
+[repos."your-org/core-library"]
+repo_dir = "/path/to/core-library"   # optional local checkout path
+
+[repos."your-org/core-library".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1
+poll_interval = 60
+model = "claude-opus-4-6"   # bugs in the core library deserve more horsepower
+
+[repos."your-org/core-library".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 1
+poll_interval = 300
+
+[repos."your-org/core-library".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 1
+poll_interval = 60
+max_retries = 2
+
+# ── Repo: CLI tool ────────────────────────────────────────────────────
+#
+# CLI companion — faster iteration, higher concurrency acceptable.
+
+[repos."your-org/cli-tool"]
+repo_dir = "/path/to/cli-tool"
+
+[repos."your-org/cli-tool".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 2
+poll_interval = 120
+
+[repos."your-org/cli-tool".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 3
+poll_interval = 300
+
+[repos."your-org/cli-tool".routes.chores]
+type = "issue"
+label = "chore"
+workflow = "chore"
+concurrency = 3
+poll_interval = 600
+
+# ── Repo: documentation site ──────────────────────────────────────────
+#
+# Docs-only repo — only needs the research and chore workflows.
+
+[repos."your-org/docs-site"]
+repo_dir = "/path/to/docs-site"
+
+[repos."your-org/docs-site".routes.content]
+type = "issue"
+label = "content"
+workflow = "chore"
+concurrency = 4
+poll_interval = 600
+
+[repos."your-org/docs-site".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 2
+poll_interval = 3600   # check hourly — research tasks aren't urgent
+
+# ── Repo: internal tooling ────────────────────────────────────────────
+#
+# Internal repo with trusted authors only and auto-merge enabled.
+
+[repos."your-org/internal-tooling"]
+
+[repos."your-org/internal-tooling".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 2
+poll_interval = 60
+
+[repos."your-org/internal-tooling".routes.auto-merge]
+type = "pr"
+condition = "approved_and_green"   # merge once approved and CI passes
+workflow = "merge"
+scope = "forza_owned"
+concurrency = 1
+poll_interval = 120
+</code></pre>
+<h2 id="pr-maintenance"><a class="header" href="#pr-maintenance">PR maintenance</a></h2>
+<p>Focused on keeping open PRs healthy. Condition routes fire automatically based on PR state — no label needed.</p>
+<pre><code class="language-toml"># forza configuration — PR maintenance / reactive workflows
+#
+# Focused on keeping open PRs healthy. Condition routes fire automatically
+# based on PR state — no label needed. forza watches for CI failures,
+# merge conflicts, and approved-and-green PRs, then acts accordingly.
+#
+# When to use: you want forza to act as a PR janitor: fix broken CI, resolve
+# conflicts, and merge approved PRs without manual intervention.
+
+[global]
+model = "claude-sonnet-4-6"
+# No gate_label — condition routes bypass the label gate by default.
+max_concurrency = 4
+
+max_cost_per_issue = 3.00
+max_cost_per_hour = 15.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# contributor: only act on PRs from known contributors.
+authorization_level = "contributor"
+
+# ── Validation ───────────────────────────────────────────────────────
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test --lib",
+]
+
+# ── Routes ───────────────────────────────────────────────────────────
+#
+# All routes here are condition-based. They fire automatically when the
+# described PR state is detected — no label application required.
+#
+# scope = "forza_owned" (the default) restricts evaluation to PRs on
+# branches that forza created. Set scope = "all" to watch every open PR.
+
+[repos."your-org/your-repo"]
+
+# Fix CI failures: rerun, then attempt a targeted code fix if still failing.
+[repos."your-org/your-repo".routes.fix-ci]
+type = "pr"
+condition = "ci_failing"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 2
+poll_interval = 60     # check every minute — CI failures block progress
+max_retries = 3        # give up and apply forza:needs-human after 3 attempts
+model = "claude-opus-4-6"   # CI fixes can be complex; use the capable model
+
+# Resolve merge conflicts automatically.
+[repos."your-org/your-repo".routes.fix-conflicts]
+type = "pr"
+condition = "has_conflicts"
+workflow = "pr-fix"
+scope = "forza_owned"
+concurrency = 2
+poll_interval = 120
+max_retries = 2
+
+# Handle both CI failures and conflicts in one route (alternative to the two above).
+# Uncomment this and remove the two routes above if you prefer a single route.
+# [repos."your-org/your-repo".routes.fix-all]
+# type = "pr"
+# condition = "ci_failing_or_conflicts"
+# workflow = "pr-fix"
+# scope = "forza_owned"
+# concurrency = 2
+# poll_interval = 60
+# max_retries = 3
+
+# Merge PRs that are approved and have passing CI.
+[repos."your-org/your-repo".routes.auto-merge]
+type = "pr"
+condition = "approved_and_green"
+workflow = "merge"
+scope = "forza_owned"
+concurrency = 1        # serialize merges to avoid race conditions
+poll_interval = 120
+
+# ── Workflow templates ────────────────────────────────────────────────
+#
+# Lightweight merge workflow: just merge, no agent needed for the actual step.
+
+[[workflow_templates]]
+name = "merge"
+stages = [
+    { kind = "merge" },
+]
+</code></pre>
+<h2 id="security-strict"><a class="header" href="#security-strict">Security-strict</a></h2>
+<p>A locked-down configuration for high-stakes or public-facing repos. Sandbox authorization, no auto-merge, explicit author allowlist, and a required approval label.</p>
+<pre><code class="language-toml"># forza configuration — security-strict setup
+#
+# A locked-down configuration for high-stakes or public-facing repos.
+# Sandbox authorization, no auto-merge, explicit author allowlist, and a
+# required approval label before any work begins. Every PR requires a human
+# review before it can be merged.
+#
+# When to use: production repos, security-sensitive codebases, or any project
+# where you want maximum human oversight of automated changes.
+
+[global]
+model = "claude-sonnet-4-6"
+gate_label = "forza:ready"    # explicit opt-in required on every issue/PR
+branch_pattern = "automation/{issue}-{slug}"
+auto_merge = false            # never merge automatically — human must merge
+
+max_cost_per_issue = 2.00    # tighter cost cap per issue
+max_cost_per_hour = 10.00
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# sandbox: the most restrictive level. The agent may only read files and
+# suggest changes; it cannot execute arbitrary commands or write to disk
+# outside of the controlled workflow.
+authorization_level = "sandbox"
+
+# Only process issues created by explicitly listed authors.
+allowed_authors = ["your-github-username", "trusted-collaborator"]
+
+# An additional label that must be present on the issue before processing.
+# Unlike gate_label (which triggers the run and is removed), require_label
+# is a permanent security gate that is never removed automatically.
+# A human must apply this label to explicitly approve processing.
+require_label = "security:approved"
+
+# ── Validation ───────────────────────────────────────────────────────
+#
+# Run a comprehensive check suite between every stage.
+
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo test --lib --all-features",
+    "cargo test --test '*' --all-features",
+    "cargo audit",   # check for known vulnerabilities in dependencies
+]
+
+# ── Agent config ─────────────────────────────────────────────────────
+
+[agent_config]
+# Inject security-focused instructions into every agent invocation.
+skills = ["./skills/security.md"]
+append_system_prompt = "You are operating in a high-security context. Do not introduce new dependencies without explicit justification. Prefer conservative, minimal changes."
+
+# ── Routes ───────────────────────────────────────────────────────────
+#
+# Only two routes: bugs and the triage/research workflow. No feature or chore
+# routes — new feature work requires a human to design and guide.
+
+[repos."your-org/sensitive-repo"]
+
+[repos."your-org/sensitive-repo".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1        # one at a time — avoid overlapping changes
+poll_interval = 120
+max_retries = 1        # escalate to forza:needs-human after a single failure
+model = "claude-opus-4-6"   # use the most capable model for bug analysis
+
+[repos."your-org/sensitive-repo".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 1
+poll_interval = 300
+
+# ── Per-stage hooks ──────────────────────────────────────────────────
+#
+# Run the full test suite before opening any PR.
+
+[stage_hooks.open_pr]
+pre = [
+    "cargo test --all-features",
+    "cargo audit",
+]
+</code></pre>
+<h2 id="full-runner"><a class="header" href="#full-runner">Full runner</a></h2>
+<p>Complete example showing all available options: multi-repo, cost limits, custom workflow templates, agent config, and per-stage hooks.</p>
+<pre><code class="language-toml"># forza runner configuration
+#
+# The runner watches GitHub for labeled issues and PRs, then processes them
+# through configurable workflow templates. Each route is a named lane with
+# its own label trigger, workflow, concurrency, and polling frequency.
+#
+# Multi-repo mode: define one [repos."owner/name"] table per repository.
+# Legacy single-repo mode: set repo = "owner/name" under [global] and define
+# [routes] at the top level.
+
+# ── Global settings ──────────────────────────────────────────────────
+#
+# These settings apply to all repos.
+
+[global]
+# Maximum concurrent runs across all routes and repos.
+max_concurrency = 5
+
+# Cost guardrails.
+max_cost_per_issue = 5.00     # fail if a single issue exceeds this
+max_cost_per_hour = 20.00     # pause all routes if hourly spend exceeds this
+
+# Default agent and model (overridable per route).
+agent = "claude"
+model = "claude-sonnet-4-6"
+
+# Gate label — only process issues/PRs with this label (applied globally).
+# Provides explicit opt-in. Remove to process all matching routes.
+gate_label = "runner:ready"
+
+# Default branch pattern. {issue} = number, {slug} = slugified title.
+branch_pattern = "automation/{issue}-{slug}"
+
+# Automatically merge PRs once all CI checks pass. Default: false.
+# auto_merge = false
+
+# ── Security ─────────────────────────────────────────────────────────
+
+[security]
+# Authorization level: sandbox, local, contributor, trusted
+authorization_level = "contributor"
+
+# Only process issues from these authors. Empty = authenticated user only.
+allowed_authors = []
+
+# Additional label required on an issue before processing begins.
+# Unlike gate_label (the opt-in trigger that gets removed at lease time),
+# require_label is a security gate checked after the issue is fetched and
+# never removed automatically. Useful for enforcing a human-review stamp.
+# require_label = "security:approved"
+
+# ── Validation ───────────────────────────────────────────────────────
+
+# Commands run between stages (in addition to per-stage hooks).
+[validation]
+commands = [
+    "cargo fmt --all -- --check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test --lib",
+]
+
+# ── Repos ────────────────────────────────────────────────────────────
+#
+# Define one [repos."owner/name"] section per repository to watch.
+# Each repo has an optional local checkout path and its own route table.
+#
+# repo_dir — path to the local git checkout. Defaults to current directory.
+# routes   — named routes specific to this repo (same structure as legacy
+#            top-level [routes]).
+
+[repos."joshrotenberg/claude-wrapper"]
+# repo_dir = "/path/to/claude-wrapper"   # optional local checkout path
+
+[repos."joshrotenberg/claude-wrapper".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1           # one bug at a time (avoid conflicts)
+poll_interval = 60        # check every minute (bugs are urgent)
+# model = "claude-opus-4-6"  # override model for complex bugs
+
+[repos."joshrotenberg/claude-wrapper".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+concurrency = 2           # two features in parallel
+poll_interval = 300       # check every 5 minutes
+
+[repos."joshrotenberg/claude-wrapper".routes.chores]
+type = "issue"
+label = "chore"
+workflow = "chore"
+concurrency = 3
+poll_interval = 600
+
+[repos."joshrotenberg/other-project"]
+# repo_dir = "/path/to/other-project"
+
+[repos."joshrotenberg/other-project".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "bug"
+concurrency = 1
+poll_interval = 60
+
+[repos."joshrotenberg/other-project".routes.research]
+type = "issue"
+label = "research"
+workflow = "research"
+concurrency = 3
+poll_interval = 3600      # check hourly (not urgent)
+
+# ── Condition routes ──────────────────────────────────────────────────────────
+#
+# Condition routes fire automatically based on PR state rather than a label.
+# Supported conditions:
+#   ci_failing            — CI checks are failing on the PR
+#   has_conflicts         — the PR has merge conflicts
+#   ci_failing_or_conflicts — CI failing or conflicts (most common)
+#   approved_and_green    — PR is approved and CI is passing (auto-merge trigger)
+#
+# scope controls which PRs are evaluated:
+#   forza_owned (default) — only PRs on branches created by forza
+#   all                   — all open PRs in the repo
+#
+# No gate_label needed — condition routes bypass the label gate.
+
+[repos."joshrotenberg/claude-wrapper".routes.auto-fix]
+type = "pr"
+condition = "ci_failing_or_conflicts"  # fire when CI fails or conflicts detected
+workflow = "pr-fix"
+scope = "forza_owned"         # only touch forza-created branches
+concurrency = 2
+poll_interval = 60            # check every minute
+max_retries = 3               # apply forza:needs-human after 3 failures
+# model = "claude-opus-4-6"   # use a more capable model for tricky fixes
+
+# ── Workflow templates ───────────────────────────────────────────────
+#
+# Built-in templates: bug, feature, chore, research
+# Define custom templates here. Custom overrides built-in with same name.
+
+[[workflow_templates]]
+name = "hotfix"
+stages = [
+    { kind = "implement", max_retries = 1 },
+    { kind = "test", max_retries = 2 },
+    { kind = "open_pr" },
+]
+
+[[workflow_templates]]
+name = "discuss"
+stages = [
+    { kind = "research" },
+    { kind = "comment" },
+]
+
+# ── Agent config ─────────────────────────────────────────────────────
+
+# [agent_config]
+# skills = ["./skills/rust-workspace.md"]
+# mcp_config = ".mcp.json"
+# append_system_prompt = "Project-specific rules."
+
+# ── Per-stage hooks ──────────────────────────────────────────────────
+
+[stage_hooks.implement]
+post = ["cargo fmt --all"]
+
+[stage_hooks.test]
+post = ["cargo test --lib"]
+
+[stage_hooks.open_pr]
+pre = ["cargo test --all-features"]
+</code></pre>
+<h2 id="self-hosting"><a class="header" href="#self-hosting">Self-hosting</a></h2>
+<p>For a complete real-world example, see <a href="https://github.com/joshrotenberg/forza/blob/main/forza.toml"><code>forza.toml</code></a> in the forza repository itself. It is the config forza uses to process its own issues and PRs, with bug, feature, chore, and research routes plus condition-based PR maintenance.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="usage"><a class="header" href="#usage">Usage</a></h1>
+<p>How to use forza effectively — writing good issues, CLI commands, and security considerations.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="workflow-patterns"><a class="header" href="#workflow-patterns">Workflow Patterns</a></h1>
+<p>Practical patterns for using forza day-to-day.</p>
+<h2 id="quick-one-off"><a class="header" href="#quick-one-off">Quick one-off</a></h2>
+<p>Got an idea? Let forza handle it.</p>
+<pre><code class="language-bash">forza issue 42 --workflow quick
+</code></pre>
+<p>No config needed. Forza reads the issue, implements a fix, runs tests, opens a PR. Review and merge. Done.</p>
+<p>For bigger work that needs planning:</p>
+<pre><code class="language-bash">forza issue 42 --workflow feature
+</code></pre>
+<p>This adds a plan stage (analyzes the codebase before implementing) and a review stage (the agent reviews its own work before opening the PR).</p>
+<h2 id="background-worker"><a class="header" href="#background-worker">Background worker</a></h2>
+<p>Run forza continuously while you work on other things:</p>
+<pre><code class="language-bash">forza run --watch
+</code></pre>
+<p>The flow:</p>
+<ol>
+<li>Create issues with clear acceptance criteria</li>
+<li>Label them <code>forza:ready</code></li>
+<li>Forza picks them up, runs the workflow, opens PRs</li>
+<li>Review PRs as they come in</li>
+</ol>
+<p>For one-off batches instead of continuous polling:</p>
+<pre><code class="language-bash">forza run
+</code></pre>
+<h2 id="batch-planning"><a class="header" href="#batch-planning">Batch planning</a></h2>
+<p>Have a backlog of issues? Plan them first:</p>
+<pre><code class="language-bash"># Create issues
+forza open --prompt "add retry backoff to API calls"
+forza open --prompt "fix null pointer in runner"
+forza open --prompt "update README with new commands"
+
+# Plan them
+forza plan 42 43 44
+
+# Review the plan issue — it has a mermaid dependency graph
+# Comment to adjust ordering, move things around
+
+# Execute in dependency order
+forza plan --exec 45
+</code></pre>
+<p>The plan issue is the contract. You review it, comment on it, revise it. Forza executes what you approved.</p>
+<h2 id="work-branch-pattern"><a class="header" href="#work-branch-pattern">Work branch pattern</a></h2>
+<p>Keep agent work off main until you’ve reviewed it:</p>
+<pre><code class="language-bash">forza plan --exec 99 --branch work/sprint-42
+</code></pre>
+<p>All PRs from the plan target <code>work/sprint-42</code> instead of main. At the end of the day, review the branch diff and merge to main in one shot. All the speed of automation without unreviewed code on main.</p>
+<h2 id="pr-maintenance-1"><a class="header" href="#pr-maintenance-1">PR maintenance</a></h2>
+<p>Set up condition routes to keep PRs healthy automatically:</p>
+<pre><code class="language-toml">[repos."owner/name".routes.auto-rebase]
+type = "pr"
+condition = "has_conflicts"
+workflow = "pr-rebase"
+scope = "forza_owned"
+
+[repos."owner/name".routes.auto-fix-ci]
+type = "pr"
+condition = "ci_failing"
+workflow = "pr-fix-ci"
+scope = "forza_owned"
+</code></pre>
+<p>With <code>forza run --watch</code>, these routes continuously monitor your PRs and fix conflicts, rebase stale branches, and fix CI failures — without anyone clicking buttons.</p>
+<p>For one-off fixes without routes:</p>
+<pre><code class="language-bash">forza pr 84 --workflow pr-fix
+</code></pre>
+<h2 id="research-and-exploration"><a class="header" href="#research-and-exploration">Research and exploration</a></h2>
+<p>Investigate a question without making code changes:</p>
+<pre><code class="language-bash">forza issue 50 --workflow research
+</code></pre>
+<p>The agent reads the codebase, investigates the question posed in the issue, and posts findings as a comment. No branch, no PR, no code changes.</p>
+<p>Good for: API compatibility analysis, migration paths, architecture decisions, dependency evaluation.</p>
+<h2 id="multi-repo-management"><a class="header" href="#multi-repo-management">Multi-repo management</a></h2>
+<p>One config, multiple repos:</p>
+<pre><code class="language-toml">[repos."org/service-a".routes.bugfix]
+type = "issue"
+label = "bug"
+workflow = "quick"
+
+[repos."org/service-b".routes.features]
+type = "issue"
+label = "enhancement"
+workflow = "feature"
+</code></pre>
+<p>One <code>forza run --watch</code> handles all configured repos. Use <code>forza explain</code> to verify routing:</p>
+<pre><code class="language-bash">forza explain --issues     # show all issue routes
+forza explain --prs        # show all PR routes
+</code></pre>
+<h2 id="handling-failures"><a class="header" href="#handling-failures">Handling failures</a></h2>
+<p>When a run fails, forza posts a comment on the issue explaining what went wrong. The usual fixes:</p>
+<ol>
+<li><strong>Unclear issue</strong> — edit the description, add acceptance criteria, re-run</li>
+<li><strong>Transient failure</strong> — re-run with error context: <code>forza issue 42 --fix</code></li>
+<li><strong>Persistent failure</strong> — check <code>forza status</code> for patterns, narrow the issue scope</li>
+</ol>
+<pre><code class="language-bash">forza status                 # recent runs
+forza issue 42 --fix         # retry with error context
+</code></pre>
+<p>A run that fails the same stage repeatedly usually means the issue needs more specificity.</p>
+<h2 id="github-action"><a class="header" href="#github-action">GitHub Action</a></h2>
+<p>Automate everything with a workflow file:</p>
+<pre><code class="language-yaml">name: forza
+on:
+  issues:
+    types: [labeled]
+  check_suite:
+    types: [completed]
+
+jobs:
+  forza:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: joshrotenberg/forza/action@main
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+</code></pre>
+<p>Label an issue, the action fires on GitHub’s infrastructure. No laptop, no polling.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="writing-issues-for-forza"><a class="header" href="#writing-issues-for-forza">Writing Issues for Forza</a></h1>
+<p>Forza implements issues autonomously. The quality of the issue directly affects the quality of the result. An issue that is clear, scoped, and includes acceptance criteria will produce a better PR than a vague one.</p>
+<h2 id="what-makes-a-good-forza-issue"><a class="header" href="#what-makes-a-good-forza-issue">What makes a good forza issue</a></h2>
+<p><strong>Title</strong> — state the change, not the symptom. <code>fix: panic when route label is missing</code> is better than <code>route matching broken</code>.</p>
+<p><strong>Description</strong> — provide enough context for an agent with no prior knowledge of the problem. Include:</p>
+<ul>
+<li>What the current behavior is</li>
+<li>What the expected behavior is</li>
+<li>Any relevant config, error output, or stack traces</li>
+</ul>
+<p><strong>Acceptance criteria</strong> — the most important field. A bulleted checklist of specific, testable conditions. Forza uses these directly to determine when the work is done.</p>
+<pre><code>- [ ] Running `forza watch` with a missing label no longer panics
+- [ ] A descriptive error message is logged instead
+- [ ] Existing label-matching behavior is unchanged
+</code></pre>
+<p>Without acceptance criteria, forza must guess what “done” means. With them, it knows exactly what to implement and verify.</p>
+<p><strong>Affected files</strong> — optional but valuable. If you know which source files are involved, list them. Forza will focus there rather than searching the whole codebase.</p>
+<pre><code>src/config.rs
+crates/forza/src/runner.rs
+</code></pre>
+<h2 id="issue-types-and-what-to-include"><a class="header" href="#issue-types-and-what-to-include">Issue types and what to include</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Type</th><th>Key fields</th></tr>
+</thead>
+<tbody>
+<tr><td>Bug</td><td>Description of current vs. expected behavior, steps to reproduce, acceptance criteria</td></tr>
+<tr><td>Feature</td><td>Use case and motivation, acceptance criteria, implementation notes if any</td></tr>
+<tr><td>Chore</td><td>What to change and why, acceptance criteria</td></tr>
+<tr><td>Research</td><td>Question to answer, scope boundaries, expected output format (comment, doc, PR)</td></tr>
+<tr><td>Docs</td><td>Which doc or section, what is missing or wrong, acceptance criteria</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="tips"><a class="header" href="#tips">Tips</a></h2>
+<ul>
+<li><strong>Scope narrowly.</strong> One issue, one change. Forza runs each issue end-to-end in a worktree; a tightly scoped issue produces a focused, reviewable PR.</li>
+<li><strong>Avoid implementation instructions in bugs.</strong> Describe the problem, not the fix. Let the plan stage decide the approach.</li>
+<li><strong>Use implementation notes for features.</strong> If you have a preferred approach or design constraint, put it in the description so forza considers it during planning.</li>
+<li><strong>Include the <code>forza:ready</code> label last.</strong> Fill in the issue completely before applying the gate label. Once labeled, forza picks it up immediately.</li>
+</ul>
+<h2 id="examples-1"><a class="header" href="#examples-1">Examples</a></h2>
+<h3 id="bug--well-formed"><a class="header" href="#bug--well-formed">Bug — well-formed</a></h3>
+<blockquote>
+<p><strong>Title:</strong> <code>fix: watch exits silently when gh CLI returns rate limit error</code></p>
+<p><strong>Description:</strong> When <code>gh</code> hits the API rate limit, <code>forza watch</code> exits without printing an error. The process just stops.</p>
+<p><strong>Acceptance criteria:</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> Rate limit errors from <code>gh</code> are detected and logged as warnings</li>
+<li><input disabled="" type="checkbox"> <code>forza watch</code> retries after a backoff period instead of exiting</li>
+<li><input disabled="" type="checkbox"> Normal watch behavior is unchanged</li>
+</ul>
+<p><strong>Affected files:</strong> <code>crates/forza/src/runner.rs</code>, <code>src/github.rs</code></p>
+</blockquote>
+<h3 id="feature--well-formed"><a class="header" href="#feature--well-formed">Feature — well-formed</a></h3>
+<blockquote>
+<p><strong>Title:</strong> <code>feat: add schedule window support to routes</code></p>
+<p><strong>Description:</strong> I want to restrict certain routes to run only during business hours (e.g., 09:00–17:00 UTC) to avoid noisy notifications at night.</p>
+<p><strong>Acceptance criteria:</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> Routes accept an optional <code>schedule</code> field with a cron-style time window</li>
+<li><input disabled="" type="checkbox"> Issues outside the window are skipped and retried on the next poll inside the window</li>
+<li><input disabled="" type="checkbox"> Routes without a <code>schedule</code> field behave exactly as today</li>
+</ul>
+<p><strong>Implementation notes:</strong> A simple <code>start_hour</code>/<code>end_hour</code> UTC range is sufficient for now; full cron syntax is not needed.</p>
+</blockquote>
+<h3 id="vague--will-produce-poor-results"><a class="header" href="#vague--will-produce-poor-results">Vague — will produce poor results</a></h3>
+<blockquote>
+<p>fix the route stuff it keeps breaking</p>
+</blockquote>
+<p>Forza will attempt to implement this, but without a description of what is broken or what “fixed” means, the result is unpredictable.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="cli-reference"><a class="header" href="#cli-reference">CLI Reference</a></h1>
+<h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
+<h3 id="forza-init"><a class="header" href="#forza-init">forza init</a></h3>
+<p>Create the required GitHub labels and generate a starter <code>forza.toml</code>:</p>
+<pre><code>forza init --repo &lt;owner/name&gt; [--output &lt;path&gt;] [--auto] [--guided] [--model &lt;model&gt;]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--repo &lt;owner/name&gt;</code></td><td>Repository in owner/name format (required)</td></tr>
+<tr><td><code>--output &lt;path&gt;</code></td><td>Output path for the generated config file (default: <code>forza.toml</code>)</td></tr>
+<tr><td><code>--auto</code></td><td>Use an agent to inspect the repo and generate a tailored config</td></tr>
+<tr><td><code>--guided</code></td><td>Launch an interactive Claude session to collaboratively generate a config</td></tr>
+<tr><td><code>--model &lt;model&gt;</code></td><td>Model to use for agent-assisted config generation</td></tr>
+</tbody>
+</table>
+</div>
+<p>This is a one-time setup command. It is idempotent — safe to run on a repo that already has some of the labels.</p>
+<h3 id="forza-issue"><a class="header" href="#forza-issue">forza issue</a></h3>
+<p>Process a single issue by number:</p>
+<pre><code>forza issue &lt;N&gt; [--workflow &lt;name&gt;] [--model &lt;model&gt;] [--fix] [--dry-run] [--skill &lt;path&gt;...]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--workflow &lt;name&gt;</code></td><td>Override the workflow template, skipping route matching (e.g. <code>feature</code>, <code>bug</code>, <code>chore</code>)</td></tr>
+<tr><td><code>--model &lt;model&gt;</code></td><td>Override the model for every stage in this run</td></tr>
+<tr><td><code>--fix</code></td><td>Re-run the latest failed run for this issue with error context</td></tr>
+<tr><td><code>--dry-run</code></td><td>Show the plan without executing</td></tr>
+<tr><td><code>--skill &lt;path&gt;</code></td><td>Add a skill file for every stage (repeatable)</td></tr>
+<tr><td><code>--repo &lt;owner/name&gt;</code></td><td>Repository to process (required when multiple repos are configured)</td></tr>
+<tr><td><code>--repo-dir &lt;path&gt;</code></td><td>Repository directory (default: current directory)</td></tr>
+</tbody>
+</table>
+</div>
+<p>When <code>--workflow</code> is provided, no <code>forza.toml</code> is required — forza infers the repo from the git remote and uses the specified workflow directly. Without <code>--workflow</code>, forza matches the issue’s labels against configured routes.</p>
+<p>If the issue has the <code>forza:plan</code> label, forza automatically executes it as a plan instead.</p>
+<h3 id="forza-pr"><a class="header" href="#forza-pr">forza pr</a></h3>
+<p>Process a single PR by number:</p>
+<pre><code>forza pr &lt;N&gt; [--workflow &lt;name&gt;] [--model &lt;model&gt;] [--fix] [--dry-run] [--skill &lt;path&gt;...]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--workflow &lt;name&gt;</code></td><td>Override the workflow template, skipping route matching (e.g. <code>pr-fix</code>, <code>pr-rebase</code>)</td></tr>
+<tr><td><code>--model &lt;model&gt;</code></td><td>Override the model for every stage in this run</td></tr>
+<tr><td><code>--fix</code></td><td>Re-run the latest failed run for this PR with error context</td></tr>
+<tr><td><code>--dry-run</code></td><td>Show the plan without executing</td></tr>
+<tr><td><code>--skill &lt;path&gt;</code></td><td>Add a skill file for every stage (repeatable)</td></tr>
+<tr><td><code>--repo &lt;owner/name&gt;</code></td><td>Repository to process</td></tr>
+<tr><td><code>--repo-dir &lt;path&gt;</code></td><td>Repository directory (default: current directory)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Like <code>forza issue</code>, the <code>--workflow</code> flag enables configless usage for one-off PR operations.</p>
+<h3 id="forza-run"><a class="header" href="#forza-run">forza run</a></h3>
+<p>Discover and process one batch of eligible issues and PRs:</p>
+<pre><code>forza run [--watch] [--interval &lt;seconds&gt;] [--route &lt;name&gt;] [--no-gate] [--serve-api]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--watch</code></td><td>Continuous polling mode — runs repeatedly on the configured poll interval</td></tr>
+<tr><td><code>--interval &lt;seconds&gt;</code></td><td>Override poll interval in seconds (watch mode only)</td></tr>
+<tr><td><code>--route &lt;name&gt;</code></td><td>Only run a specific route</td></tr>
+<tr><td><code>--no-gate</code></td><td>Bypass the gate_label requirement and process all matching issues immediately</td></tr>
+<tr><td><code>--serve-api</code></td><td>Also start the REST API server alongside the watch loop (watch mode only)</td></tr>
+<tr><td><code>--api-host &lt;host&gt;</code></td><td>Host for the API server (default: <code>127.0.0.1</code>, watch mode only)</td></tr>
+<tr><td><code>--api-port &lt;port&gt;</code></td><td>Port for the API server (default: <code>8080</code>, watch mode only)</td></tr>
+<tr><td><code>--repo-dir &lt;path&gt;</code></td><td>Repository directory</td></tr>
+</tbody>
+</table>
+</div>
+<p>Without <code>--watch</code>, runs a single discovery and processing cycle. With <code>--watch</code>, runs continuously until stopped with <code>Ctrl+C</code>. Requires a <code>forza.toml</code> with configured routes.</p>
+<h3 id="forza-plan"><a class="header" href="#forza-plan">forza plan</a></h3>
+<p>Create, revise, or execute a plan for a set of issues:</p>
+<pre><code>forza plan [ISSUES...] [--revise &lt;N&gt;] [--exec &lt;N&gt;] [--dry-run] [--close] [--branch &lt;name&gt;]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[ISSUES...]</code></td><td>Issue numbers to plan: single (<code>42</code>), multiple (<code>10 20 30</code>), range (<code>10..20</code>). Omit for all open issues</td></tr>
+<tr><td><code>--label &lt;label&gt;</code></td><td>Only plan issues with this label</td></tr>
+<tr><td><code>--revise &lt;N&gt;</code></td><td>Revise plan issue #N based on human comments</td></tr>
+<tr><td><code>--exec &lt;N&gt;</code></td><td>Execute plan issue #N in dependency order</td></tr>
+<tr><td><code>--dry-run</code></td><td>Preview execution order without processing (use with <code>--exec</code>)</td></tr>
+<tr><td><code>--close</code></td><td>Close the plan issue after all items are executed (use with <code>--exec</code>)</td></tr>
+<tr><td><code>--branch &lt;name&gt;</code></td><td>Target a plan branch for all PRs (e.g. <code>plan/my-feature</code>)</td></tr>
+<tr><td><code>--model &lt;model&gt;</code></td><td>Override the model</td></tr>
+<tr><td><code>--limit &lt;N&gt;</code></td><td>Maximum issues to fetch (default: 50)</td></tr>
+<tr><td><code>--repo &lt;owner/name&gt;</code></td><td>Repository (required when multiple repos configured)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Three modes:</strong></p>
+<ul>
+<li>
+<p><strong>Create</strong> (default) — Analyzes issues, reads the codebase, and creates a plan issue with a mermaid dependency graph, actionable issues in order, blocked issues with reasons, and skipped issues. Blocked issues get <code>forza:needs-human</code> labels and explanatory comments.</p>
+</li>
+<li>
+<p><strong>Revise</strong> (<code>--revise &lt;N&gt;</code>) — Reads the plan issue and its comments, then updates the plan based on human feedback. Adjusts ordering, moves issues between sections, and updates labels.</p>
+</li>
+<li>
+<p><strong>Execute</strong> (<code>--exec &lt;N&gt;</code>) — Parses the mermaid dependency graph, topologically sorts it, and processes each actionable issue through its workflow pipeline. Issues with unresolved dependencies are skipped. Completed issues (<code>forza:complete</code>) are skipped on re-run, enabling resume after interruption.</p>
+</li>
+</ul>
+<h3 id="forza-status"><a class="header" href="#forza-status">forza status</a></h3>
+<p>Show run history and outcomes:</p>
+<pre><code>forza status [--all] [--detailed] [--run-id &lt;id&gt;] [--workflow &lt;name&gt;]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--all</code></td><td>Show all runs as a history table (sorted newest first)</td></tr>
+<tr><td><code>--detailed</code></td><td>Show latest run detail</td></tr>
+<tr><td><code>--run-id &lt;id&gt;</code></td><td>Show a specific run by ID</td></tr>
+<tr><td><code>--workflow &lt;name&gt;</code></td><td>Filter dashboard to a single workflow</td></tr>
+</tbody>
+</table>
+</div>
+<p>Displays recent runs with their route, workflow, outcome, and cost. Also shows plan execution history when plan issues exist.</p>
+<h3 id="forza-explain"><a class="header" href="#forza-explain">forza explain</a></h3>
+<p>Visualize your config, routes, and workflows:</p>
+<pre><code>forza explain [--issues] [--prs] [--conditions] [--route &lt;name&gt;] [--workflows] [--plans] [--json]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--repo &lt;owner/name&gt;</code></td><td>Filter output to a single repository</td></tr>
+<tr><td><code>--issues</code></td><td>Show only issue routes</td></tr>
+<tr><td><code>--prs</code></td><td>Show only PR routes (label and condition)</td></tr>
+<tr><td><code>--conditions</code></td><td>Show only condition routes</td></tr>
+<tr><td><code>--route &lt;name&gt;</code></td><td>Show a single route in detail (auto-verbose)</td></tr>
+<tr><td><code>--workflows</code></td><td>List all workflow templates</td></tr>
+<tr><td><code>--workflow &lt;name&gt;</code></td><td>Show a single workflow’s stages</td></tr>
+<tr><td><code>--plans</code></td><td>Show open plan issues and their execution status</td></tr>
+<tr><td><code>-v</code> / <code>--verbose</code></td><td>Verbose output — show per-stage detail</td></tr>
+<tr><td><code>--json</code></td><td>Output as JSON</td></tr>
+</tbody>
+</table>
+</div>
+<p>When no <code>forza.toml</code> exists, shows builtin defaults (available workflows, labels, agents).</p>
+<h3 id="forza-clean"><a class="header" href="#forza-clean">forza clean</a></h3>
+<p>Remove worktrees and run state:</p>
+<pre><code>forza clean [--runs] [--stale] [--days &lt;N&gt;] [--dry-run]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--repo-dir &lt;path&gt;</code></td><td>Repository directory (default: current directory)</td></tr>
+<tr><td><code>--runs</code></td><td>Remove run state files instead of worktrees</td></tr>
+<tr><td><code>--stale</code></td><td>Remove only worktrees older than the configured threshold</td></tr>
+<tr><td><code>--days &lt;N&gt;</code></td><td>Age threshold in days for <code>--stale</code></td></tr>
+<tr><td><code>--dry-run</code></td><td>Print what would be removed without acting</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="forza-open"><a class="header" href="#forza-open">forza open</a></h3>
+<p>Open a new GitHub issue using agent assistance:</p>
+<pre><code>forza open [--repo &lt;owner/name&gt;] [--prompt &lt;text&gt;] [--label &lt;label&gt;] [--ready] [--model &lt;model&gt;]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--repo &lt;owner/name&gt;</code></td><td>Repository to open an issue in</td></tr>
+<tr><td><code>--prompt &lt;text&gt;</code></td><td>Prompt describing the issue to open</td></tr>
+<tr><td><code>--label &lt;label&gt;</code></td><td>Label to apply to the created issue</td></tr>
+<tr><td><code>--ready</code></td><td>Also add the <code>forza:ready</code> label</td></tr>
+<tr><td><code>--model &lt;model&gt;</code></td><td>Override the model</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="forza-serve"><a class="header" href="#forza-serve">forza serve</a></h3>
+<p>Start the REST API server:</p>
+<pre><code>forza serve [--host &lt;host&gt;] [--port &lt;port&gt;] [--repo-dir &lt;path&gt;]
+</code></pre>
+<p>See <a href="#rest-api">REST API</a> for endpoint documentation.</p>
+<h3 id="forza-mcp"><a class="header" href="#forza-mcp">forza mcp</a></h3>
+<p>Start the MCP server:</p>
+<pre><code>forza mcp [--http] [--host &lt;host&gt;] [--port &lt;port&gt;]
+</code></pre>
+<p>See <a href="#mcp-server">MCP Server</a> for tool documentation.</p>
+<h2 id="global-flags"><a class="header" href="#global-flags">Global flags</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--config &lt;path&gt;</code> / <code>-c</code></td><td>Path to <code>forza.toml</code>. Optional for <code>issue</code> and <code>pr</code> commands when <code>--workflow</code> is provided</td></tr>
+<tr><td><code>--log-file &lt;path&gt;</code></td><td>Write tracing output to this file instead of stderr</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="security-2"><a class="header" href="#security-2">Security</a></h1>
+<h2 id="shell-command-trust-boundary"><a class="header" href="#shell-command-trust-boundary">Shell command trust boundary</a></h2>
+<p>All shell commands that forza executes — validation commands, stage hooks, agentless stage commands, and stage conditions — are run via <code>sh -c</code> with the string taken directly from your <code>forza.toml</code>. This is by design: the config file is the trust boundary.</p>
+<p><strong>What this means in practice:</strong></p>
+<ul>
+<li>Any string in <code>[validation].commands</code>, <code>[stage_hooks.*]</code> hook lists, agentless stage <code>command</code> fields, and stage <code>condition</code> fields has full shell access to your environment with the privileges of the forza process.</li>
+<li>There is no sandboxing or command allowlisting for these config-driven shell invocations.</li>
+</ul>
+<p><strong>The assumption:</strong> <code>forza.toml</code> is trusted. Treat it like executable code — review changes to it the same way you would review code changes.</p>
+<p><strong>The risk:</strong> If forza ever processes config from an untrusted source (for example, a PR that modifies <code>forza.toml</code>), those commands become an arbitrary code execution vector. Forza does not currently validate or restrict the content of commands in config.</p>
+<p><strong>Mitigations:</strong></p>
+<ul>
+<li>Store <code>forza.toml</code> in version control and require review for all changes to it.</li>
+<li>Do not configure forza to automatically apply config changes submitted by untrusted contributors without explicit review.</li>
+<li>Run forza with the minimum privileges needed for your workflows.</li>
+<li>Note: <code>authorization_level</code> in <code>[security]</code> controls what the Claude agent can do, not what forza’s own shell invocations can do. It does not restrict hooks, validation commands, agentless stages, or conditions.</li>
+</ul>
+<h2 id="authorization-levels-1"><a class="header" href="#authorization-levels-1">Authorization levels</a></h2>
+<p>The <code>authorization_level</code> field in <code>[security]</code> controls what the agent is permitted to do during a run:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Level</th><th>Agent can</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sandbox</code></td><td>Read files only; no writes, no shell commands</td></tr>
+<tr><td><code>local</code></td><td>Read and write files in the worktree; no shell execution</td></tr>
+<tr><td><code>contributor</code></td><td>Read, write, and run pre-approved shell commands</td></tr>
+<tr><td><code>trusted</code></td><td>Full access; unrestricted shell execution</td></tr>
+</tbody>
+</table>
+</div>
+<p>For production or public-facing repositories, prefer <code>contributor</code> or <code>sandbox</code>. For internal repos where you control who applies the gate label, <code>trusted</code> is appropriate.</p>
+<h2 id="allowed-authors"><a class="header" href="#allowed-authors">Allowed authors</a></h2>
+<p>Use <code>allowed_authors</code> to restrict which GitHub users can trigger runs:</p>
+<pre><code class="language-toml">[security]
+authorization_level = "contributor"
+allowed_authors = ["your-github-username", "trusted-collaborator"]
+</code></pre>
+<p>An empty list (the default) restricts processing to the authenticated user only.</p>
+<h2 id="require-label"><a class="header" href="#require-label">Require label</a></h2>
+<p>The <code>require_label</code> field adds a secondary approval gate that must be present on the issue before processing begins:</p>
+<pre><code class="language-toml">[security]
+authorization_level = "contributor"
+require_label = "security:approved"
+</code></pre>
+<p>Unlike <code>gate_label</code> (which is removed when forza picks up an issue), <code>require_label</code> is a permanent gate that is never removed automatically. A human must apply it to explicitly approve processing.</p>
+<h2 id="github-credentials"><a class="header" href="#github-credentials">GitHub credentials</a></h2>
+<p>Forza uses the <code>gh</code> CLI for GitHub operations. Ensure <code>gh</code> is authenticated with appropriate permissions:</p>
+<pre><code class="language-bash">gh auth login
+gh auth status
+</code></pre>
+<p>The forza process inherits whatever permissions your <code>gh</code> session has. Scope it to the minimum required: typically <code>repo</code> access for the repositories you are automating.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="advanced"><a class="header" href="#advanced">Advanced</a></h1>
+<p>Self-hosting, custom workflows, REST API, and MCP server integration.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="self-hosting-1"><a class="header" href="#self-hosting-1">Self-Hosting</a></h1>
+<p>Running forza as a persistent service that watches GitHub and processes issues and PRs continuously.</p>
+<h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
+<ul>
+<li>Rust toolchain (for building from source) or a pre-built binary</li>
+<li><code>gh</code> CLI authenticated with appropriate repository permissions</li>
+<li>Claude API key (or Codex credentials) set in the environment</li>
+<li>Git configured with a user name and email</li>
+</ul>
+<h2 id="running-forza-watch"><a class="header" href="#running-forza-watch">Running forza watch</a></h2>
+<p>The simplest self-hosting setup is <code>forza watch</code> as a long-running process:</p>
+<pre><code class="language-bash"># Continuous polling loop, 60-second interval
+forza watch --interval 60
+</code></pre>
+<p>Forza polls GitHub on the configured <code>poll_interval</code> for each route, discovers eligible subjects, and processes them concurrently up to <code>max_concurrency</code>.</p>
+<h2 id="process-management"><a class="header" href="#process-management">Process management</a></h2>
+<p>Use a process manager to keep forza running and restart it on failure.</p>
+<h3 id="systemd-linux"><a class="header" href="#systemd-linux">systemd (Linux)</a></h3>
+<pre><code class="language-ini">[Unit]
+Description=forza GitHub automation runner
+After=network.target
+
+[Service]
+Type=simple
+User=forza
+WorkingDirectory=/opt/forza
+ExecStart=/usr/local/bin/forza watch --config /etc/forza/forza.toml
+Restart=on-failure
+RestartSec=30
+Environment=ANTHROPIC_API_KEY=sk-...
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Enable and start:</p>
+<pre><code class="language-bash">systemctl enable forza
+systemctl start forza
+</code></pre>
+<h3 id="docker"><a class="header" href="#docker">Docker</a></h3>
+<pre><code class="language-dockerfile">FROM rust:1.90-slim AS builder
+WORKDIR /build
+RUN cargo install forza
+
+FROM debian:bookworm-slim
+RUN apt-get update &amp;&amp; apt-get install -y git gh &amp;&amp; rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/cargo/bin/forza /usr/local/bin/forza
+WORKDIR /workspace
+ENTRYPOINT ["forza", "watch"]
+</code></pre>
+<h2 id="environment-variables-2"><a class="header" href="#environment-variables-2">Environment variables</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ANTHROPIC_API_KEY</code></td><td>API key for Claude (required when <code>agent = "claude"</code>)</td></tr>
+<tr><td><code>OPENAI_API_KEY</code></td><td>API key for Codex (required when <code>agent = "codex"</code>)</td></tr>
+<tr><td><code>GH_TOKEN</code></td><td>GitHub token (alternative to <code>gh auth login</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="cost-management"><a class="header" href="#cost-management">Cost management</a></h2>
+<p>Use cost guardrails to bound spending:</p>
+<pre><code class="language-toml">[global]
+max_cost_per_issue = 5.00    # Stop a single run if it exceeds $5
+max_cost_per_hour = 20.00    # Pause all routes if hourly spend exceeds $20
+</code></pre>
+<p>Monitor costs with <code>forza status</code>:</p>
+<pre><code class="language-bash">forza status --limit 50
+</code></pre>
+<h2 id="real-world-example"><a class="header" href="#real-world-example">Real-world example</a></h2>
+<p>The forza repository uses forza to process its own issues. See <a href="https://github.com/joshrotenberg/forza/blob/main/forza.toml"><code>forza.toml</code></a> in the repository for a complete, production configuration.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="custom-workflows"><a class="header" href="#custom-workflows">Custom Workflows</a></h1>
+<p>Forza’s built-in workflow templates cover common cases. For specialized workflows, define custom templates in <code>forza.toml</code>.</p>
+<h2 id="defining-a-custom-template"><a class="header" href="#defining-a-custom-template">Defining a custom template</a></h2>
+<p>Add one or more <code>[[workflow_templates]]</code> sections to <code>forza.toml</code>:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "hotfix"
+stages = [
+    { kind = "implement", max_retries = 1 },
+    { kind = "test", max_retries = 2 },
+    { kind = "open_pr" },
+]
+</code></pre>
+<p>Then reference it from a route:</p>
+<pre><code class="language-toml">[repos."owner/name".routes.hotfix]
+type = "issue"
+label = "hotfix"
+workflow = "hotfix"
+</code></pre>
+<p>A custom template with the same name as a built-in overrides the built-in for all routes.</p>
+<h2 id="agentless-stages-1"><a class="header" href="#agentless-stages-1">Agentless stages</a></h2>
+<p>Provide a <code>command</code> field to run a shell command instead of invoking the agent:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "format-pr"
+stages = [
+    { kind = "implement", command = "cargo fmt --all" },
+    { kind = "open_pr" },
+]
+</code></pre>
+<p>Use agentless stages for deterministic operations (formatting, linting, dependency updates) that do not require reasoning.</p>
+<h2 id="conditional-stages-1"><a class="header" href="#conditional-stages-1">Conditional stages</a></h2>
+<p>Gate a stage on a shell command exit code. A non-zero exit skips the stage without failing the run:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "test-if-changed"
+stages = [
+    { kind = "implement" },
+    { kind = "test", condition = "git diff --quiet HEAD~1 -- tests/" },
+    { kind = "open_pr" },
+]
+</code></pre>
+<h2 id="optional-stages-1"><a class="header" href="#optional-stages-1">Optional stages</a></h2>
+<p>Mark stages <code>optional = true</code> to skip them without failure:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "safe-feature"
+stages = [
+    { kind = "plan" },
+    { kind = "draft_pr", optional = true },
+    { kind = "implement" },
+    { kind = "test", optional = true },
+    { kind = "review" },
+    { kind = "open_pr" },
+    { kind = "merge", optional = true },
+]
+</code></pre>
+<h2 id="research-only-workflow"><a class="header" href="#research-only-workflow">Research-only workflow</a></h2>
+<p>A workflow that investigates a question and posts findings as a comment, without opening a PR:</p>
+<pre><code class="language-toml">[[workflow_templates]]
+name = "investigate"
+stages = [
+    { kind = "research" },
+    { kind = "comment" },
+]
+</code></pre>
+<h2 id="combining-options"><a class="header" href="#combining-options">Combining options</a></h2>
+<p>Options compose freely. A stage can be agentless, conditional, and have a retry limit:</p>
+<pre><code class="language-toml">{ kind = "test", command = "cargo test --lib", condition = "cargo check 2&gt;/dev/null", max_retries = 2, optional = true }
+</code></pre>
+<h2 id="stage-environment-variables"><a class="header" href="#stage-environment-variables">Stage environment variables</a></h2>
+<p>All stage commands (agentless <code>command</code>, <code>condition</code>, hooks, validation) receive <code>FORZA_*</code> environment variables. See <a href="#environment-variables">Stage Kinds</a> for the full list.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="rest-api"><a class="header" href="#rest-api">REST API</a></h1>
+<p>Forza exposes a REST API for programmatic control and status inspection.</p>
+<h2 id="starting-the-api-server"><a class="header" href="#starting-the-api-server">Starting the API server</a></h2>
+<pre><code class="language-bash">forza serve [--port &lt;port&gt;] [--config path]
+</code></pre>
+<p>Default port is <code>8080</code>. The server binds to <code>127.0.0.1</code> by default.</p>
+<h2 id="endpoints"><a class="header" href="#endpoints">Endpoints</a></h2>
+<h3 id="get-health"><a class="header" href="#get-health">GET /health</a></h3>
+<p>Returns the server health status.</p>
+<p><strong>Response:</strong></p>
+<pre><code class="language-json">{ "status": "ok" }
+</code></pre>
+<h3 id="get-runs"><a class="header" href="#get-runs">GET /runs</a></h3>
+<p>List recent runs.</p>
+<p><strong>Response:</strong></p>
+<pre><code class="language-json">[
+  {
+    "id": "run-abc123",
+    "route": "bugfix",
+    "workflow": "bug",
+    "subject_number": 42,
+    "subject_type": "issue",
+    "outcome": "PrCreated",
+    "started_at": "2025-01-01T00:00:00Z",
+    "finished_at": "2025-01-01T00:05:00Z"
+  }
+]
+</code></pre>
+<h3 id="get-runslatest"><a class="header" href="#get-runslatest">GET /runs/latest</a></h3>
+<p>Get the most recent run.</p>
+<h3 run_id="" id="get-runs-1"><a class="header" href="#get-runs-1">GET /runs/</a></h3>
+<p>Get details for a specific run.</p>
+<h3 number="" id="post-runsissue"><a class="header" href="#post-runsissue">POST /runs/issue/</a></h3>
+<p>Trigger a run for a specific issue.</p>
+<p><strong>Query parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>repo</code></td><td>Target repo (required when multiple repos are configured)</td></tr>
+<tr><td><code>dry_run</code></td><td>If <code>true</code>, return the matched route and plan without executing</td></tr>
+</tbody>
+</table>
+</div>
+<h3 number="" id="post-runspr"><a class="header" href="#post-runspr">POST /runs/pr/</a></h3>
+<p>Trigger a run for a specific pull request.</p>
+<p><strong>Query parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>repo</code></td><td>Target repo (required when multiple repos are configured)</td></tr>
+<tr><td><code>dry_run</code></td><td>If <code>true</code>, return the matched route and plan without executing</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="post-runsbatch"><a class="header" href="#post-runsbatch">POST /runs/batch</a></h3>
+<p>Trigger a full batch cycle across all configured repos.</p>
+<h3 id="get-status"><a class="header" href="#get-status">GET /status</a></h3>
+<p>Return current runner status (workflow summaries with run counts and cost stats).</p>
+<h3 id="get-config"><a class="header" href="#get-config">GET /config</a></h3>
+<p>Return the current runner configuration.</p>
+<h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
+<p>The API server does not currently implement authentication. Bind it to <code>localhost</code> only and do not expose it publicly.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="mcp-server"><a class="header" href="#mcp-server">MCP Server</a></h1>
+<p>Forza exposes an MCP (Model Context Protocol) server that allows AI agents and MCP-compatible clients to interact with forza programmatically.</p>
+<h2 id="starting-the-mcp-server"><a class="header" href="#starting-the-mcp-server">Starting the MCP server</a></h2>
+<h3 id="stdio-transport-default"><a class="header" href="#stdio-transport-default">Stdio transport (default)</a></h3>
+<pre><code class="language-bash">forza mcp [--config path]
+</code></pre>
+<p>The server communicates over stdio using the MCP protocol. Connect to it from an MCP client or configure it in an <code>.mcp.json</code> file.</p>
+<h3 id="httpsse-transport"><a class="header" href="#httpsse-transport">HTTP/SSE transport</a></h3>
+<pre><code class="language-bash">forza mcp --http [--host 127.0.0.1] [--port 8080]
+</code></pre>
+<p>Starts an HTTP server with SSE streaming. Useful for remote clients or when stdio is not available.</p>
+<h2 id="configuring-in-mcpjson"><a class="header" href="#configuring-in-mcpjson">Configuring in .mcp.json</a></h2>
+<p>Add forza as an MCP server in your project’s <code>.mcp.json</code>:</p>
+<pre><code class="language-json">{
+  "mcpServers": {
+    "forza": {
+      "command": "forza",
+      "args": ["mcp", "--config", "/path/to/forza.toml"]
+    }
+  }
+}
+</code></pre>
+<h2 id="available-tools"><a class="header" href="#available-tools">Available tools</a></h2>
+<p>Forza exposes 11 tools organized into three groups.</p>
+<h3 id="runner-tools"><a class="header" href="#runner-tools">Runner tools</a></h3>
+<h4 id="issue_run"><a class="header" href="#issue_run">issue_run</a></h4>
+<p>Process a single GitHub issue through the full pipeline.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>number</code></td><td>integer</td><td>yes</td><td>Issue number to process</td></tr>
+<tr><td><code>repo</code></td><td>string</td><td>no</td><td><code>owner/name</code> (required when multiple repos are configured)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="pr_run"><a class="header" href="#pr_run">pr_run</a></h4>
+<p>Process a single GitHub PR through the full pipeline.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>number</code></td><td>integer</td><td>yes</td><td>PR number to process</td></tr>
+<tr><td><code>repo</code></td><td>string</td><td>no</td><td><code>owner/name</code> (required when multiple repos are configured)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="run_batch"><a class="header" href="#run_batch">run_batch</a></h4>
+<p>Poll for all eligible issues and PRs across configured repos and process them in a single batch. Takes no parameters.</p>
+<h4 id="dry_run_issue"><a class="header" href="#dry_run_issue">dry_run_issue</a></h4>
+<p>Show the execution plan for an issue without running it.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>number</code></td><td>integer</td><td>yes</td><td>Issue number to show the plan for</td></tr>
+<tr><td><code>repo</code></td><td>string</td><td>no</td><td><code>owner/name</code> (required when multiple repos are configured)</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="status-tools"><a class="header" href="#status-tools">Status tools</a></h3>
+<h4 id="status_latest"><a class="header" href="#status_latest">status_latest</a></h4>
+<p>Get the most recent run record. Takes no parameters.</p>
+<h4 id="status_list"><a class="header" href="#status_list">status_list</a></h4>
+<p>List all run records sorted newest-first. Takes no parameters.</p>
+<h4 id="status_get"><a class="header" href="#status_get">status_get</a></h4>
+<p>Get a specific run record by ID.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>run_id</code></td><td>string</td><td>yes</td><td>Run identifier</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="status_summary"><a class="header" href="#status_summary">status_summary</a></h4>
+<p>Get per-workflow aggregate statistics across all runs (totals, success/failure counts, cost ranges). Takes no parameters.</p>
+<h4 id="status_find_issue"><a class="header" href="#status_find_issue">status_find_issue</a></h4>
+<p>Find the most recent run for a given issue number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>issue_number</code></td><td>integer</td><td>yes</td><td>Issue number to look up</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="config-tools"><a class="header" href="#config-tools">Config tools</a></h3>
+<h4 id="config_show"><a class="header" href="#config_show">config_show</a></h4>
+<p>Return the currently loaded runner configuration as JSON. Takes no parameters.</p>
+<h4 id="config_validate"><a class="header" href="#config_validate">config_validate</a></h4>
+<p>Parse and validate a forza config file, returning any errors.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td>string</td><td>yes</td><td>Path to the config file to validate</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="use-cases"><a class="header" href="#use-cases">Use cases</a></h2>
+<ul>
+<li><strong>Agent-driven issue processing</strong>: An agent can use <code>issue_run</code> to start processing an issue it just created</li>
+<li><strong>PR maintenance</strong>: Use <code>pr_run</code> to trigger pipeline runs for PRs that need rebasing, CI fixes, or review</li>
+<li><strong>Batch processing</strong>: Use <code>run_batch</code> to poll and process all eligible work in one call</li>
+<li><strong>Dry runs</strong>: Use <code>dry_run_issue</code> to preview what forza would do for an issue before committing</li>
+<li><strong>Status monitoring</strong>: Query run outcomes with <code>status_list</code>, <code>status_latest</code>, or <code>status_summary</code></li>
+<li><strong>Integration testing</strong>: Drive forza runs from test harnesses without using the CLI</li>
+</ul>
+<h2 id="using-forza-with-its-own-mcp-server"><a class="header" href="#using-forza-with-its-own-mcp-server">Using forza with its own MCP server</a></h2>
+<p>Forza uses its own MCP server to process issues. When an agent is working in a forza repository and needs to trigger a run or check status, it can connect to the forza MCP server via the <code>.mcp.json</code> in the project root.</p>
+<p>See <a href="https://github.com/joshrotenberg/forza/blob/main/forza.toml"><code>forza.toml</code></a> and <a href="https://github.com/joshrotenberg/forza/blob/main/.mcp.json"><code>.mcp.json</code></a> in the forza repository for a real-world example.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="contributing"><a class="header" href="#contributing">Contributing</a></h1>
+<h2 id="development-setup"><a class="header" href="#development-setup">Development setup</a></h2>
+<pre><code class="language-bash">git clone https://github.com/joshrotenberg/forza
+cd forza
+cargo build --all
+</code></pre>
+<p>Requirements:</p>
+<ul>
+<li>Rust 2024 edition (stable toolchain)</li>
+<li><code>gh</code> CLI for integration tests that hit GitHub</li>
+<li>Git configured with user name and email</li>
+</ul>
+<h2 id="running-tests"><a class="header" href="#running-tests">Running tests</a></h2>
+<pre><code class="language-bash"># All unit and integration tests
+cargo test --all
+
+# Core library tests only
+cargo test -p forza-core
+
+# Binary crate unit tests
+cargo test -p forza --lib
+
+# Mock-based pipeline integration tests
+cargo test -p forza-core --test pipeline_integration
+</code></pre>
+<h2 id="pre-push-checklist"><a class="header" href="#pre-push-checklist">Pre-push checklist</a></h2>
+<p>Before pushing:</p>
+<pre><code class="language-bash">cargo fmt --all -- --check
+cargo clippy --all --all-targets -- -D warnings
+cargo test --all
+cargo doc --no-deps --all-features
+</code></pre>
+<h2 id="project-structure"><a class="header" href="#project-structure">Project structure</a></h2>
+<pre><code>Cargo.toml                    (workspace root)
+crates/
+  forza-core/                 (library — domain model, traits, pipeline)
+  forza/                      (binary — CLI, API, MCP, client implementations)
+docs/                         mdbook documentation site
+examples/                     Example forza.toml configurations
+</code></pre>
+<h2 id="submitting-changes"><a class="header" href="#submitting-changes">Submitting changes</a></h2>
+<ol>
+<li>Fork the repository and create a feature branch: <code>feat/my-change</code></li>
+<li>Follow existing code patterns and Rust 2024 conventions</li>
+<li>Ensure all tests pass and clippy is clean</li>
+<li>Open a PR with a clear description and acceptance criteria</li>
+<li>Label it <code>forza:ready</code> if you want forza to review it</li>
+</ol>
+<h2 id="issue-guidelines"><a class="header" href="#issue-guidelines">Issue guidelines</a></h2>
+<p>See <a href="#writing-issues-for-forza">Writing Issues for Forza</a> — the same guidelines apply whether you are opening an issue for forza to implement or for a human to implement.</p>
+<h2 id="design-principles-1"><a class="header" href="#design-principles-1">Design principles</a></h2>
+<p>Before proposing a new feature, read <a href="#what-forza-isnt">What forza isn’t</a> — particularly the feature evaluation guidelines. The key question is: does this belong with the human, the agent, or the framework? Features that blur the responsibility boundary between these three actors are generally out of scope for forza. See the <a href="#architecture">Architecture</a> page for how the codebase is structured.</p>
+<h2 id="license"><a class="header" href="#license">License</a></h2>
+<p>MIT OR Apache-2.0</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
