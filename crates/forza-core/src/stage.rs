@@ -263,7 +263,7 @@ impl Workflow {
                 vec![
                     Stage::agent(StageKind::Implement),
                     Stage::agent(StageKind::Test),
-                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND).optional(),
+                    Stage::shell(StageKind::DraftPr, DRAFT_PR_COMMAND),
                     Stage::agent(StageKind::OpenPr),
                 ],
             ),
