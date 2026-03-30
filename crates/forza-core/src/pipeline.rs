@@ -259,7 +259,8 @@ pub async fn execute(
                 execute_native_stage(stage.kind, &work.subject, work_dir, gh, git).await
             }
             Execution::Agent => {
-                let model = stage.model.as_deref().or(config.model.as_deref());
+                let configured_model = stage.model.as_deref().or(config.model.as_deref());
+                let model = agent.resolve_model(configured_model);
                 let base_skills = stage.skills.as_ref().unwrap_or(&config.skills);
                 let effective_skills: Vec<String> = config
                     .context
