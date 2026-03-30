@@ -226,6 +226,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     vec![],
                     None,
                     input.workflow,
+                    None,
                 )
                 .await
                 {
@@ -268,6 +269,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     vec![],
                     None,
                     input.workflow,
+                    None,
                 )
                 .await
                 {
@@ -831,6 +833,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                         app.git.clone(),
                         None,
                         vec![],
+                        None,
                         None,
                         None,
                     )
