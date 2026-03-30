@@ -1,7 +1,8 @@
 #!/bin/sh
-# Create an early draft PR for visibility.
-# Pushes the branch and creates a draft PR.
-set -xe
+# Create an early draft PR for visibility (shell fallback for custom workflows).
+# The builtin DraftPr stage uses native execution instead of this script.
+# This is kept for custom workflows that define a shell-based draft_pr stage.
+set -e
 
 BRANCH=$(git branch --show-current)
 
@@ -23,4 +24,5 @@ gh pr create --draft \
     --repo "$FORZA_REPO" \
     --head "$BRANCH" \
     --title "[WIP] $FORZA_SUBJECT_TITLE (#$FORZA_SUBJECT_NUMBER)" \
-    --body "$BODY"
+    --body "$BODY" \
+    2>/dev/null || true
