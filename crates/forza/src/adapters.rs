@@ -485,6 +485,11 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
 
         let codex = codex_wrapper::Codex::builder()
             .working_dir(work_dir)
+            .retry(
+                codex_wrapper::RetryPolicy::new()
+                    .exponential()
+                    .retry_on_timeout(true),
+            )
             .build()
             .map_err(|e| CoreError::Agent(format!("failed to create codex client: {e}")))?;
 
