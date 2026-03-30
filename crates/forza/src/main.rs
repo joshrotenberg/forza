@@ -175,6 +175,9 @@ struct PrArgs {
     after_long_help = "Examples:\n  forza run\n  forza run --repo-dir . --no-gate\n  forza run --route bugfix\n  forza run --watch\n  forza run --watch --interval 30 --serve-api"
 )]
 struct RunArgs {
+    /// Repository (owner/name). Filter to a single repo when multiple are configured.
+    #[arg(long)]
+    repo: Option<String>,
     /// Repository directory (default: current directory).
     #[arg(long)]
     repo_dir: Option<PathBuf>,
@@ -345,6 +348,9 @@ struct OpenArgs {
     /// Repository to open an issue in (owner/name). Required when multiple repos are configured.
     #[arg(long)]
     repo: Option<String>,
+    /// Repository directory (default: current directory).
+    #[arg(long)]
+    repo_dir: Option<PathBuf>,
     /// Prompt describing the issue to open.
     #[arg(long)]
     prompt: Option<String>,
@@ -374,6 +380,9 @@ struct PlanArgs {
     /// Repository (owner/name). Required when multiple repos configured.
     #[arg(long)]
     repo: Option<String>,
+    /// Repository directory (default: current directory).
+    #[arg(long)]
+    repo_dir: Option<PathBuf>,
     /// Revise an existing plan issue based on new comments.
     #[arg(long, value_name = "PLAN_ISSUE", conflicts_with = "exec")]
     revise: Option<u64>,
@@ -629,11 +638,11 @@ async fn cmd_open(
     config: &forza::RunnerConfig,
     git: &std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
-    let (repo, rd, _routes) = match resolve_repo(args.repo.as_deref(), &None, config, &**git).await
-    {
-        Ok(r) => r,
-        Err(code) => return code,
-    };
+    let (repo, rd, _routes) =
+        match resolve_repo(args.repo.as_deref(), &args.repo_dir, config, &**git).await {
+            Ok(r) => r,
+            Err(code) => return code,
+        };
 
     // Build preamble: base agent preamble + optional prompt + label hints.
     let mut preamble = forza_core::planner::make_preamble(&repo);
@@ -686,10 +695,11 @@ async fn cmd_plan(
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
     git: &std::sync::Arc<dyn forza::git::GitClient>,
 ) -> ExitCode {
-    let (repo, rd, routes) = match resolve_repo(args.repo.as_deref(), &None, config, &**git).await {
-        Ok(r) => r,
-        Err(code) => return code,
-    };
+    let (repo, rd, routes) =
+        match resolve_repo(args.repo.as_deref(), &args.repo_dir, config, &**git).await {
+            Ok(r) => r,
+            Err(code) => return code,
+        };
 
     // Exec mode: execute an existing plan issue.
     if let Some(plan_number) = args.exec {
@@ -2054,6 +2064,12 @@ async fn cmd_run(
         indexmap::IndexMap<String, forza::config::Route>,
     )> = Vec::new();
     for (repo, entry_repo_dir, routes) in config.iter_repos() {
+        // Filter to a single repo if --repo is specified.
+        if let Some(ref filter) = args.repo
+            && repo != filter
+        {
+            continue;
+        }
         let explicit_dir = entry_repo_dir
             .map(PathBuf::from)
             .or_else(|| args.repo_dir.clone())
