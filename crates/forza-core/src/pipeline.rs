@@ -126,6 +126,9 @@ pub async fn execute(
     };
     let work_dir = worktree.as_deref().unwrap_or(repo_dir);
 
+    // Ensure forza's internal files are git-ignored so agents don't commit them.
+    ensure_forza_gitignore(work_dir).await;
+
     // 3. Execute stages.
     let mut all_succeeded = true;
     let mut pending_breadcrumb: Option<String> = None;
@@ -669,6 +672,43 @@ async fn run_finally_hooks(
         for cmd in &hooks.finally {
             let _ = shell::run(cmd, work_dir, subject, run_id, route, workflow).await;
         }
+    }
+}
+
+/// Ensure forza's internal files are listed in the worktree's `.gitignore`.
+///
+/// Appends entries for breadcrumb files and the `.forza/` directory if they
+/// aren't already present. This prevents agents from accidentally committing
+/// forza's working files.
+async fn ensure_forza_gitignore(work_dir: &Path) {
+    let gitignore_path = work_dir.join(".gitignore");
+    let entries = [".plan_breadcrumb.md", ".review_breadcrumb.md", ".forza/"];
+
+    let existing = tokio::fs::read_to_string(&gitignore_path)
+        .await
+        .unwrap_or_default();
+
+    let mut additions = String::new();
+    for entry in &entries {
+        if !existing.lines().any(|line| line.trim() == *entry) {
+            additions.push_str(entry);
+            additions.push('\n');
+        }
+    }
+
+    if additions.is_empty() {
+        return;
+    }
+
+    // Append to .gitignore (create if missing).
+    let new_content = if existing.is_empty() || existing.ends_with('\n') {
+        format!("{existing}# forza internal files\n{additions}")
+    } else {
+        format!("{existing}\n# forza internal files\n{additions}")
+    };
+
+    if let Err(e) = tokio::fs::write(&gitignore_path, new_content).await {
+        warn!("failed to update .gitignore: {e}");
     }
 }
 
