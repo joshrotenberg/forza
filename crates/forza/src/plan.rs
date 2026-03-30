@@ -205,7 +205,10 @@ pub fn build_issue_summaries(issues: &[IssueCandidate]) -> String {
                 i.labels.join(", ")
             };
             let body = if i.body.len() > 500 {
-                let end = i.body.floor_char_boundary(500);
+                let mut end = 500;
+                while !i.body.is_char_boundary(end) {
+                    end -= 1;
+                }
                 format!("{}...", &i.body[..end])
             } else {
                 i.body.clone()
