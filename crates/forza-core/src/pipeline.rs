@@ -389,8 +389,9 @@ pub async fn execute(
         )
         .await;
 
-        // Load breadcrumb for next stage.
-        pending_breadcrumb = load_breadcrumb(&run_id, stage_name, work_dir).await;
+        // Collect breadcrumbs: move from worktree to state dir, then load.
+        collect_breadcrumbs(&run_id, stage_name, work_dir, state_dir).await;
+        pending_breadcrumb = load_breadcrumb(&run_id, stage_name, state_dir).await;
         if pending_breadcrumb.is_some() {
             info!(
                 number = work.subject.number,
@@ -771,10 +772,50 @@ async fn auto_commit_if_needed(work_dir: &Path, subject: &Subject) {
     }
 }
 
-/// Load a breadcrumb file from a completed stage.
-async fn load_breadcrumb(run_id: &str, stage_name: &str, work_dir: &Path) -> Option<String> {
-    let path = work_dir
+/// Collect breadcrumbs from the worktree into the state directory.
+///
+/// After an agent stage, moves breadcrumb files from the worktree's
+/// `.forza/breadcrumbs/{run_id}/` to `{state_dir}/breadcrumbs/{run_id}/`.
+/// Also collects named breadcrumbs (`.plan_breadcrumb.md`, etc.) using
+/// the stage name as the key.
+async fn collect_breadcrumbs(run_id: &str, stage_name: &str, work_dir: &Path, state_dir: &Path) {
+    let dest_dir = state_dir.join("breadcrumbs").join(run_id);
+    let _ = tokio::fs::create_dir_all(&dest_dir).await;
+
+    // 1. Move stage breadcrumb from worktree .forza/breadcrumbs/{run_id}/{stage}.md
+    let worktree_bc = work_dir
         .join(".forza")
+        .join("breadcrumbs")
+        .join(run_id)
+        .join(format!("{stage_name}.md"));
+    if let Ok(content) = tokio::fs::read_to_string(&worktree_bc).await {
+        let dest = dest_dir.join(format!("{stage_name}.md"));
+        let _ = tokio::fs::write(&dest, &content).await;
+        let _ = tokio::fs::remove_file(&worktree_bc).await;
+    }
+
+    // 2. Collect named breadcrumbs (written to worktree root by agent prompts).
+    let named_files: &[(&str, &str)] = &[
+        (".plan_breadcrumb.md", "plan"),
+        (".review_breadcrumb.md", "review"),
+        (".research_breadcrumb.md", "research"),
+    ];
+    for (filename, key) in named_files {
+        let src = work_dir.join(filename);
+        if let Ok(content) = tokio::fs::read_to_string(&src).await
+            && !content.trim().is_empty()
+        {
+            let dest = dest_dir.join(format!("{key}.md"));
+            let _ = tokio::fs::write(&dest, &content).await;
+            // Don't remove — draft_pr native stage still reads .plan_breadcrumb.md
+            // from the worktree. The .gitignore prevents it from being committed.
+        }
+    }
+}
+
+/// Load a breadcrumb file from the state directory.
+async fn load_breadcrumb(run_id: &str, stage_name: &str, state_dir: &Path) -> Option<String> {
+    let path = state_dir
         .join("breadcrumbs")
         .join(run_id)
         .join(format!("{stage_name}.md"));
@@ -1225,7 +1266,7 @@ mod tests {
     #[tokio::test]
     async fn load_breadcrumb_reads_file() {
         let dir = tempfile::tempdir().unwrap();
-        let bc_dir = dir.path().join(".forza").join("breadcrumbs").join("run-1");
+        let bc_dir = dir.path().join("breadcrumbs").join("run-1");
         std::fs::create_dir_all(&bc_dir).unwrap();
         std::fs::write(bc_dir.join("plan.md"), "# Plan\nDo the thing.").unwrap();
 
