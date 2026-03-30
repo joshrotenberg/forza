@@ -812,6 +812,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "forza-test-fixture"
+version = "0.0.0"
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
