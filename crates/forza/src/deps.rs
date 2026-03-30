@@ -1,9 +1,17 @@
 //! Dependency validation — checks that required external tools are available on startup.
 
+use claude_wrapper::CliVersion;
 use tokio::process::Command;
 
 use crate::error::{Error, Result};
 use crate::git::GitClient;
+
+/// Minimum Claude CLI version required by forza.
+const MIN_CLAUDE_VERSION: CliVersion = CliVersion {
+    major: 2,
+    minor: 0,
+    patch: 0,
+};
 
 /// Validate that all required external tools are present and usable.
 ///
@@ -67,15 +75,28 @@ async fn check_gh() -> Result<()> {
 }
 
 async fn check_agent(agent: &str) -> Result<()> {
-    let status = Command::new(agent)
+    let output = Command::new(agent)
         .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
         .await;
 
-    match status {
-        Ok(s) if s.success() => Ok(()),
+    match output {
+        Ok(o) if o.status.success() => {
+            // For claude, parse and check the version against the minimum.
+            if agent == "claude"
+                && let Ok(version) =
+                    CliVersion::parse_version_output(&String::from_utf8_lossy(&o.stdout))
+                && !version.satisfies_minimum(&MIN_CLAUDE_VERSION)
+            {
+                eprintln!(
+                    "warning: claude CLI version {version} is below the minimum \
+                     recommended version {MIN_CLAUDE_VERSION}; some features may not work"
+                );
+            }
+            Ok(())
+        }
         Ok(_) => Err(Error::Dependency(format!(
             "{agent} --version failed; {}",
             install_hint(agent)
@@ -145,18 +166,36 @@ async fn doctor_agent(agent: &str) -> CheckResult {
 
     match output {
         Ok(o) if o.status.success() => {
-            let version = String::from_utf8_lossy(&o.stdout)
-                .trim()
-                .lines()
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let raw = String::from_utf8_lossy(&o.stdout);
+            let version_line = raw.trim().lines().next().unwrap_or("").to_string();
+
+            // For claude, check against the minimum version.
+            if agent == "claude"
+                && let Ok(version) = CliVersion::parse_version_output(&raw)
+            {
+                if version.satisfies_minimum(&MIN_CLAUDE_VERSION) {
+                    return CheckResult {
+                        name: "Agent",
+                        detail: format!("{version_line} (>= {MIN_CLAUDE_VERSION})"),
+                        ok: true,
+                    };
+                } else {
+                    return CheckResult {
+                        name: "Agent",
+                        detail: format!(
+                            "{version_line} (minimum {MIN_CLAUDE_VERSION} recommended)"
+                        ),
+                        ok: false,
+                    };
+                }
+            }
+
             CheckResult {
                 name: "Agent",
-                detail: if version.is_empty() {
+                detail: if version_line.is_empty() {
                     agent.to_string()
                 } else {
-                    version
+                    version_line
                 },
                 ok: true,
             }
