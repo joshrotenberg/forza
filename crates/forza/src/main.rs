@@ -68,7 +68,7 @@ enum Command {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --output ci.toml\n  forza init --repo owner/name --auto\n  forza init --repo owner/name --auto --model claude-opus-4-6\n  forza init --repo owner/name --guided"
+    after_long_help = "Examples:\n  forza init --repo owner/name\n  forza init --repo owner/name --auto\n  forza init --repo owner/name --guided\n  forza init --guided -- --model claude-opus-4-6 --verbose"
 )]
 struct InitArgs {
     /// Repository in owner/name format (e.g. acme/myrepo). Inferred from git remote if omitted.
@@ -80,12 +80,18 @@ struct InitArgs {
     /// Use an agent to inspect the repo and generate a tailored config.
     #[arg(long)]
     auto: bool,
-    /// Launch an interactive Claude session to collaboratively generate a config.
+    /// Launch an interactive agent session to collaboratively generate a config.
     #[arg(long)]
     guided: bool,
+    /// Agent backend to use (claude or codex). Auto-detected from PATH if omitted.
+    #[arg(long)]
+    agent: Option<String>,
     /// Model to use for agent-assisted config generation (e.g. claude-opus-4-6).
     #[arg(long)]
     model: Option<String>,
+    /// Extra arguments passed directly to the agent (use after --).
+    #[arg(last = true)]
+    agent_args: Vec<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -1410,33 +1416,65 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
     }
 
     if args.guided {
-        use claude_wrapper::Claude;
-
         let prompt_template = include_str!("prompts/init_guided.md");
         let system_prompt = prompt_template
             .replace("{repo}", &repo)
             .replace("{output}", &args.output.display().to_string());
 
-        let claude = match Claude::builder().working_dir(".").build() {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("error creating claude client: {e}");
-                return ExitCode::FAILURE;
+        let agent = args.agent.as_deref().unwrap_or_else(|| {
+            if std::process::Command::new("claude")
+                .arg("--version")
+                .output()
+                .is_ok()
+            {
+                "claude"
+            } else if std::process::Command::new("codex")
+                .arg("--version")
+                .output()
+                .is_ok()
+            {
+                "codex"
+            } else {
+                "claude" // fallback, will fail with a clear error
+            }
+        });
+
+        let mut cmd = match agent {
+            "codex" => {
+                let mut c = tokio::process::Command::new("codex");
+                // Codex gets the prompt as a positional arg in exec mode
+                c.arg("exec").arg("--full-auto").arg(&system_prompt);
+                c
+            }
+            _ => {
+                let claude = match claude_wrapper::Claude::builder().working_dir(".").build() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("error creating claude client: {e}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                let mut c = tokio::process::Command::new(claude.binary());
+                c.arg("--append-system-prompt")
+                    .arg(&system_prompt)
+                    .arg("--allowedTools")
+                    .arg("Read,Glob,Grep,Write,Bash(gh *)");
+                c
             }
         };
 
-        let mut cmd = tokio::process::Command::new(claude.binary());
-        cmd.arg("--append-system-prompt")
-            .arg(&system_prompt)
-            .arg("--allowedTools")
-            .arg("Read,Glob,Grep,Write,Bash(gh *)")
-            .current_dir(".")
+        cmd.current_dir(".")
             .stdin(std::process::Stdio::inherit())
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
 
         if let Some(ref model) = args.model {
             cmd.arg("--model").arg(model);
+        }
+
+        // Pass through any extra agent args (from after --)
+        for arg in &args.agent_args {
+            cmd.arg(arg);
         }
 
         println!("Starting guided config session for {}...", repo);
