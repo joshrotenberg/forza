@@ -463,6 +463,12 @@ pub async fn execute(
                     run.pr_number = Some(pr.number);
                     run.outcome = Some(Outcome::PrCreated { number: pr.number });
                 } else {
+                    warn!(
+                        number = work.subject.number,
+                        branch = %work.subject.branch,
+                        "open_pr stage succeeded but no PR found on branch — \
+                         gh pr create may have failed silently"
+                    );
                     run.outcome = Some(Outcome::NothingToDo);
                 }
             } else if merge_succeeded {
@@ -473,6 +479,11 @@ pub async fn execute(
                     run.pr_number = Some(pr.number);
                     run.outcome = Some(Outcome::PrMerged { number: pr.number });
                 } else {
+                    warn!(
+                        number = work.subject.number,
+                        branch = %work.subject.branch,
+                        "merge stage succeeded but no PR found on branch"
+                    );
                     run.outcome = Some(Outcome::NothingToDo);
                 }
             } else if comment_succeeded {
