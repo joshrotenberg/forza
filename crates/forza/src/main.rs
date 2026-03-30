@@ -2905,7 +2905,7 @@ fn print_status_dashboard(sd: &std::path::Path, workflow_filter: Option<&str>) -
                 | Some(RouteOutcome::NothingToDo) => "✓",
                 None => "·",
             };
-            let outcome = format_outcome(r.outcome.as_ref());
+            let outcome = format_outcome(r.outcome.as_ref(), &r.repo);
             let ago = format_time_ago(r.started_at);
             println!(
                 "  {prefix} #{} {} → {}     {ago}",
@@ -3017,7 +3017,7 @@ fn cmd_status(args: StatusArgs) -> ExitCode {
                 r.workflow,
                 r.status_text(),
                 cost,
-                format_outcome(r.outcome.as_ref()),
+                format_outcome(r.outcome.as_ref(), &r.repo),
                 r.started_at.format("%Y-%m-%d %H:%M:%S"),
             );
         }
@@ -3344,13 +3344,20 @@ async fn cmd_mcp(
     ExitCode::SUCCESS
 }
 
-fn format_outcome(outcome: Option<&forza::state::RouteOutcome>) -> String {
+fn format_outcome(outcome: Option<&forza::state::RouteOutcome>, repo: &str) -> String {
     use forza::state::RouteOutcome;
+    let url = |kind: &str, number: u64| -> String {
+        if repo.is_empty() {
+            format!("{kind} (#{number})")
+        } else {
+            format!("{kind} (https://github.com/{repo}/pull/{number})")
+        }
+    };
     match outcome {
         None => "-".into(),
-        Some(RouteOutcome::PrCreated { number }) => format!("pr_created (#{number})"),
-        Some(RouteOutcome::PrUpdated { number }) => format!("pr_updated (#{number})"),
-        Some(RouteOutcome::PrMerged { number }) => format!("pr_merged (#{number})"),
+        Some(RouteOutcome::PrCreated { number }) => url("pr_created", *number),
+        Some(RouteOutcome::PrUpdated { number }) => url("pr_updated", *number),
+        Some(RouteOutcome::PrMerged { number }) => url("pr_merged", *number),
         Some(RouteOutcome::CommentPosted) => "comment_posted".into(),
         Some(RouteOutcome::NothingToDo) => "nothing_to_do".into(),
         Some(RouteOutcome::Failed { stage, .. }) => format!("failed (stage: {stage})"),
@@ -3392,7 +3399,7 @@ fn print_core_run(run: &forza_core::Run) -> ExitCode {
         );
     }
     if let Some(pr) = run.pr_number {
-        println!("PR: #{pr}");
+        println!("PR: https://github.com/{}/pull/{pr}", run.repo);
     }
     if let Some(cost) = run.total_cost_usd {
         println!("Total cost: ${cost:.2}");
@@ -3417,7 +3424,10 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
         record.status_text(),
         subject
     );
-    println!("  Outcome:  {}", format_outcome(record.outcome.as_ref()));
+    println!(
+        "  Outcome:  {}",
+        format_outcome(record.outcome.as_ref(), &record.repo)
+    );
     for stage in &record.stages {
         let cost = stage
             .result
@@ -3437,7 +3447,7 @@ fn print_run_result(record: &forza::state::RunRecord) -> ExitCode {
         );
     }
     if let Some(pr) = record.pr_number {
-        println!("PR: #{pr}");
+        println!("PR: https://github.com/{}/pull/{pr}", record.repo);
     }
     if let Some(cost) = record.total_cost_usd {
         println!("Total cost: ${cost:.2}");
