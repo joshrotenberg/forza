@@ -295,6 +295,27 @@ impl forza_core::GitClient for GitAdapter {
     }
 }
 
+// ── Agent factory ──────────────────────────────────────────────────────
+
+/// Create the appropriate agent executor based on the agent name.
+///
+/// Supported values: `"claude"` (default), `"codex"`.
+pub fn create_agent(agent_name: &str) -> Arc<dyn forza_core::AgentExecutor> {
+    match agent_name {
+        "codex" => {
+            tracing::info!(agent = "codex", "using Codex agent backend");
+            Arc::new(CodexAgentAdapter)
+        }
+        other => {
+            if other != "claude" {
+                tracing::warn!(agent = other, "unknown agent, falling back to Claude");
+            }
+            tracing::info!(agent = "claude", "using Claude agent backend");
+            Arc::new(ClaudeAgentAdapter)
+        }
+    }
+}
+
 // ── Agent adapter ───────────────────────────────────────────────────────
 
 /// Wraps `claude-wrapper` to satisfy `forza_core::AgentExecutor`.
@@ -371,21 +392,44 @@ pub struct CodexAgentAdapter;
 impl forza_core::AgentExecutor for CodexAgentAdapter {
     async fn execute(
         &self,
-        _stage_name: &str,
+        stage_name: &str,
         prompt: &str,
         work_dir: &Path,
         model: Option<&str>,
-        _skills: &[String],
+        skills: &[String],
         _mcp_config: Option<&str>,
         _append_system_prompt: Option<&str>,
         _allowed_tools: &[String],
     ) -> CoreResult<CoreStageResult> {
+        // Prepend skill file contents to the prompt so Codex gets the same
+        // context that Claude receives via --skill flags.
+        let full_prompt = if skills.is_empty() {
+            prompt.to_string()
+        } else {
+            let mut parts = Vec::new();
+            for skill_path in skills {
+                match std::fs::read_to_string(skill_path) {
+                    Ok(content) => parts.push(content),
+                    Err(e) => {
+                        tracing::warn!(
+                            stage = stage_name,
+                            path = skill_path,
+                            error = %e,
+                            "failed to read skill file, skipping"
+                        );
+                    }
+                }
+            }
+            parts.push(prompt.to_string());
+            parts.join("\n\n")
+        };
+
         let codex = codex_wrapper::Codex::builder()
             .working_dir(work_dir)
             .build()
             .map_err(|e| CoreError::Agent(format!("failed to create codex client: {e}")))?;
 
-        let mut cmd = codex_wrapper::ExecCommand::new(prompt).full_auto();
+        let mut cmd = codex_wrapper::ExecCommand::new(&full_prompt).full_auto();
 
         if let Some(m) = model {
             cmd = cmd.model(m);

@@ -304,6 +304,7 @@ async fn trigger_issue(
             vec![],
             None,
             workflow_override,
+            None,
         )
         .await
         {
@@ -392,6 +393,7 @@ async fn trigger_pr(
             vec![],
             None,
             workflow_override,
+            None,
         )
         .await
         {
@@ -858,6 +860,7 @@ async fn exec_plan(
                 git.clone(),
                 None,
                 vec![],
+                None,
                 None,
                 None,
             )

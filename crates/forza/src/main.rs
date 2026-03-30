@@ -135,6 +135,9 @@ struct IssueArgs {
     /// Branch to target PRs to (default: repo default branch).
     #[arg(long)]
     target_branch: Option<String>,
+    /// Override the agent backend (claude or codex).
+    #[arg(long)]
+    agent: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -168,6 +171,9 @@ struct PrArgs {
     /// Branch to target PRs to (default: repo default branch).
     #[arg(long)]
     target_branch: Option<String>,
+    /// Override the agent backend (claude or codex).
+    #[arg(long)]
+    agent: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -363,6 +369,9 @@ struct OpenArgs {
     /// Override the model (e.g. claude-opus-4-6).
     #[arg(long)]
     model: Option<String>,
+    /// Override the agent backend (claude or codex).
+    #[arg(long)]
+    agent: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -405,6 +414,9 @@ struct PlanArgs {
     /// The branch is created from `origin/main` before execution begins.
     #[arg(long, value_name = "BRANCH")]
     branch: Option<String>,
+    /// Override the agent backend (claude or codex).
+    #[arg(long)]
+    agent: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -661,10 +673,8 @@ async fn cmd_open(
         .replace("{preamble}", &preamble)
         .replace("{repo}", &repo);
 
-    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
-        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
-        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
-    };
+    let agent_name = args.agent.as_deref().unwrap_or(&config.global.agent);
+    let agent = forza::adapters::create_agent(agent_name);
 
     let model = args.model.as_deref().or(config.global.model.as_deref());
 
@@ -719,7 +729,7 @@ async fn cmd_plan(
 
     // Revise mode: update an existing plan issue.
     if let Some(plan_number) = args.revise {
-        return cmd_plan_revise(plan_number, &repo, &rd, config, gh).await;
+        return cmd_plan_revise(plan_number, &repo, &rd, config, gh, args.agent.as_deref()).await;
     }
 
     // Fetch issues based on selection.
@@ -759,10 +769,8 @@ async fn cmd_plan(
         "Bash(gh *)".into(),
     ];
 
-    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
-        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
-        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
-    };
+    let agent_name = args.agent.as_deref().unwrap_or(&config.global.agent);
+    let agent = forza::adapters::create_agent(agent_name);
 
     let model = args.model.as_deref().or(config.global.model.as_deref());
 
@@ -1021,6 +1029,7 @@ async fn cmd_plan_exec(
                         vec![],
                         branch_override_clone,
                         None,
+                        None,
                     )
                     .await;
                     (issue_number, result)
@@ -1200,6 +1209,7 @@ async fn cmd_plan_revise(
     rd: &std::path::Path,
     config: &forza::RunnerConfig,
     gh: &std::sync::Arc<dyn forza::github::GitHubClient>,
+    agent_override: Option<&str>,
 ) -> ExitCode {
     let plan_issue = match gh.fetch_issue(repo, plan_number).await {
         Ok(i) => i,
@@ -1238,10 +1248,8 @@ async fn cmd_plan_revise(
         "Bash(gh *)".into(),
     ];
 
-    let agent: std::sync::Arc<dyn forza_core::AgentExecutor> = match config.global.agent.as_str() {
-        "codex" => std::sync::Arc::new(forza::adapters::CodexAgentAdapter),
-        _ => std::sync::Arc::new(forza::adapters::ClaudeAgentAdapter),
-    };
+    let agent_name = agent_override.unwrap_or(&config.global.agent);
+    let agent = forza::adapters::create_agent(agent_name);
 
     let model = config.global.model.as_deref();
 
@@ -1858,6 +1866,7 @@ async fn cmd_issue(
             args.skill,
             None,
             args.workflow,
+            args.agent,
         )
         .await
         {
@@ -1882,6 +1891,7 @@ async fn cmd_issue(
         args.skill,
         args.base_branch,
         args.workflow,
+        args.agent,
     )
     .await
     {
@@ -1991,6 +2001,7 @@ async fn cmd_pr(
             args.skill,
             None,
             args.workflow,
+            args.agent,
         )
         .await
         {
@@ -2015,6 +2026,7 @@ async fn cmd_pr(
         args.skill,
         None,
         args.workflow,
+        args.agent,
     )
     .await
     {
@@ -3070,6 +3082,7 @@ async fn cmd_fix(
         git.clone(),
         None,
         vec![],
+        None,
         None,
         None,
     )

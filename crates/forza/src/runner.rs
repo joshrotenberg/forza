@@ -27,7 +27,7 @@ use forza_core::run::Run;
 use forza_core::stage::Workflow;
 use forza_core::subject::SubjectKind;
 
-use crate::adapters::{self, ClaudeAgentAdapter, CodexAgentAdapter, GitAdapter, GitHubAdapter};
+use crate::adapters::{self, GitAdapter, GitHubAdapter};
 use crate::config::{self, IssueOrder, Route, RunnerConfig};
 use crate::state;
 
@@ -632,25 +632,9 @@ fn to_core_stage_kind(kind: crate::workflow::StageKind) -> forza_core::StageKind
     }
 }
 
-/// Generate a branch name from a pattern by substituting issue metadata.
-///
-/// Create the appropriate agent executor based on the config's `agent` field.
-///
-/// Supported values: `"claude"` (default), `"codex"`.
+/// Delegate to the shared agent factory in `adapters`.
 fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
-    match config.global.agent.as_str() {
-        "codex" => {
-            info!(agent = "codex", "using Codex agent backend");
-            Arc::new(CodexAgentAdapter)
-        }
-        other => {
-            if other != "claude" {
-                warn!(agent = other, "unknown agent, falling back to Claude");
-            }
-            info!(agent = "claude", "using Claude agent backend");
-            Arc::new(ClaudeAgentAdapter)
-        }
-    }
+    adapters::create_agent(&config.global.agent)
 }
 
 /// The pattern supports four placeholders:
@@ -747,6 +731,7 @@ pub async fn process_issue(
     skill_overrides: Vec<String>,
     base_branch_override: Option<String>,
     workflow_override: Option<String>,
+    agent_override: Option<String>,
 ) -> forza_core::Result<Run> {
     tracing::info!(number, repo, "processing issue");
     let issue = gh.fetch_issue(repo, number).await.map_err(|e| match e {
@@ -832,7 +817,8 @@ pub async fn process_issue(
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
     let git_adapter = Arc::new(GitAdapter::new(git));
-    let agent = create_agent(config);
+    let agent_name = agent_override.as_deref().unwrap_or(&config.global.agent);
+    let agent = adapters::create_agent(agent_name);
 
     Ok(execute_work(
         matched,
@@ -861,6 +847,7 @@ pub async fn process_pr(
     skill_overrides: Vec<String>,
     route_override: Option<String>,
     workflow_override: Option<String>,
+    agent_override: Option<String>,
 ) -> forza_core::Result<Run> {
     tracing::info!(number, repo, "processing PR");
     let pr = gh.fetch_pr(repo, number).await.map_err(|e| match e {
@@ -931,7 +918,8 @@ pub async fn process_pr(
 
     let gh_adapter = Arc::new(GitHubAdapter::new(gh));
     let git_adapter = Arc::new(GitAdapter::new(git));
-    let agent = create_agent(config);
+    let agent_name = agent_override.as_deref().unwrap_or(&config.global.agent);
+    let agent = adapters::create_agent(agent_name);
 
     Ok(execute_work(
         matched,
