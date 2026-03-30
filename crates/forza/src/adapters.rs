@@ -11,6 +11,38 @@ use async_trait::async_trait;
 use forza_core::error::{Error as CoreError, Result as CoreResult};
 use forza_core::run::StageResult as CoreStageResult;
 use forza_core::subject::{Subject, SubjectKind};
+use tracing::warn;
+
+// ── Shared helpers ─────────────────────────────────────────────────────
+
+/// Read skill files and prepend their contents to a prompt.
+///
+/// Each skill path is resolved relative to `work_dir` if not absolute.
+/// Unreadable files are skipped with a warning.
+pub fn prepend_skill_files(prompt: &str, skills: &[String], work_dir: &Path) -> String {
+    if skills.is_empty() {
+        return prompt.to_string();
+    }
+    let mut parts = Vec::with_capacity(skills.len() + 1);
+    for skill in skills {
+        let skill_path = {
+            let p = Path::new(skill);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                work_dir.join(p)
+            }
+        };
+        match std::fs::read_to_string(&skill_path) {
+            Ok(content) => parts.push(content),
+            Err(e) => {
+                warn!(path = %skill_path.display(), error = %e, "skipping unreadable skill file");
+            }
+        }
+    }
+    parts.push(prompt.to_string());
+    parts.join("\n\n")
+}
 
 use crate::github::{IssueCandidate, PrCandidate};
 
@@ -449,28 +481,7 @@ impl forza_core::AgentExecutor for CodexAgentAdapter {
             );
         }
 
-        // Prepend skill file contents to the prompt so Codex gets the same
-        // context that Claude receives via --skill flags.
-        let full_prompt = if skills.is_empty() {
-            prompt.to_string()
-        } else {
-            let mut parts = Vec::new();
-            for skill_path in skills {
-                match std::fs::read_to_string(skill_path) {
-                    Ok(content) => parts.push(content),
-                    Err(e) => {
-                        tracing::warn!(
-                            stage = stage_name,
-                            path = skill_path,
-                            error = %e,
-                            "failed to read skill file, skipping"
-                        );
-                    }
-                }
-            }
-            parts.push(prompt.to_string());
-            parts.join("\n\n")
-        };
+        let full_prompt = prepend_skill_files(prompt, skills, work_dir);
 
         let codex = codex_wrapper::Codex::builder()
             .working_dir(work_dir)

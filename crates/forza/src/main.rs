@@ -1441,7 +1441,14 @@ async fn cmd_init(args: InitArgs, gh: &dyn forza::github::GitHubClient) -> ExitC
 
         let mut cmd = match agent {
             "codex" => {
-                let mut c = tokio::process::Command::new("codex");
+                let codex = match codex_wrapper::Codex::builder().working_dir(".").build() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("error creating codex client: {e}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                let mut c = tokio::process::Command::new(codex.binary());
                 // Codex gets the prompt as a positional arg in exec mode
                 c.arg("exec").arg("--full-auto").arg(&system_prompt);
                 c
