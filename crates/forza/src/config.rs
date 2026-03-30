@@ -761,7 +761,7 @@ impl RunnerConfig {
 
     /// Get the effective model for a route and agent.
     ///
-    /// Resolution order: route > agents[agent] > global.
+    /// Resolution order: route > agents\[agent\] > global.
     pub fn effective_model<'a>(&'a self, route: &'a Route, agent: &str) -> Option<&'a str> {
         route
             .model
@@ -772,7 +772,7 @@ impl RunnerConfig {
 
     /// Get the effective max budget in USD for a route and agent.
     ///
-    /// Resolution order: route > agents[agent] > global.max_cost_per_issue.
+    /// Resolution order: route > agents\[agent\] > global.max_cost_per_issue.
     pub fn effective_max_budget_usd(&self, route: &Route, agent: &str) -> Option<f64> {
         route
             .max_budget_usd
