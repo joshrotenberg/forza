@@ -494,10 +494,18 @@ impl GitHubClient for OctocrabClient {
         draft: bool,
     ) -> Result<PullRequest> {
         let (owner, name) = parse_repo(repo)?;
+        // Detect the default branch instead of hardcoding "main".
+        let default_branch = self
+            .client
+            .repos(owner, name)
+            .get()
+            .await
+            .map(|r| r.default_branch.unwrap_or_else(|| "main".to_string()))
+            .unwrap_or_else(|_| "main".to_string());
         let pr = self
             .client
             .pulls(owner, name)
-            .create(title, branch, "main")
+            .create(title, branch, &default_branch)
             .body(body)
             .draft(draft)
             .send()
