@@ -1066,6 +1066,7 @@ mod tests {
                 skills: None,
                 mcp_config: None,
                 validation_commands: None,
+                agent: None,
             },
             workflow_name: "bug".into(),
         }

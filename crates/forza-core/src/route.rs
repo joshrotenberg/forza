@@ -84,6 +84,9 @@ pub struct Route {
     /// Override validation commands for this route.
     #[serde(default)]
     pub validation_commands: Option<Vec<String>>,
+    /// Override agent for this route (e.g. `"codex"` or `"claude"`).
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 fn default_concurrency() -> usize {
@@ -227,6 +230,7 @@ mod tests {
             skills: None,
             mcp_config: None,
             validation_commands: None,
+            agent: None,
         }
     }
 
@@ -243,6 +247,7 @@ mod tests {
             skills: None,
             mcp_config: None,
             validation_commands: None,
+            agent: None,
         }
     }
 
