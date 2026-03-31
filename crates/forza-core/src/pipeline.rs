@@ -96,6 +96,11 @@ pub async fn execute(
         &work.subject.branch,
     );
 
+    // 0. Persist initial "running" record so async polling can find it.
+    if let Err(e) = save_run(&run, state_dir) {
+        warn!(error = %e, "failed to save initial run record (non-fatal)");
+    }
+
     // 1. Acquire lease.
     lifecycle::acquire(&work.subject, &config.labels, gh).await;
 
@@ -339,6 +344,9 @@ pub async fn execute(
             StageStatus::Failed
         };
         run.record_stage(stage.kind, stage_status, result);
+
+        // Persist after each stage so async polling sees progress.
+        let _ = save_run(&run, state_dir);
 
         // Post-hooks (only on success).
         if success
