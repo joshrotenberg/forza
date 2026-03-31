@@ -318,15 +318,18 @@ impl GitHubClient for OctocrabClient {
                 .into_iter()
                 .map(|l| l.name)
                 .collect(),
-            state: pr
-                .state
-                .map(|s| match s {
-                    octocrab::models::IssueState::Open => "open",
-                    octocrab::models::IssueState::Closed => "closed",
-                    _ => "unknown",
-                })
-                .unwrap_or("open")
-                .to_string(),
+            state: if pr.merged_at.is_some() {
+                "merged".to_string()
+            } else {
+                pr.state
+                    .map(|s| match s {
+                        octocrab::models::IssueState::Open => "open",
+                        octocrab::models::IssueState::Closed => "closed",
+                        _ => "unknown",
+                    })
+                    .unwrap_or("open")
+                    .to_string()
+            },
             html_url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
             head_branch: pr.head.ref_field,
             base_branch: pr.base.ref_field,

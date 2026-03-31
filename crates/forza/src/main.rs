@@ -1164,10 +1164,10 @@ async fn wait_for_pr_merge(
     // Check current state first.
     match gh.fetch_pr(repo, pr_number).await {
         Ok(pr) => {
-            if pr.state == "MERGED" {
+            if pr.state == "merged" {
                 return MergeWaitResult::Merged;
             }
-            if pr.state == "CLOSED" {
+            if pr.state == "closed" {
                 return MergeWaitResult::Failed;
             }
         }
@@ -1189,10 +1189,10 @@ async fn wait_for_pr_merge(
 
         match gh.fetch_pr(repo, pr_number).await {
             Ok(pr) => {
-                if pr.state == "MERGED" {
+                if pr.state == "merged" {
                     return MergeWaitResult::Merged;
                 }
-                if pr.state == "CLOSED" {
+                if pr.state == "closed" {
                     return MergeWaitResult::Failed;
                 }
             }
