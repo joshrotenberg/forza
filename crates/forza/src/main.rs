@@ -109,7 +109,7 @@ struct FixArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza issue 42\n  forza issue 42 --dry-run --model claude-opus-4-6\n  forza issue 42 --skill ./skills/extra.md\n  forza issue 42 --workflow feature\n  forza issue 42 --fix"
+    after_long_help = "Examples:\n  forza issue 42\n  forza issue 42 --dry-run --model claude-opus-4-6\n  forza issue 42 --skill ./skills/extra.md\n  forza issue 42 --workflow feature\n  forza issue 42 --fix\n  forza issue 42 --serve-api"
 )]
 struct IssueArgs {
     /// Issue number to process.
@@ -144,11 +144,20 @@ struct IssueArgs {
     /// Override the agent backend (claude or codex).
     #[arg(long)]
     agent: Option<String>,
+    /// Auto-start the REST API server during processing.
+    #[arg(long, default_value = "false")]
+    serve_api: bool,
+    /// Host address for the REST API server (default: 127.0.0.1).
+    #[arg(long)]
+    api_host: Option<String>,
+    /// Port for the REST API server (default: 8080).
+    #[arg(long)]
+    api_port: Option<u16>,
 }
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --dry-run\n  forza pr 123 --workflow pr-fix\n  forza pr 123 --fix"
+    after_long_help = "Examples:\n  forza pr 123\n  forza pr 123 --dry-run\n  forza pr 123 --workflow pr-fix\n  forza pr 123 --fix\n  forza pr 123 --serve-api"
 )]
 struct PrArgs {
     /// PR number to process.
@@ -180,6 +189,15 @@ struct PrArgs {
     /// Override the agent backend (claude or codex).
     #[arg(long)]
     agent: Option<String>,
+    /// Auto-start the REST API server during processing.
+    #[arg(long, default_value = "false")]
+    serve_api: bool,
+    /// Host address for the REST API server (default: 127.0.0.1).
+    #[arg(long)]
+    api_host: Option<String>,
+    /// Port for the REST API server (default: 8080).
+    #[arg(long)]
+    api_port: Option<u16>,
 }
 
 #[derive(Debug, Parser)]
@@ -382,7 +400,7 @@ struct OpenArgs {
 
 #[derive(Debug, Parser)]
 #[command(
-    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99\n  forza plan --exec 99 --dry-run\n  forza plan --exec 99 --close"
+    after_long_help = "Examples:\n  forza plan\n  forza plan 42\n  forza plan 10 20 30\n  forza plan 10..20\n  forza plan --label backlog\n  forza plan --revise 99\n  forza plan --exec 99\n  forza plan --exec 99 --dry-run\n  forza plan --exec 99 --close\n  forza plan --exec 99 --serve-api"
 )]
 struct PlanArgs {
     /// Issue numbers to plan. Supports single (42), multiple (10 20 30), range (10..20).
@@ -423,6 +441,15 @@ struct PlanArgs {
     /// Override the agent backend (claude or codex).
     #[arg(long)]
     agent: Option<String>,
+    /// Auto-start the REST API server during plan execution (use with --exec).
+    #[arg(long, default_value = "false")]
+    serve_api: bool,
+    /// Host address for the REST API server (default: 127.0.0.1).
+    #[arg(long)]
+    api_host: Option<String>,
+    /// Port for the REST API server (default: 8080).
+    #[arg(long)]
+    api_port: Option<u16>,
 }
 
 #[derive(Debug, Parser)]
@@ -719,6 +746,17 @@ async fn cmd_plan(
 
     // Exec mode: execute an existing plan issue.
     if let Some(plan_number) = args.exec {
+        // Auto-start the REST API server if requested (skip for dry-run).
+        if args.serve_api && !args.dry_run {
+            let sd = state_dir();
+            let host = args.api_host.as_deref().unwrap_or("127.0.0.1");
+            let port = args.api_port.unwrap_or(8080);
+            if let Err(code) =
+                spawn_api_server(host, port, config.clone(), sd, gh.clone(), git.clone()).await
+            {
+                return code;
+            }
+        }
         return cmd_plan_exec(
             plan_number,
             &repo,
@@ -1788,6 +1826,47 @@ async fn resolve_repo<'a>(
     Ok((repo_slug, rd, routes))
 }
 
+/// Spawn the REST API server in the background for the duration of a long-running operation.
+///
+/// Returns `Err(ExitCode::FAILURE)` if the server fails to bind. The server runs until
+/// the process exits — no explicit shutdown is needed for single-operation commands.
+async fn spawn_api_server(
+    host: &str,
+    port: u16,
+    config: forza::RunnerConfig,
+    state_dir: PathBuf,
+    gh: std::sync::Arc<dyn forza::github::GitHubClient>,
+    git: std::sync::Arc<dyn forza::git::GitClient>,
+) -> Result<(), ExitCode> {
+    let addr: std::net::SocketAddr = match format!("{host}:{port}").parse() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("error: invalid API address {host}:{port}: {e}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    let state = std::sync::Arc::new(forza::api::AppState {
+        config,
+        state_dir,
+        gh,
+        git,
+    });
+    let router = forza::api::router(state);
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => {
+            info!(address = %addr, "REST API server listening");
+            tokio::spawn(async move {
+                axum::serve(listener, router).await.ok();
+            });
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("error: could not bind API server to {addr}: {e}");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
 async fn cmd_issue(
     args: IssueArgs,
     config: &forza::RunnerConfig,
@@ -1870,6 +1949,24 @@ async fn cmd_issue(
             );
         }
         return ExitCode::SUCCESS;
+    }
+
+    // Auto-start the REST API server if requested.
+    if args.serve_api {
+        let host = args.api_host.as_deref().unwrap_or("127.0.0.1");
+        let port = args.api_port.unwrap_or(8080);
+        if let Err(code) = spawn_api_server(
+            host,
+            port,
+            config.clone(),
+            sd.clone(),
+            gh.clone(),
+            git.clone(),
+        )
+        .await
+        {
+            return code;
+        }
     }
 
     // Check for plan issues before processing — auto-dispatch to plan --exec.
@@ -2016,6 +2113,24 @@ async fn cmd_pr(
             println!("  {}. {}{optional}", i + 1, stage.kind_name());
         }
         return ExitCode::SUCCESS;
+    }
+
+    // Auto-start the REST API server if requested.
+    if args.serve_api {
+        let host = args.api_host.as_deref().unwrap_or("127.0.0.1");
+        let port = args.api_port.unwrap_or(8080);
+        if let Err(code) = spawn_api_server(
+            host,
+            port,
+            config.clone(),
+            sd.clone(),
+            gh.clone(),
+            git.clone(),
+        )
+        .await
+        {
+            return code;
+        }
     }
 
     // --fix: find latest failed run for this PR and re-process.
