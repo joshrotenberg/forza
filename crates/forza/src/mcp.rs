@@ -67,6 +67,11 @@ struct IssueRunInput {
     workflow: Option<String>,
     /// Override the model for every stage (e.g. "claude-opus-4-6").
     model: Option<String>,
+    /// Override the agent backend ("claude" or "codex").
+    agent: Option<String>,
+    /// Run asynchronously: return immediately with a run_id, poll with status_get.
+    #[serde(default)]
+    r#async: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -79,6 +84,11 @@ struct PrRunInput {
     workflow: Option<String>,
     /// Override the model for every stage (e.g. "claude-opus-4-6").
     model: Option<String>,
+    /// Override the agent backend ("claude" or "codex").
+    agent: Option<String>,
+    /// Run asynchronously: return immediately with a run_id, poll with status_get.
+    #[serde(default)]
+    r#async: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -198,7 +208,7 @@ pub fn build_router(state: AppState) -> McpRouter {
 
     // ── Runner: issue_run ─────────────────────────────────────────────────────
     let issue_run = ToolBuilder::new("issue_run")
-        .description("Process a single GitHub issue through the full pipeline")
+        .description("Process a single GitHub issue through the full pipeline. Set async=true to return immediately with a run_id (poll with status_find_issue).")
         .extractor_handler(
             s.clone(),
             |State(app): State<Arc<AppState>>, Json(input): Json<IssueRunInput>| async move {
@@ -213,27 +223,61 @@ pub fn build_router(state: AppState) -> McpRouter {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
-                match crate::runner::process_issue(
-                    input.number,
-                    &repo,
-                    &app.config,
-                    &routes,
-                    &app.state_dir,
-                    &rd,
-                    app.gh.clone(),
-                    app.git.clone(),
-                    input.model,
-                    vec![],
-                    None,
-                    input.workflow,
-                    None,
-                )
-                .await
-                {
-                    Ok(run) => Ok(CallToolResult::text(
-                        serde_json::to_string_pretty(&run).unwrap_or_default(),
-                    )),
-                    Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
+
+                let is_async = input.r#async;
+
+                if is_async {
+                    // Spawn and return immediately.
+                    let response = format!(
+                        "{{\"status\": \"started\", \"number\": {}, \"repo\": \"{repo}\", \"message\": \"Use status_find_issue to check progress.\"}}",
+                        input.number
+                    );
+                    let config = app.config.clone();
+                    let state_dir = app.state_dir.clone();
+                    let gh = app.gh.clone();
+                    let git = app.git.clone();
+                    tokio::spawn(async move {
+                        let _ = crate::runner::process_issue(
+                            input.number,
+                            &repo,
+                            &config,
+                            &routes,
+                            &state_dir,
+                            &rd,
+                            gh,
+                            git,
+                            input.model,
+                            vec![],
+                            None,
+                            input.workflow,
+                            input.agent,
+                        )
+                        .await;
+                    });
+                    Ok(CallToolResult::text(response))
+                } else {
+                    match crate::runner::process_issue(
+                        input.number,
+                        &repo,
+                        &app.config,
+                        &routes,
+                        &app.state_dir,
+                        &rd,
+                        app.gh.clone(),
+                        app.git.clone(),
+                        input.model,
+                        vec![],
+                        None,
+                        input.workflow,
+                        input.agent,
+                    )
+                    .await
+                    {
+                        Ok(run) => Ok(CallToolResult::text(
+                            serde_json::to_string_pretty(&run).unwrap_or_default(),
+                        )),
+                        Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
+                    }
                 }
             },
         )
@@ -241,7 +285,7 @@ pub fn build_router(state: AppState) -> McpRouter {
 
     // ── Runner: pr_run ────────────────────────────────────────────────────────
     let pr_run = ToolBuilder::new("pr_run")
-        .description("Process a single GitHub PR through the full pipeline")
+        .description("Process a single GitHub PR through the full pipeline. Set async=true to return immediately (poll with status_find_issue).")
         .extractor_handler(
             s.clone(),
             |State(app): State<Arc<AppState>>, Json(input): Json<PrRunInput>| async move {
@@ -256,27 +300,60 @@ pub fn build_router(state: AppState) -> McpRouter {
                     Ok(p) => p,
                     Err(e) => return Ok(CallToolResult::text(format!("error: {e}"))),
                 };
-                match crate::runner::process_pr(
-                    input.number,
-                    &repo,
-                    &app.config,
-                    &routes,
-                    &app.state_dir,
-                    &rd,
-                    app.gh.clone(),
-                    app.git.clone(),
-                    input.model,
-                    vec![],
-                    None,
-                    input.workflow,
-                    None,
-                )
-                .await
-                {
-                    Ok(run) => Ok(CallToolResult::text(
-                        serde_json::to_string_pretty(&run).unwrap_or_default(),
-                    )),
-                    Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
+
+                let is_async = input.r#async;
+
+                if is_async {
+                    let response = format!(
+                        "{{\"status\": \"started\", \"number\": {}, \"repo\": \"{repo}\", \"message\": \"Use status_find_issue to check progress.\"}}",
+                        input.number
+                    );
+                    let config = app.config.clone();
+                    let state_dir = app.state_dir.clone();
+                    let gh = app.gh.clone();
+                    let git = app.git.clone();
+                    tokio::spawn(async move {
+                        let _ = crate::runner::process_pr(
+                            input.number,
+                            &repo,
+                            &config,
+                            &routes,
+                            &state_dir,
+                            &rd,
+                            gh,
+                            git,
+                            input.model,
+                            vec![],
+                            None,
+                            input.workflow,
+                            input.agent,
+                        )
+                        .await;
+                    });
+                    Ok(CallToolResult::text(response))
+                } else {
+                    match crate::runner::process_pr(
+                        input.number,
+                        &repo,
+                        &app.config,
+                        &routes,
+                        &app.state_dir,
+                        &rd,
+                        app.gh.clone(),
+                        app.git.clone(),
+                        input.model,
+                        vec![],
+                        None,
+                        input.workflow,
+                        input.agent,
+                    )
+                    .await
+                    {
+                        Ok(run) => Ok(CallToolResult::text(
+                            serde_json::to_string_pretty(&run).unwrap_or_default(),
+                        )),
+                        Err(e) => Ok(CallToolResult::text(format!("error: {e}"))),
+                    }
                 }
             },
         )
