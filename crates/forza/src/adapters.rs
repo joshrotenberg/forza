@@ -325,6 +325,13 @@ impl forza_core::GitClient for GitAdapter {
         // Not directly available in old API. Return empty for now.
         Ok(vec![])
     }
+
+    async fn prune_worktrees(&self, repo_dir: &Path) -> CoreResult<()> {
+        self.inner
+            .worktree_prune(repo_dir)
+            .await
+            .map_err(|e| CoreError::Git(e.to_string()))
+    }
 }
 
 // ── Agent factory ──────────────────────────────────────────────────────

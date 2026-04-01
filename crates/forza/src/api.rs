@@ -1039,6 +1039,9 @@ mod tests {
         async fn version(&self) -> crate::error::Result<String> {
             unimplemented!()
         }
+        async fn worktree_prune(&self, _: &Path) -> crate::error::Result<()> {
+            unimplemented!()
+        }
     }
 
     fn multi_repo_config() -> RunnerConfig {

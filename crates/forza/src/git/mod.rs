@@ -90,4 +90,10 @@ pub trait GitClient: Send + Sync {
 
     /// Check if git is available and return version string.
     async fn version(&self) -> Result<String>;
+
+    /// Prune stale worktree registrations.
+    ///
+    /// Runs `git worktree prune` to remove entries whose directories no longer
+    /// exist. Non-fatal: callers should log and continue on failure.
+    async fn worktree_prune(&self, repo_dir: &Path) -> Result<()>;
 }
