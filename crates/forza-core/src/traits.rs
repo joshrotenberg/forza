@@ -130,6 +130,15 @@ pub trait GitClient: Send + Sync {
 
     /// List existing worktrees.
     async fn list_worktrees(&self, repo_dir: &Path) -> Result<Vec<String>>;
+
+    /// Check whether the working tree has uncommitted changes (staged, unstaged, or untracked).
+    async fn has_changes(&self, work_dir: &Path) -> Result<bool>;
+
+    /// Stage all changes (equivalent to `git add -A`).
+    async fn stage_all(&self, work_dir: &Path) -> Result<()>;
+
+    /// Create a commit with the given message.
+    async fn commit(&self, work_dir: &Path, message: &str) -> Result<()>;
 }
 
 /// Abstraction over agent execution (Claude, or any future LLM).
