@@ -471,6 +471,9 @@ pub struct Route {
 
     /// Override branch_pattern for this route.
     pub branch_pattern: Option<String>,
+
+    /// Override agent for this route (e.g. `"codex"` or `"claude"`).
+    pub agent: Option<String>,
 }
 
 impl Route {
@@ -1512,6 +1515,7 @@ workflow = "bug"
                 max_retries: None,
                 draft_pr: None,
                 branch_pattern: None,
+                agent: None,
             },
         );
 
@@ -1668,6 +1672,7 @@ repo = "owner/repo"
             max_retries: None,
             draft_pr: None,
             branch_pattern: None,
+            agent: None,
         };
         assert!(route.validate("test").is_err()); // no trigger
 

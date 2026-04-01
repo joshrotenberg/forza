@@ -41,6 +41,7 @@ fn bug_route() -> Route {
         skills: None,
         mcp_config: None,
         validation_commands: None,
+        agent: None,
     }
 }
 
@@ -466,6 +467,7 @@ fn ci_failing_route() -> Route {
         skills: None,
         mcp_config: None,
         validation_commands: None,
+        agent: None,
     }
 }
 
@@ -544,6 +546,7 @@ async fn pipeline_condition_route_has_conflicts_pr_runs_rebase() {
         skills: None,
         mcp_config: None,
         validation_commands: None,
+        agent: None,
     };
 
     let workflow =

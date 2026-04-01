@@ -351,12 +351,13 @@ pub fn infer_agent_from_model(model: &str) -> Option<&'static str> {
     }
 }
 
-/// Resolve the agent name from explicit `--agent`, `--model`, and config default.
+/// Resolve the agent name from explicit `--agent`, `--model`, route config, and global default.
 ///
-/// Priority: explicit `--agent` > inferred from `--model` > config default.
+/// Priority: explicit `--agent` > inferred from `--model` > route agent > global default.
 pub fn resolve_agent_name<'a>(
     agent_override: Option<&'a str>,
     model_override: Option<&'a str>,
+    route_agent: Option<&'a str>,
     config_default: &'a str,
 ) -> &'a str {
     if let Some(agent) = agent_override {
@@ -367,6 +368,9 @@ pub fn resolve_agent_name<'a>(
     {
         tracing::info!(model, agent = inferred, "inferred agent from model");
         return inferred;
+    }
+    if let Some(agent) = route_agent {
+        return agent;
     }
     config_default
 }

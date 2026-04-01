@@ -315,7 +315,6 @@ pub async fn process_batch(
     // Schedule and execute.
     let gh_adapter = Arc::new(GitHubAdapter::new(gh.clone()));
     let git_adapter = Arc::new(GitAdapter::new(git.clone()));
-    let agent = create_agent(config);
 
     let max_concurrency = config.global.max_concurrency;
     let mut total_active = 0usize;
@@ -342,7 +341,14 @@ pub async fn process_batch(
             let repo_dir_owned = repo_dir.to_path_buf();
             let gh_adapter_clone = gh_adapter.clone();
             let git_adapter_clone = git_adapter.clone();
-            let agent_clone = agent.clone();
+            // Use per-route agent override when set, otherwise fall back to global.
+            let agent_name = work
+                .route
+                .agent
+                .as_deref()
+                .unwrap_or(&config.global.agent)
+                .to_string();
+            let agent_clone = adapters::create_agent(&agent_name);
 
             join_set.spawn(async move {
                 execute_work(
@@ -416,7 +422,6 @@ async fn execute_work(
 
     // Build pipeline config from global + route overrides.
     let mut pipeline_config = build_pipeline_config(config, &work);
-    pipeline_config.agent = config.global.agent.clone();
     let tools_dir = repo_dir.join("tools");
     if tools_dir.exists() {
         pipeline_config.tools_dir = Some(tools_dir);
@@ -432,7 +437,7 @@ async fn execute_work(
         "pending", // run_id isn't known yet; breadcrumb paths use the actual run_id from pipeline
         &pipeline_config.validation,
         &preamble,
-        config.global.agent.as_str(),
+        pipeline_config.agent.as_str(),
         prompts_dir_opt,
         &work.route_name,
         &work.workflow_name,
@@ -555,6 +560,13 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
         );
     }
 
+    // Resolve agent: route > global.
+    let agent = work
+        .route
+        .agent
+        .clone()
+        .unwrap_or_else(|| config.global.agent.clone());
+
     PipelineConfig {
         labels,
         model,
@@ -565,7 +577,7 @@ fn build_pipeline_config(config: &RunnerConfig, work: &MatchedWork) -> PipelineC
         append_system_prompt,
         stage_hooks,
         tools_dir: None,
-        agent: String::new(),
+        agent,
     }
 }
 
@@ -599,6 +611,7 @@ fn to_core_route(route: &Route) -> forza_core::Route {
         skills: route.skills.clone(),
         mcp_config: route.mcp_config.clone(),
         validation_commands: route.validation_commands.clone(),
+        agent: route.agent.clone(),
     }
 }
 
@@ -630,11 +643,6 @@ fn to_core_stage_kind(kind: crate::workflow::StageKind) -> forza_core::StageKind
         crate::workflow::StageKind::Research => forza_core::StageKind::Research,
         crate::workflow::StageKind::Comment => forza_core::StageKind::Comment,
     }
-}
-
-/// Delegate to the shared agent factory in `adapters`.
-fn create_agent(config: &RunnerConfig) -> Arc<dyn forza_core::AgentExecutor> {
-    adapters::create_agent(&config.global.agent)
 }
 
 /// The pattern supports four placeholders:
@@ -777,6 +785,7 @@ pub async fn process_issue(
                 },
                 mcp_config: None,
                 validation_commands: None,
+                agent: None,
             },
             workflow_name: wf_name,
         }
@@ -815,6 +824,7 @@ pub async fn process_issue(
     let agent_name = adapters::resolve_agent_name(
         agent_override.as_deref(),
         model_override.as_deref(),
+        matched.route.agent.as_deref(),
         &config.global.agent,
     )
     .to_string();
@@ -897,6 +907,7 @@ pub async fn process_pr(
                 },
                 mcp_config: None,
                 validation_commands: None,
+                agent: None,
             },
             workflow_name: wf_name,
         }
@@ -930,6 +941,7 @@ pub async fn process_pr(
     let agent_name = adapters::resolve_agent_name(
         agent_override.as_deref(),
         model_override.as_deref(),
+        matched.route.agent.as_deref(),
         &config.global.agent,
     )
     .to_string();
