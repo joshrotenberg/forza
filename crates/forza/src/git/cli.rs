@@ -212,6 +212,15 @@ impl GitClient for GitCliClient {
         Ok("origin/main".to_string())
     }
 
+    async fn worktree_prune(&self, repo_dir: &Path) -> Result<()> {
+        let output = git(&["worktree", "prune"], repo_dir).await?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Git(format!("git worktree prune failed: {stderr}")));
+        }
+        Ok(())
+    }
+
     async fn version(&self) -> Result<String> {
         let output = tokio::process::Command::new("git")
             .args(["--version"])

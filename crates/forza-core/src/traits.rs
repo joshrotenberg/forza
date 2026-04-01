@@ -130,6 +130,14 @@ pub trait GitClient: Send + Sync {
 
     /// List existing worktrees.
     async fn list_worktrees(&self, repo_dir: &Path) -> Result<Vec<String>>;
+
+    /// Prune stale worktree registrations (runs `git worktree prune`).
+    ///
+    /// Cleans up entries where the worktree directory no longer exists.
+    /// Non-fatal: implementations should log and continue on failure.
+    async fn prune_worktrees(&self, _repo_dir: &Path) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Abstraction over agent execution (Claude, or any future LLM).
