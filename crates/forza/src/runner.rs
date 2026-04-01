@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use indexmap::IndexMap;
+use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
 
@@ -30,6 +31,21 @@ use forza_core::subject::SubjectKind;
 use crate::adapters::{self, GitAdapter, GitHubAdapter};
 use crate::config::{self, IssueOrder, Route, RunnerConfig};
 use crate::state;
+
+// ── Active run registry ─────────────────────────────────────────────────
+
+/// In-memory registry of currently-active runs, keyed by `(repo, subject_number)`.
+///
+/// Checked before dispatch so that a subject already running in a concurrent
+/// or overlapping batch cycle is not started a second time.  The GitHub
+/// `forza:in-progress` label remains as a secondary signal for cross-process
+/// dedup.
+pub type ActiveRuns = Arc<RwLock<HashSet<(String, u64)>>>;
+
+/// Create an empty [`ActiveRuns`] registry.
+pub fn new_active_runs() -> ActiveRuns {
+    Arc::new(RwLock::new(HashSet::new()))
+}
 
 // ── Discovery ───────────────────────────────────────────────────────────
 
@@ -305,6 +321,7 @@ pub async fn process_batch(
     cancel: &tokio::sync::watch::Receiver<bool>,
     gh: Arc<dyn crate::github::GitHubClient>,
     git: Arc<dyn crate::git::GitClient>,
+    active_runs: &ActiveRuns,
 ) -> Vec<Run> {
     // Recover stale leases.
     recover_stale_leases(repo, config, &*gh).await;
@@ -329,12 +346,27 @@ pub async fn process_batch(
     // Single pass: spawn up to the concurrency limits, drop overflow.
     // Dropped candidates will be rediscovered next cycle with fresh state.
     for work in candidates {
+        let run_key = (work.subject.repo.clone(), work.subject.number);
+
+        // In-memory dedup: skip subjects that are already running in a concurrent
+        // or overlapping batch cycle (e.g. watch loop + API call).
+        if active_runs.read().await.contains(&run_key) {
+            debug!(
+                repo = run_key.0,
+                subject = run_key.1,
+                "skipping — already running"
+            );
+            continue;
+        }
+
         let route_active = *active_per_route.get(&work.route_name).unwrap_or(&0);
         let route_limit = work.route.concurrency;
 
         if total_active < max_concurrency && route_active < route_limit {
             total_active += 1;
             *active_per_route.entry(work.route_name.clone()).or_insert(0) += 1;
+
+            active_runs.write().await.insert(run_key.clone());
 
             let config_clone = config.clone();
             let state_dir_owned = state_dir.to_path_buf();
@@ -349,9 +381,10 @@ pub async fn process_batch(
                 .unwrap_or(&config.global.agent)
                 .to_string();
             let agent_clone = adapters::create_agent(&agent_name);
+            let active_runs_clone = active_runs.clone();
 
             join_set.spawn(async move {
-                execute_work(
+                let run = execute_work(
                     work,
                     &config_clone,
                     &state_dir_owned,
@@ -360,7 +393,9 @@ pub async fn process_batch(
                     &*git_adapter_clone,
                     &*agent_clone,
                 )
-                .await
+                .await;
+                active_runs_clone.write().await.remove(&run_key);
+                run
             });
         } else {
             debug!(

@@ -2266,6 +2266,7 @@ async fn cmd_run(
     }
 
     let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let active_runs = forza::runner::new_active_runs();
 
     let mut all_records = Vec::new();
     for (repo, rd, routes) in &repos_resolved {
@@ -2281,6 +2282,7 @@ async fn cmd_run(
             &cancel_rx,
             gh.clone(),
             git.clone(),
+            &active_runs,
         )
         .await;
         all_records.append(&mut runs);
@@ -2428,6 +2430,9 @@ async fn cmd_watch(
         let cancel_rx_clone = cancel_rx.clone();
         let gh_clone = gh.clone();
         let git_clone = git.clone();
+        // Active-run registry is created per repo and lives for the lifetime
+        // of the watch loop, enabling dedup across consecutive poll cycles.
+        let active_runs = forza::runner::new_active_runs();
         handles.push(tokio::spawn(async move {
             info!(repo = repo, "starting repo watch loop");
             loop {
@@ -2440,6 +2445,7 @@ async fn cmd_watch(
                     &cancel_rx_clone,
                     gh_clone.clone(),
                     git_clone.clone(),
+                    &active_runs,
                 )
                 .await;
                 if !records.is_empty() {

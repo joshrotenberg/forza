@@ -374,6 +374,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                 .collect();
 
             let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+            let active_runs = crate::runner::new_active_runs();
             let mut all_records = Vec::new();
 
             for (repo, explicit_dir, routes) in repos {
@@ -394,6 +395,7 @@ pub fn build_router(state: AppState) -> McpRouter {
                     &cancel_rx,
                     app.gh.clone(),
                     app.git.clone(),
+                    &active_runs,
                 )
                 .await;
                 all_records.append(&mut runs);

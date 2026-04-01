@@ -430,6 +430,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
     let git = state.git.clone();
     tokio::spawn(async move {
         let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let active_runs = crate::runner::new_active_runs();
         for (repo, rd, routes) in &repos_resolved {
             let records = crate::runner::process_batch(
                 repo,
@@ -440,6 +441,7 @@ async fn trigger_batch(State(state): State<Arc<AppState>>) -> Result<Response, A
                 &cancel_rx,
                 gh.clone(),
                 git.clone(),
+                &active_runs,
             )
             .await;
             let succeeded = records
