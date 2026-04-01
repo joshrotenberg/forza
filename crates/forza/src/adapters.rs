@@ -325,6 +325,27 @@ impl forza_core::GitClient for GitAdapter {
         // Not directly available in old API. Return empty for now.
         Ok(vec![])
     }
+
+    async fn has_changes(&self, work_dir: &Path) -> CoreResult<bool> {
+        self.inner
+            .has_changes(work_dir)
+            .await
+            .map_err(|e| CoreError::Git(e.to_string()))
+    }
+
+    async fn stage_all(&self, work_dir: &Path) -> CoreResult<()> {
+        self.inner
+            .stage_path(work_dir, ".")
+            .await
+            .map_err(|e| CoreError::Git(e.to_string()))
+    }
+
+    async fn commit(&self, work_dir: &Path, message: &str) -> CoreResult<()> {
+        self.inner
+            .commit(work_dir, message)
+            .await
+            .map_err(|e| CoreError::Git(e.to_string()))
+    }
 }
 
 // ── Agent factory ──────────────────────────────────────────────────────

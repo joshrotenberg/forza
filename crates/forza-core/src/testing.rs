@@ -128,6 +128,7 @@ pub enum MockCall {
     AgentExecute(String),   // prompt (truncated)
     CreateWorktree(String), // branch
     RemoveWorktree,
+    GitCommit(String), // message
 }
 
 // ── MockGitHub ──────────────────────────────────────────────────────────
@@ -369,6 +370,7 @@ impl crate::traits::GitHubClient for MockGitHub {
 pub struct MockGit {
     pub calls: Arc<Mutex<Vec<MockCall>>>,
     fail_worktree: bool,
+    dirty: bool,
 }
 
 impl MockGit {
@@ -376,6 +378,7 @@ impl MockGit {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
             fail_worktree: false,
+            dirty: false,
         }
     }
 
@@ -383,6 +386,21 @@ impl MockGit {
     pub fn fail_worktree(mut self) -> Self {
         self.fail_worktree = true;
         self
+    }
+
+    /// Make `has_changes` return true (simulates a dirty working tree).
+    pub fn with_dirty(mut self) -> Self {
+        self.dirty = true;
+        self
+    }
+
+    /// Check if a commit was recorded with the given message.
+    pub fn commit_was_made(&self, message: &str) -> bool {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, MockCall::GitCommit(m) if m == message))
     }
 
     fn record(&self, call: MockCall) {
@@ -441,6 +459,19 @@ impl crate::traits::GitClient for MockGit {
 
     async fn list_worktrees(&self, _repo_dir: &Path) -> Result<Vec<String>> {
         Ok(vec![])
+    }
+
+    async fn has_changes(&self, _work_dir: &Path) -> Result<bool> {
+        Ok(self.dirty)
+    }
+
+    async fn stage_all(&self, _work_dir: &Path) -> Result<()> {
+        Ok(())
+    }
+
+    async fn commit(&self, _work_dir: &Path, message: &str) -> Result<()> {
+        self.record(MockCall::GitCommit(message.to_string()));
+        Ok(())
     }
 }
 
