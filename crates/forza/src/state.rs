@@ -516,6 +516,7 @@ pub fn list_run_files(state_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+/// Generate a unique run identifier using the current UTC timestamp and a nanosecond-derived suffix.
 pub fn generate_run_id() -> String {
     let now = chrono::Utc::now();
     let timestamp = now.format("%Y%m%d-%H%M%S");
