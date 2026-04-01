@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/joshrotenberg/forza/compare/forza-v0.6.0...forza-v0.7.0) - 2026-04-01
+
+### Added
+
+- *(config)* per-route agent override closes #520 ([#567](https://github.com/joshrotenberg/forza/pull/567))
+- *(mcp)* async execution and agent override for issue_run/pr_run ([#563](https://github.com/joshrotenberg/forza/pull/563))
+- *(api)* auto-start rest api during long-running operations ([#561](https://github.com/joshrotenberg/forza/pull/561))
+
+### Fixed
+
+- *(plan)* detect merged PRs correctly in plan --exec polling ([#559](https://github.com/joshrotenberg/forza/pull/559))
+
+### Other
+
+- remove git hash from version string ([#557](https://github.com/joshrotenberg/forza/pull/557))
+
 ## [0.6.0](https://github.com/joshrotenberg/forza/compare/forza-v0.5.2...forza-v0.6.0) - 2026-03-30
 
 ### Added

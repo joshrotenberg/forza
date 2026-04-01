@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.6.0...forza-core-v0.7.0) - 2026-04-01
+
+### Added
+
+- *(config)* per-route agent override closes #520 ([#567](https://github.com/joshrotenberg/forza/pull/567))
+
+### Fixed
+
+- *(pipeline)* persist run record at startup and after each stage ([#565](https://github.com/joshrotenberg/forza/pull/565))
+
 ## [0.6.0](https://github.com/joshrotenberg/forza/compare/forza-core-v0.5.2...forza-core-v0.6.0) - 2026-03-30
 
 ### Added
